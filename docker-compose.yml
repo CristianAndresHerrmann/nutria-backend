@@ -1,0 +1,64 @@
+name: nutria
+
+services:
+  proxy:
+    image: traefik:v3.1
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  frontend:
+    build:
+      context: ../nutria-frontend
+    env_file:
+      - ../nutria-frontend/.env
+    depends_on:
+      - backend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`local.nutria.com`)"
+      - "traefik.http.services.frontend.loadbalancer.server.port=5173"
+
+  backend:
+    build:
+      context: .
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+      - ia
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=Host(`api.local.nutria.com`)"
+      - "traefik.http.services.backend.loadbalancer.server.port=3000"
+
+  ia:
+    build:
+      context: ../nutria-ia
+    env_file:
+      - ../nutria-ia/.env
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ia.rule=Host(`ia.local.nutria.com`)"
+      - "traefik.http.services.ia.loadbalancer.server.port=8000"
+
+  postgres:
+    # Postgres estándar con la extensión pgvector disponible para cuando se
+    # integre RAG. La extensión no se activa en este incremento.
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5433:5432"
+    volumes:
+      - nutria_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  nutria_postgres_data:

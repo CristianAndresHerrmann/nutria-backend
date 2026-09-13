@@ -1,0 +1,30 @@
+{
+  "name": "nutria-backend",
+  "version": "1.0.0",
+  "description": "Backend principal de NutrIA (API REST, autenticación, gestión de pacientes y motor de validación clínica).",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down",
+    "migrate": "node scripts/migrate.js",
+    "seed": "node scripts/seed.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CristianAndresHerrmann/nutria-backend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/CristianAndresHerrmann/nutria-backend/issues"
+  },
+  "homepage": "https://github.com/CristianAndresHerrmann/nutria-backend#readme",
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}
