@@ -29,6 +29,10 @@ services:
       context: .
     env_file:
       - .env
+    environment:
+      # El backend corre dentro de la red de Docker: usa el hostname interno del
+      # servicio "postgres" en lugar del localhost:5433 que define .env para uso local.
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     depends_on:
       - postgres
       - ia

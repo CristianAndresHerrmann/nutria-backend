@@ -27,7 +27,8 @@ Organizado por capas:
 - `src/config/` — configuración y variables de entorno.
 - `src/app.js` — configuración de la app de Express (middlewares y rutas).
 - `src/server.js` — punto de entrada, levanta el servidor HTTP.
-- `scripts/` — scripts de migración y seed de base de datos.
+- `prisma/schema.prisma` — modelo de datos (Prisma) y `prisma/migrations/` — historial de migraciones generado por el CLI.
+- `scripts/seed.js` — carga de datos ficticios ejecutada por `prisma db seed`.
 - `Dockerfile` — imagen del backend.
 - `docker-compose.yml` — orquesta el stack (proxy, frontend, backend, ia, postgres). El proyecto se nombra explícitamente `nutria` (campo `name:`) para que las imágenes y contenedores se llamen `nutria-frontend`, `nutria-backend`, `nutria-ia`, etc., en lugar de heredar el nombre de esta carpeta.
 
@@ -101,8 +102,10 @@ Para bajar el stack: `npm run docker:down` (equivalente a `docker compose down`)
 | `npm run dev` | `node --watch src/server.js` | Levanta el backend localmente, sin Docker. |
 | `npm run docker:up` | `docker compose up --build` | Levanta los cuatro servicios del stack. |
 | `npm run docker:down` | `docker compose down` | Detiene y elimina los contenedores del stack. |
-| `npm run migrate` | `node scripts/migrate.js` | Placeholder: aplicará el esquema de base de datos cuando se defina en el Incremento 2. |
-| `npm run seed` | `node scripts/seed.js` | Placeholder: cargará datos de referencia/ficticios cuando se defina el modelo de datos. |
+| `npm run migrate` | `prisma migrate dev` | Aplica el esquema de `prisma/schema.prisma` a la base de datos, creando una migración si hay cambios pendientes. Requiere Postgres corriendo (`docker compose up -d postgres`) y `DATABASE_URL` apuntando a `localhost:5433`. |
+| `npm run migrate:deploy` | `prisma migrate deploy` | Aplica migraciones ya generadas, sin crear nuevas (uso en CI/producción). |
+| `npm run seed` | `prisma db seed` | Ejecuta `scripts/seed.js`: crea un nutricionista y pacientes ficticios (uno menor de edad, uno con registro incompleto). |
+| `npm run studio` | `prisma studio` | Abre Prisma Studio para inspeccionar los datos. |
 
 ## Tecnologías previstas
 

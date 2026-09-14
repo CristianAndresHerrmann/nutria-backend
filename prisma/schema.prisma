@@ -1,0 +1,60 @@
+// Modelo lógico del Incremento 1 (T4).
+// Alcance: Nutritionist y Patient con sus campos base (RF-02, RF-03, RF-15, RF-17).
+// Las columnas clínicas y contextuales (RF-04 a RF-14) se agregan por migración en el Incremento 2.
+//
+// Convención de nombres: campos en camelCase (idiomático de Prisma/JS), mapeados con
+// @map a columnas snake_case en Postgres. Los datos que se cargan (seed y uso real)
+// permanecen en español; solo los identificadores de esquema están en inglés.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Nutritionist {
+  id           String @id @default(uuid()) @db.Uuid
+  name         String
+  email        String @unique
+  passwordHash String @map("password_hash")
+
+  patients Patient[]
+
+  @@map("nutritionist")
+}
+
+model Patient {
+  id             String       @id @default(uuid()) @db.Uuid
+  nutritionistId String       @map("nutritionist_id") @db.Uuid
+  nutritionist   Nutritionist @relation(fields: [nutritionistId], references: [id])
+
+  // Datos personales (RF-02)
+  firstName String    @map("first_name")
+  lastName  String    @map("last_name")
+  birthDate DateTime? @map("birth_date") @db.Date
+  phone     String?
+  email     String?
+  livesWith String?   @map("lives_with")
+
+  // Objetivo y referencia subjetiva (RF-03)
+  goal             String?
+  referenceWeight  Decimal? @map("reference_weight") @db.Decimal(5, 2)
+
+  // Adulto responsable, obligatorio en la aplicación cuando el paciente es menor (RF-17)
+  guardianName         String?  @map("guardian_name")
+  guardianRelationship String?  @map("guardian_relationship")
+  guardianContact      String?  @map("guardian_contact")
+  attendsAccompanied   Boolean? @map("attends_accompanied")
+
+  // Registro incompleto y su corrección (RF-15, RNF-03)
+  registrationComplete Boolean   @default(false) @map("registration_complete")
+  dataCompletedAt      DateTime? @map("data_completed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("patient")
+}

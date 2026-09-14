@@ -8,9 +8,14 @@
     "dev": "node --watch src/server.js",
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down",
-    "migrate": "node scripts/migrate.js",
-    "seed": "node scripts/seed.js",
+    "migrate": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
+    "seed": "prisma db seed",
+    "studio": "prisma studio",
     "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "prisma": {
+    "seed": "node scripts/seed.js"
   },
   "repository": {
     "type": "git",
@@ -25,6 +30,8 @@
   },
   "homepage": "https://github.com/CristianAndresHerrmann/nutria-backend#readme",
   "dependencies": {
-    "express": "^5.2.1"
+    "@prisma/client": "^6.19.3",
+    "express": "^5.2.1",
+    "prisma": "^6.19.3"
   }
 }
