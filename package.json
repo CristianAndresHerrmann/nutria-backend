@@ -5,7 +5,7 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
+    "dev": "node --watch --env-file=.env src/server.js",
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down",
     "migrate": "prisma migrate dev",
@@ -31,7 +31,10 @@
   "homepage": "https://github.com/CristianAndresHerrmann/nutria-backend#readme",
   "dependencies": {
     "@prisma/client": "^6.19.3",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
     "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
     "prisma": "^6.19.3"
   }
 }

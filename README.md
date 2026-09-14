@@ -42,7 +42,7 @@ cp ../nutria-frontend/.env.example ../nutria-frontend/.env
 cp ../nutria-ia/.env.example ../nutria-ia/.env
 ```
 
-Completar `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` y `JWT_SECRET` con valores propios del entorno local. Ninguno de los `.env` se versiona (están excluidos en el `.gitignore` de cada repo); solo se versiona el `.env.example` correspondiente.
+Completar `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` y `JWT_SECRET` con valores propios del entorno local. `CORS_ORIGIN` trae un valor por defecto (dominio de Docker Compose + puerto de Vite en local) que alcanza para desarrollo; solo hace falta tocarlo si el frontend corre en otro origen. Ninguno de los `.env` se versiona (están excluidos en el `.gitignore` de cada repo); solo se versiona el `.env.example` correspondiente.
 
 ## Cómo ejecutar (sin Docker)
 
@@ -106,6 +106,12 @@ Para bajar el stack: `npm run docker:down` (equivalente a `docker compose down`)
 | `npm run migrate:deploy` | `prisma migrate deploy` | Aplica migraciones ya generadas, sin crear nuevas (uso en CI/producción). |
 | `npm run seed` | `prisma db seed` | Ejecuta `scripts/seed.js`: crea un nutricionista y pacientes ficticios (uno menor de edad, uno con registro incompleto). |
 | `npm run studio` | `prisma studio` | Abre Prisma Studio para inspeccionar los datos. |
+
+## Autenticación (Incremento 1 — T5)
+
+- `POST /auth/login` — recibe `{ email, password }`, valida contra el hash bcrypt almacenado y devuelve `{ token, nutritionist }`. Credenciales inválidas (email inexistente o contraseña incorrecta) devuelven siempre `401` con el mismo mensaje genérico, sin revelar si el email existe.
+- El resto de los endpoints (por ahora `GET /patients` y `GET /patients/:id`) requieren `Authorization: Bearer <token>`. El middleware `requireAuth` verifica el JWT e inyecta `req.nutricionistaId`; toda consulta a pacientes filtra por ese id (nunca por un id recibido del cliente). Sin token: `401`. Token válido pero sobre un paciente de otro nutricionista: `404` (no se distingue de "no existe").
+- Alta de nutricionistas: solo por seed en este incremento (`npm run seed`, ver tabla de scripts). El panel de administración para registrarlos queda fuera de este incremento.
 
 ## Tecnologías previstas
 
