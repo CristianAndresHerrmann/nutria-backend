@@ -11,28 +11,37 @@ const DUMMY_HASH = '$2a$10$CwTycUXWue0Thq9StjUM0uJ8zpX5Ez.7Kz6R7qk1v6X6X6X6X6X6X
 
 const INVALID_CREDENTIALS_MESSAGE = 'Credenciales inválidas';
 
-async function login(email, password) {
-  const nutritionist = await nutritionistRepository.findByEmail(email);
-
-  const passwordHash = nutritionist ? nutritionist.passwordHash : DUMMY_HASH;
-  const passwordMatches = await bcrypt.compare(password, passwordHash);
-
-  if (!nutritionist || !passwordMatches) {
-    throw new AppError(401, INVALID_CREDENTIALS_MESSAGE);
-  }
-
-  const token = jwt.sign({ sub: nutritionist.id }, config.jwtSecret, {
-    expiresIn: config.jwtExpiresIn,
-  });
-
+function createAuthService({ nutritionistRepository: repository, jwtSecret, jwtExpiresIn }) {
   return {
-    token,
-    nutritionist: {
-      id: nutritionist.id,
-      name: nutritionist.name,
-      email: nutritionist.email,
+    async login(email, password) {
+      const nutritionist = await repository.findByEmail(email);
+
+      const passwordHash = nutritionist ? nutritionist.passwordHash : DUMMY_HASH;
+      const passwordMatches = await bcrypt.compare(password, passwordHash);
+
+      if (!nutritionist || !passwordMatches) {
+        throw new AppError(401, INVALID_CREDENTIALS_MESSAGE);
+      }
+
+      const token = jwt.sign({ sub: nutritionist.id }, jwtSecret, {
+        expiresIn: jwtExpiresIn,
+      });
+
+      return {
+        token,
+        nutritionist: {
+          id: nutritionist.id,
+          name: nutritionist.name,
+          email: nutritionist.email,
+        },
+      };
     },
   };
 }
 
-module.exports = { login };
+module.exports = createAuthService({
+  nutritionistRepository,
+  jwtSecret: config.jwtSecret,
+  jwtExpiresIn: config.jwtExpiresIn,
+});
+module.exports.createAuthService = createAuthService;
