@@ -97,6 +97,11 @@ Para bajar el stack: `npm run docker:down` (equivalente a `docker compose down`)
 
 ## Scripts disponibles
 
+> La forma oficial de correr tests, migraciones y seed es desde la raíz `nutria/`
+> con los comandos de su `README.md` (`npm run test:backend`, `npm run db:migrate`,
+> `npm run db:seed`, ...), que ejecutan estos mismos scripts dentro del contenedor.
+> Los de abajo quedan documentados para iterar en local.
+
 | Script | Comando | Descripción |
 |--------|---------|-------------|
 | `npm run dev` | `node --watch src/server.js` | Levanta el backend localmente, sin Docker. |
@@ -106,12 +111,15 @@ Para bajar el stack: `npm run docker:down` (equivalente a `docker compose down`)
 | `npm run migrate:deploy` | `prisma migrate deploy` | Aplica migraciones ya generadas, sin crear nuevas (uso en CI/producción). |
 | `npm run seed` | `prisma db seed` | Ejecuta `scripts/seed.js`: crea un nutricionista y pacientes ficticios (uno menor de edad, uno con registro incompleto). |
 | `npm run studio` | `prisma studio` | Abre Prisma Studio para inspeccionar los datos. |
+| `npm run test` | `vitest run` | Corre la suite de tests una vez. **No correrlo directo en el host:** la forma oficial es `npm run test:backend` desde la raíz `nutria/`, que lo ejecuta dentro del contenedor. |
+| `npm run test:watch` | `vitest` | Modo watch, para iterar mientras se escribe un test. |
+| `npm run test:coverage` | `vitest run --coverage` | Tests + reporte de cobertura (terminal, `coverage/index.html` y `coverage/lcov.info`). Forma oficial: `npm run test:backend:coverage` desde la raíz. |
 
-## Autenticación (Incremento 1 — T5)
+## Autenticación
 
-- `POST /auth/login` — recibe `{ email, password }`, valida contra el hash bcrypt almacenado y devuelve `{ token, nutritionist }`. Credenciales inválidas (email inexistente o contraseña incorrecta) devuelven siempre `401` con el mismo mensaje genérico, sin revelar si el email existe.
-- El resto de los endpoints (por ahora `GET /patients` y `GET /patients/:id`) requieren `Authorization: Bearer <token>`. El middleware `requireAuth` verifica el JWT e inyecta `req.nutricionistaId`; toda consulta a pacientes filtra por ese id (nunca por un id recibido del cliente). Sin token: `401`. Token válido pero sobre un paciente de otro nutricionista: `404` (no se distingue de "no existe").
-- Alta de nutricionistas: solo por seed en este incremento (`npm run seed`, ver tabla de scripts). El panel de administración para registrarlos queda fuera de este incremento.
+- `POST /auth/login` — recibe `{ email, password }`, devuelve `{ token, nutritionist }`. Credenciales inválidas devuelven siempre `401` con el mismo mensaje genérico, sin revelar si el email existe.
+- El resto de los endpoints requieren `Authorization: Bearer <token>`. El middleware `requireAuth` inyecta `req.nutricionistaId` a partir del token; toda consulta a pacientes filtra por ese id. Sin token: `401`. Paciente de otro nutricionista: `404`.
+- Alta de nutricionistas: solo por seed (`npm run seed`, ver tabla de scripts) — no hay panel de administración todavía.
 
 ## Tecnologías previstas
 
