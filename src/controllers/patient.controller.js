@@ -1,11 +1,8 @@
-const patientRepository = require('../repositories/patient.repository');
-const AppError = require('../utils/AppError');
-
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const patientService = require('../services/patient.service');
 
 async function getPatients(req, res, next) {
   try {
-    const patients = await patientRepository.findAllByNutritionist(req.nutricionistaId);
+    const patients = await patientService.listForNutritionist(req.nutricionistaId);
     res.status(200).json(patients);
   } catch (error) {
     next(error);
@@ -14,19 +11,7 @@ async function getPatients(req, res, next) {
 
 async function getPatientById(req, res, next) {
   try {
-    if (!UUID_REGEX.test(req.params.id)) {
-      throw new AppError(404, 'Not found');
-    }
-
-    const patient = await patientRepository.findByIdForNutritionist(
-      req.params.id,
-      req.nutricionistaId,
-    );
-
-    if (!patient) {
-      throw new AppError(404, 'Not found');
-    }
-
+    const patient = await patientService.getForNutritionist(req.params.id, req.nutricionistaId);
     res.status(200).json(patient);
   } catch (error) {
     next(error);
