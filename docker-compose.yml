@@ -34,8 +34,10 @@ services:
       # servicio "postgres" en lugar del localhost:5433 que define .env para uso local.
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     depends_on:
-      - postgres
-      - ia
+      postgres:
+        condition: service_healthy
+      ia:
+        condition: service_started
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.backend.rule=Host(`api.local.nutria.com`)"
@@ -63,6 +65,26 @@ services:
       - "5433:5432"
     volumes:
       - nutria_postgres_data:/var/lib/postgresql/data
+    # Permite `up --wait postgres` y `depends_on: condition: service_healthy`:
+    # sin esto, una migración o seed lanzados con la base recién arrancada fallan
+    # con "Can't reach database server".
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  # Cliente psql contra la base del stack (`npm run db:shell` desde la raíz).
+  # `profiles` evita que levante con `up`.
+  psql:
+    image: pgvector/pgvector:pg16
+    profiles: [tools]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    command: psql -h postgres -U ${POSTGRES_USER} -d ${POSTGRES_DB}
 
 volumes:
   nutria_postgres_data:
