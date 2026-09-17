@@ -1,6 +1,12 @@
 # nutria-backend
 
-Backend principal de **NutrIA**. Implementado en Node.js + Express, expone la API REST del sistema y concentra la autenticación, la gestión de pacientes y consultas, el motor determinístico de validación de reglas clínicas, la generación de documentos PDF y la coordinación con el servicio de inteligencia artificial (`nutria-ia`).
+Backend principal de **NutrIA**: API REST en Node.js + Express con Prisma sobre
+PostgreSQL. Es el repo donde viven la lógica de negocio y el motor determinístico
+de reglas clínicas, y además contiene el `docker-compose.yml` que levanta el stack
+completo del proyecto.
+
+Qué hace cada endpoint y qué cambió en cada iteración se documenta en
+[`CHANGELOG.md`](CHANGELOG.md), no acá.
 
 ## Estructura de carpetas raíz del proyecto
 
@@ -22,12 +28,14 @@ Organizado por capas:
 - `src/routes/` — definición de endpoints y su mapeo a controladores.
 - `src/controllers/` — reciben la request y delegan en los servicios.
 - `src/services/` — lógica de negocio.
-- `src/repositories/` — acceso a datos (placeholder hasta integrar la base de datos).
-- `src/middlewares/` — manejo de errores, 404, y middlewares transversales.
-- `src/config/` — configuración y variables de entorno.
+- `src/repositories/` — acceso a datos vía Prisma.
+- `src/schemas/` — schemas Zod de validación de entrada.
+- `src/serializers/` — forma de las respuestas de la API.
+- `src/middlewares/` — autenticación, manejo de errores, 404 y demás transversales.
+- `src/lib/`, `src/utils/`, `src/config/` — cliente de Prisma, helpers y configuración/variables de entorno.
 - `src/app.js` — configuración de la app de Express (middlewares y rutas).
 - `src/server.js` — punto de entrada, levanta el servidor HTTP.
-- `prisma/schema.prisma` — modelo de datos (Prisma) y `prisma/migrations/` — historial de migraciones generado por el CLI.
+- `prisma/schema.prisma` — modelo de datos, y `prisma/migrations/` — historial de migraciones generado por el CLI.
 - `scripts/seed.js` — carga de datos ficticios ejecutada por `prisma db seed`.
 - `Dockerfile` — imagen del backend.
 - `docker-compose.yml` — orquesta el stack (proxy, frontend, backend, ia, postgres). El proyecto se nombra explícitamente `nutria` (campo `name:`) para que las imágenes y contenedores se llamen `nutria-frontend`, `nutria-backend`, `nutria-ia`, etc., en lugar de heredar el nombre de esta carpeta.
@@ -43,6 +51,10 @@ cp ../nutria-ia/.env.example ../nutria-ia/.env
 ```
 
 Completar `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` y `JWT_SECRET` con valores propios del entorno local. `CORS_ORIGIN` trae un valor por defecto (dominio de Docker Compose + puerto de Vite en local) que alcanza para desarrollo; solo hace falta tocarlo si el frontend corre en otro origen. Ninguno de los `.env` se versiona (están excluidos en el `.gitignore` de cada repo); solo se versiona el `.env.example` correspondiente.
+
+No hay alta de usuarios por interfaz: el único nutricionista disponible en local es
+el que crea el seed, y sus credenciales viven en `scripts/seed.js` (no se
+documentan acá ni en el changelog).
 
 ## Cómo ejecutar (sin Docker)
 
@@ -97,34 +109,56 @@ Para bajar el stack: `npm run docker:down` (equivalente a `docker compose down`)
 
 ## Scripts disponibles
 
-> La forma oficial de correr tests, migraciones y seed es desde la raíz `nutria/`
-> con los comandos de su `README.md` (`npm run test:backend`, `npm run db:migrate`,
-> `npm run db:seed`, ...), que ejecutan estos mismos scripts dentro del contenedor.
-> Los de abajo quedan documentados para iterar en local.
-
 | Script | Comando | Descripción |
 |--------|---------|-------------|
 | `npm run dev` | `node --watch src/server.js` | Levanta el backend localmente, sin Docker. |
-| `npm run docker:up` | `docker compose up --build` | Levanta los cuatro servicios del stack. |
+| `npm run start` | `node src/server.js` | Arranca el server sin watch (es lo que corre en el contenedor). |
+| `npm run docker:up` | `docker compose up --build` | Levanta el stack completo. |
 | `npm run docker:down` | `docker compose down` | Detiene y elimina los contenedores del stack. |
-| `npm run migrate` | `prisma migrate dev` | Aplica el esquema de `prisma/schema.prisma` a la base de datos, creando una migración si hay cambios pendientes. Requiere Postgres corriendo (`docker compose up -d postgres`) y `DATABASE_URL` apuntando a `localhost:5433`. |
+| `npm run migrate` | `prisma migrate dev` | Aplica `prisma/schema.prisma` a la base, creando una migración si hay cambios pendientes. Requiere Postgres corriendo (`docker compose up -d postgres`) y `DATABASE_URL` apuntando a `localhost:5433`. |
 | `npm run migrate:deploy` | `prisma migrate deploy` | Aplica migraciones ya generadas, sin crear nuevas (uso en CI/producción). |
-| `npm run seed` | `prisma db seed` | Ejecuta `scripts/seed.js`: crea un nutricionista y pacientes ficticios (uno menor de edad, uno con registro incompleto). |
+| `npm run seed` | `prisma db seed` | Ejecuta `scripts/seed.js` (datos ficticios). |
 | `npm run studio` | `prisma studio` | Abre Prisma Studio para inspeccionar los datos. |
-| `npm run test` | `vitest run` | Corre la suite de tests una vez. **No correrlo directo en el host:** la forma oficial es `npm run test:backend` desde la raíz `nutria/`, que lo ejecuta dentro del contenedor. |
+| `npm run test` | `vitest run` | Corre la suite de tests una vez. |
 | `npm run test:watch` | `vitest` | Modo watch, para iterar mientras se escribe un test. |
-| `npm run test:coverage` | `vitest run --coverage` | Tests + reporte de cobertura (terminal, `coverage/index.html` y `coverage/lcov.info`). Forma oficial: `npm run test:backend:coverage` desde la raíz. |
+| `npm run test:coverage` | `vitest run --coverage` | Tests + reporte de cobertura (terminal, `coverage/index.html` y `coverage/lcov.info`). |
 
-## Autenticación
+### Correrlos dentro del contenedor
 
-- `POST /auth/login` — recibe `{ email, password }`, devuelve `{ token, nutritionist }`. Credenciales inválidas devuelven siempre `401` con el mismo mensaje genérico, sin revelar si el email existe.
-- El resto de los endpoints requieren `Authorization: Bearer <token>`. El middleware `requireAuth` inyecta `req.nutricionistaId` a partir del token; toda consulta a pacientes filtra por ese id. Sin token: `401`. Paciente de otro nutricionista: `404`.
-- Alta de nutricionistas: solo por seed (`npm run seed`, ver tabla de scripts) — no hay panel de administración todavía.
+Invocados con el Node del host, los scripts de arriba sirven para iterar. La
+ejecución que vale como verificación es la que corre dentro del contenedor, con
+los mismos scripts lanzados por Compose. `--build` rebuildea con cache antes de
+ejecutar, así que un test o un cambio de código nuevo se toma sin ningún paso
+manual previo:
 
-## Tecnologías previstas
+```bash
+# Tests
+docker compose run --build --rm --no-deps backend npm run test
+
+# Tests + cobertura (el -v deja el reporte en ./coverage del host)
+docker compose run --build --rm --no-deps -v ./coverage:/app/coverage backend npm run test:coverage
+
+# Migraciones: aplicar las pendientes
+docker compose up -d --wait postgres
+docker compose run --build --rm --no-deps backend npx prisma migrate deploy
+
+# Migraciones: generar una nueva (el -v deja el archivo generado en ./prisma del host)
+docker compose run --build --rm --no-deps -v ./prisma:/app/prisma backend npx prisma migrate dev --name <verbo_entidad_cambio>
+
+# Seed
+docker compose run --build --rm --no-deps backend npm run seed
+```
+
+`docker compose up` deja además las migraciones al día por sí solo: el `CMD` de la
+imagen del backend corre `prisma migrate deploy` antes de levantar el server, así
+que un pull que trae una migración nueva no necesita ningún paso aparte.
+
+## Stack
 
 - Node.js + Express
-- PostgreSQL
+- Prisma
+- PostgreSQL (`pgvector/pgvector:pg16`)
+- Vitest
 - Docker / Docker Compose
 
 ## Repositorios relacionados
