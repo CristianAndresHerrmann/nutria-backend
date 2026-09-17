@@ -1,16 +1,20 @@
 const { PrismaClient } = require('@prisma/client');
+const bcrypt = require('bcryptjs');
 
 const prisma = new PrismaClient();
 
+const SEED_PASSWORD = '123456aA!';
+
 async function main() {
+  const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
+
   const nutritionist = await prisma.nutritionist.upsert({
-    where: { email: 'camila.rios@nutria.test' },
-    update: {},
+    where: { email: 'nutricionista@nutria.com' },
+    update: { passwordHash },
     create: {
       name: 'Camila Ríos',
-      email: 'camila.rios@nutria.test',
-      // Placeholder: el hash real se generará cuando se implemente el módulo de autenticación.
-      passwordHash: 'seed-placeholder-hash',
+      email: 'nutricionista@nutria.com',
+      passwordHash,
     },
   });
 
@@ -59,6 +63,7 @@ async function main() {
   });
 
   console.log('Seed completado: 1 nutritionist, 3 patients (1 menor de edad, 1 con registro incompleto).');
+  console.log(`Login de prueba: ${nutritionist.email} / ${SEED_PASSWORD}`);
 }
 
 main()
