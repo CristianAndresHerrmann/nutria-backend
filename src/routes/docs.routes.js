@@ -25,11 +25,14 @@ const uiOptions = {
 };
 
 const IA_SPEC_TIMEOUT_MS = 3000;
+const IA_REQUEST_TIMEOUT_MS = 30000;
+const IA_FORWARD_PREFIX = '/docs/ia';
 
-// El spec de IA lo pide el backend y no el navegador por tres razones: queda en el
-// mismo origen que la UI, permite inyectarle el `servers` que FastAPI no emite, y
-// es el único camino que sigue funcionando en el Incremento 3, donde el servicio de
-// IA se despliega privado y solo el backend puede alcanzarlo.
+// Tanto el spec de IA como las llamadas que se disparan desde la UI pasan por el
+// backend. Así nada cruza orígenes y el servicio de IA no necesita saber que esta
+// documentación existe: no lleva CORS ni ninguna config para el navegador, porque
+// ningún navegador lo llama. Es además el único camino que sobrevive al Incremento
+// 3, donde el servicio de IA se despliega privado y solo el backend lo alcanza.
 async function getIaSpec(req, res, next) {
   try {
     const response = await fetch(`${config.iaServiceUrl}/openapi.json`, {
@@ -42,10 +45,11 @@ async function getIaSpec(req, res, next) {
 
     const spec = await response.json();
 
-    // FastAPI no declara `servers`. Sin este campo Swagger UI toma el origen de la
-    // página como base y "Try it out" de IA terminaría pegándole al backend, que
-    // tiene su propio /health y devolvería 200 con los datos equivocados.
-    spec.servers = [{ url: config.iaPublicUrl, description: 'Servicio de IA (Traefik)' }];
+    // FastAPI no declara `servers`, así que sin este campo Swagger UI usaría el
+    // origen de la página como base y las llamadas de IA le pegarían al backend,
+    // que tiene su propio /health y devolvería 200 con los datos equivocados.
+    // Apunta al reenvío de acá abajo, relativo para no acoplar el spec a un dominio.
+    spec.servers = [{ url: IA_FORWARD_PREFIX, description: 'A través del backend' }];
 
     res.json(spec);
   } catch (error) {
@@ -54,10 +58,36 @@ async function getIaSpec(req, res, next) {
   }
 }
 
+// Reenvía al servicio de IA lo que la UI dispara con "Try it out". Existe solo en
+// desarrollo, porque todo este router se monta únicamente cuando NODE_ENV no es
+// production: no es una vía de acceso al servicio de IA en un entorno desplegado.
+async function forwardToIa(req, res, next) {
+  const hasBody = !['GET', 'HEAD'].includes(req.method);
+
+  try {
+    const response = await fetch(`${config.iaServiceUrl}${req.url}`, {
+      method: req.method,
+      headers: hasBody ? { 'content-type': 'application/json' } : undefined,
+      body: hasBody ? JSON.stringify(req.body ?? {}) : undefined,
+      signal: AbortSignal.timeout(IA_REQUEST_TIMEOUT_MS),
+    });
+
+    // El cuerpo se reenvía tal cual, sin parsearlo: un error de validación de
+    // FastAPI tiene que llegar a la UI con su forma original, no convertido al
+    // formato de error del backend.
+    res.status(response.status);
+    res.set('content-type', response.headers.get('content-type') || 'application/json');
+    res.send(Buffer.from(await response.arrayBuffer()));
+  } catch (error) {
+    next(new AppError(502, 'No se pudo alcanzar el servicio de IA'));
+  }
+}
+
 // Las rutas de spec se registran antes del montaje de la UI: `router.use('/docs')`
 // matchea todo lo que cuelgue de /docs y se quedaría con /docs/ia.json.
 router.get('/docs.json', (req, res) => res.json(openapiSpec));
 router.get('/docs/ia.json', getIaSpec);
+router.use(IA_FORWARD_PREFIX, forwardToIa);
 
 // serveFiles y no serve: con varias definiciones hay que pasarle las opciones
 // también al middleware de estáticos, o el selector no aparece.
@@ -65,4 +95,5 @@ router.use('/docs', swaggerUi.serveFiles(null, uiOptions), swaggerUi.setup(null,
 
 module.exports = router;
 module.exports.getIaSpec = getIaSpec;
+module.exports.forwardToIa = forwardToIa;
 module.exports.uiOptions = uiOptions;

@@ -24,7 +24,14 @@ const openapiSpec = swaggerJsdoc({
         'Los errores usan un formato uniforme `{ error, fields? }`, donde `fields` mapea cada ' +
         'campo inválido a su mensaje y solo aparece en errores de validación.',
     },
+    // El primero es relativo a propósito: hace que "Try it out" salga contra el
+    // mismo origen que sirve esta página, así no cruza orígenes y no hace falta
+    // sumar el dominio de la documentación al CORS. Funciona igual abriendo la UI
+    // en swagger.local.nutria.com o en api.local.nutria.com, que son el mismo
+    // contenedor. Los absolutos quedan como referencia para quien lea el spec
+    // fuera de la UI.
     servers: [
+      { url: '/', description: 'El mismo origen que sirve esta documentación' },
       { url: 'http://api.local.nutria.com', description: 'Stack local (Traefik)' },
       { url: 'http://localhost:3000', description: 'Backend sin proxy' },
     ],
