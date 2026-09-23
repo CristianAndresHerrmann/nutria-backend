@@ -5,8 +5,10 @@ PostgreSQL. Es el repo donde viven la lógica de negocio y el motor determiníst
 de reglas clínicas, y además contiene el `docker-compose.yml` que levanta el stack
 completo del proyecto.
 
-Qué hace cada endpoint y qué cambió en cada iteración se documenta en
-[`CHANGELOG.md`](CHANGELOG.md), no acá.
+El contrato de la API (endpoints, parámetros, formas de request y respuesta) se
+consulta en la documentación interactiva: http://swagger.local.nutria.com con el
+stack levantado. Qué cambió en cada iteración se registra en
+[`CHANGELOG.md`](CHANGELOG.md). Ninguna de las dos cosas va en este README.
 
 ## Estructura de carpetas raíz del proyecto
 
@@ -32,6 +34,7 @@ Organizado por capas:
 - `src/schemas/` — schemas Zod de validación de entrada.
 - `src/serializers/` — forma de las respuestas de la API.
 - `src/middlewares/` — autenticación, manejo de errores, 404 y demás transversales.
+- `src/docs/` — spec OpenAPI: se genera con `swagger-jsdoc` a partir de los bloques `@openapi` de `src/routes/`, más los componentes reutilizables (schemas, respuestas de error, esquema de seguridad).
 - `src/lib/`, `src/utils/`, `src/config/` — cliente de Prisma, helpers y configuración/variables de entorno.
 - `src/app.js` — configuración de la app de Express (middlewares y rutas).
 - `src/server.js` — punto de entrada, levanta el servidor HTTP.
@@ -50,7 +53,7 @@ cp ../nutria-frontend/.env.example ../nutria-frontend/.env
 cp ../nutria-ia/.env.example ../nutria-ia/.env
 ```
 
-Completar `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` y `JWT_SECRET` con valores propios del entorno local. `CORS_ORIGIN` trae un valor por defecto (dominio de Docker Compose + puerto de Vite en local) que alcanza para desarrollo; solo hace falta tocarlo si el frontend corre en otro origen. Ninguno de los `.env` se versiona (están excluidos en el `.gitignore` de cada repo); solo se versiona el `.env.example` correspondiente.
+Completar `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` y `JWT_SECRET` con valores propios del entorno local. `CORS_ORIGIN` trae un valor por defecto (dominio de Docker Compose, puerto de Vite en local y dominio de la documentación interactiva) que alcanza para desarrollo; solo hace falta tocarlo si el frontend corre en otro origen. `IA_SERVICE_URL` e `IA_PUBLIC_URL` apuntan al mismo servicio de IA por dos caminos distintos: la primera es el hostname interno de Docker con el que lo alcanza el backend, la segunda es el dominio con el que lo alcanza el navegador. Ninguno de los `.env` se versiona (están excluidos en el `.gitignore` de cada repo); solo se versiona el `.env.example` correspondiente.
 
 No hay alta de usuarios por interfaz: el único nutricionista disponible en local es
 el que crea el seed, y sus credenciales viven en `scripts/seed.js` (no se
@@ -84,14 +87,15 @@ Esto levanta cinco servicios: `proxy` (Traefik), `frontend`, `backend`, `ia` y `
 |------------|-------------------------|-------------|
 | `frontend` | http://local.nutria.com     | React + Vite |
 | `backend`  | http://api.local.nutria.com | API principal (este repo) |
-| `ia`       | http://ia.local.nutria.com  | Servicio de IA (`/docs` para Swagger) |
+| `ia`       | http://ia.local.nutria.com  | Servicio de IA (`/docs` para su Swagger propio, generado por FastAPI) |
+| documentación | http://swagger.local.nutria.com | Swagger UI con los endpoints del `backend` y los del `ia` en un mismo lugar, con un selector arriba a la derecha para cambiar de servicio. La sirve el contenedor del `backend`, no es un servicio aparte, y no se monta cuando `NODE_ENV=production`. |
 | `postgres` | localhost:5433 → 5432 en el contenedor | Imagen `pgvector/pgvector:pg16` (Postgres estándar; la extensión pgvector queda disponible pero no se activa en este incremento). No pasa por el proxy porque no es HTTP. |
 
 > El puerto host de `postgres` se publica en **5433** (no 5432) para no chocar con una instalación local de Postgres que ya pudiera estar corriendo en la máquina. La comunicación entre contenedores (`backend` → `postgres`) sigue usando el puerto interno 5432 y no se ve afectada.
 
 ### Configurar los virtual hosts
 
-Los dominios `local.nutria.com`, `api.local.nutria.com` e `ia.local.nutria.com` no existen en DNS público: hay que resolverlos a `127.0.0.1` a mano, una sola vez por máquina de desarrollo.
+Los dominios `local.nutria.com`, `api.local.nutria.com`, `ia.local.nutria.com` y `swagger.local.nutria.com` no existen en DNS público: hay que resolverlos a `127.0.0.1` a mano, una sola vez por máquina de desarrollo.
 
 **Windows** — editar `C:\Windows\System32\drivers\etc\hosts` con un editor abierto como administrador y agregar:
 
@@ -99,6 +103,7 @@ Los dominios `local.nutria.com`, `api.local.nutria.com` e `ia.local.nutria.com` 
 127.0.0.1 local.nutria.com
 127.0.0.1 api.local.nutria.com
 127.0.0.1 ia.local.nutria.com
+127.0.0.1 swagger.local.nutria.com
 ```
 
 **Linux/macOS** — agregar las mismas líneas a `/etc/hosts` (`sudo nano /etc/hosts`).

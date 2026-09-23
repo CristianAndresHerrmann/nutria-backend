@@ -42,6 +42,16 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.backend.rule=Host(`api.local.nutria.com`)"
       - "traefik.http.services.backend.loadbalancer.server.port=3000"
+      # Documentación unificada de la API: mismo contenedor que el backend, otro
+      # host. El redirect manda la raíz del dominio a /docs, así el host de
+      # documentación no arranca con el 404 de una ruta de API inexistente.
+      # Los escapes no son opcionales: \\. porque la label es un string de YAML,
+      # y $$ porque Compose interpreta un $ suelto como interpolación.
+      - "traefik.http.routers.swagger.rule=Host(`swagger.local.nutria.com`)"
+      - "traefik.http.routers.swagger.service=backend"
+      - "traefik.http.routers.swagger.middlewares=swagger-root"
+      - "traefik.http.middlewares.swagger-root.redirectregex.regex=^http://swagger\\.local\\.nutria\\.com/?$$"
+      - "traefik.http.middlewares.swagger-root.redirectregex.replacement=http://swagger.local.nutria.com/docs"
 
   ia:
     build:
