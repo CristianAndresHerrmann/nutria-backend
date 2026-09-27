@@ -3,6 +3,8 @@ const AppError = require('../utils/AppError');
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const PATIENT_NOT_FOUND_MESSAGE = 'Paciente no encontrado';
+
 function createPatientService({ patientRepository: repository }) {
   return {
     async listForNutritionist(nutritionistId) {
@@ -14,13 +16,13 @@ function createPatientService({ patientRepository: repository }) {
     // cliente distinga "no existe" de "es de otro nutricionista".
     async getForNutritionist(id, nutritionistId) {
       if (!UUID_REGEX.test(id)) {
-        throw new AppError(404, 'Not found');
+        throw new AppError(404, PATIENT_NOT_FOUND_MESSAGE);
       }
 
       const patient = await repository.findByIdForNutritionist(id, nutritionistId);
 
       if (!patient) {
-        throw new AppError(404, 'Not found');
+        throw new AppError(404, PATIENT_NOT_FOUND_MESSAGE);
       }
 
       return patient;
@@ -36,13 +38,13 @@ function createPatientService({ patientRepository: repository }) {
     // reflejo del estado actual del checkbox.
     async updateForNutritionist(id, nutritionistId, data) {
       if (!UUID_REGEX.test(id)) {
-        throw new AppError(404, 'Not found');
+        throw new AppError(404, PATIENT_NOT_FOUND_MESSAGE);
       }
 
       const existing = await repository.findByIdForNutritionist(id, nutritionistId);
 
       if (!existing) {
-        throw new AppError(404, 'Not found');
+        throw new AppError(404, PATIENT_NOT_FOUND_MESSAGE);
       }
 
       const becomingComplete = data.registrationComplete && !existing.registrationComplete;
@@ -54,7 +56,7 @@ function createPatientService({ patientRepository: repository }) {
       });
 
       if (!updated) {
-        throw new AppError(404, 'Not found');
+        throw new AppError(404, PATIENT_NOT_FOUND_MESSAGE);
       }
 
       return updated;
@@ -64,3 +66,4 @@ function createPatientService({ patientRepository: repository }) {
 
 module.exports = createPatientService({ patientRepository });
 module.exports.createPatientService = createPatientService;
+module.exports.PATIENT_NOT_FOUND_MESSAGE = PATIENT_NOT_FOUND_MESSAGE;

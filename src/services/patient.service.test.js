@@ -44,7 +44,7 @@ describe('patient.service — aislamiento por nutricionista', () => {
 
     await expect(service.getForNutritionist(patients[1].id, 'nutri-1')).rejects.toMatchObject({
       status: 404,
-      message: 'Not found',
+      message: 'Paciente no encontrado',
     });
   });
 
@@ -53,7 +53,7 @@ describe('patient.service — aislamiento por nutricionista', () => {
 
     await expect(service.getForNutritionist('no-es-un-uuid', 'nutri-1')).rejects.toMatchObject({
       status: 404,
-      message: 'Not found',
+      message: 'Paciente no encontrado',
     });
   });
 });
@@ -124,7 +124,7 @@ describe('patient.service — alta y edición', () => {
 
     await expect(
       service.updateForNutritionist(existing.id, 'nutri-1', { firstName: 'Hackeado', registrationComplete: false }),
-    ).rejects.toMatchObject({ status: 404, message: 'Not found' });
+    ).rejects.toMatchObject({ status: 404, message: 'Paciente no encontrado' });
   });
 
   it('devuelve 404 al editar con un id de formato inválido', async () => {

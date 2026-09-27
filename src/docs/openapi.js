@@ -21,8 +21,10 @@ const openapiSpec = swaggerJsdoc({
         'API REST de NutrIA: autenticación del nutricionista y gestión de sus pacientes.\n\n' +
         'Todo acceso a datos de paciente se filtra por el nutricionista del token. El ' +
         '`nutritionistId` nunca se lee del cliente ni viaja en las respuestas.\n\n' +
-        'Los errores usan un formato uniforme `{ error, fields? }`, donde `fields` mapea cada ' +
-        'campo inválido a su mensaje y solo aparece en errores de validación.',
+        'Todo error usa el formato uniforme `{ error: { code, message, details? } }`: `code` es ' +
+        'estable, `message` se puede mostrar al usuario y, en errores de validación, ' +
+        '`details.fields` mapea cada campo inválido a su mensaje. Ninguna respuesta de error ' +
+        'expone el stack ni el mensaje interno de un error inesperado.',
     },
     // El primero es relativo a propósito: hace que "Try it out" salga contra el
     // mismo origen que sirve esta página, así no cruza orígenes y no hace falta
@@ -36,7 +38,7 @@ const openapiSpec = swaggerJsdoc({
       { url: 'http://localhost:3000', description: 'Backend sin proxy' },
     ],
     tags: [
-      { name: 'Salud', description: 'Verificación de que el servicio responde.' },
+      { name: 'Salud', description: 'Verificación de que el backend responde y de que alcanza al servicio de IA.' },
       { name: 'Autenticación', description: 'Login del nutricionista y emisión del JWT.' },
       { name: 'Pacientes', description: 'Alta, edición y consulta de los pacientes del nutricionista autenticado.' },
     ],

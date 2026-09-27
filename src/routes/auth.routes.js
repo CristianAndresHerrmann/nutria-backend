@@ -1,5 +1,8 @@
 const { Router } = require('express');
 const authController = require('../controllers/auth.controller');
+const validate = require('../middlewares/validate');
+const { emptyQuerySchema } = require('../schemas/common.schema');
+const { loginSchema } = require('../schemas/auth.schema');
 
 const router = Router();
 
@@ -24,15 +27,7 @@ const router = Router();
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/LoginResponse' }
- *       '400':
- *         description: >
- *           Falta el email o la contraseña, o el email no tiene formato válido.
- *           A diferencia de los errores de validación de pacientes, este no trae
- *           `fields`.
- *         content:
- *           application/json:
- *             schema: { $ref: '#/components/schemas/Error' }
- *             example: { error: 'Email y contraseña son requeridos' }
+ *       '400': { $ref: '#/components/responses/ValidationError' }
  *       '401':
  *         description: >
  *           Credenciales inválidas. Es la misma respuesta si el email no existe y
@@ -41,8 +36,9 @@ const router = Router();
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/Error' }
- *             example: { error: 'Credenciales inválidas' }
+ *             example: { error: { code: 'UNAUTHORIZED', message: 'Credenciales inválidas' } }
+ *       '500': { $ref: '#/components/responses/InternalError' }
  */
-router.post('/auth/login', authController.postLogin);
+router.post('/auth/login', validate({ query: emptyQuerySchema, body: loginSchema }), authController.postLogin);
 
 module.exports = router;
