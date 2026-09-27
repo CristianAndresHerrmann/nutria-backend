@@ -84,6 +84,42 @@ services:
       timeout: 3s
       retries: 15
 
+  # pgAdmin 4 en modo escritorio (sin login ni contraseña maestra), con el servidor
+  # del stack ya registrado. servers.json no interpola variables de entorno, así que
+  # el entrypoint lo genera — junto con el pgpass — a partir de las mismas
+  # credenciales de .env antes de arrancar pgAdmin. Sin volumen a propósito:
+  # pgAdmin importa servers.json solo con su base interna vacía, y así lo reimporta
+  # en cada arranque y queda siempre alineado con .env.
+  pgadmin:
+    image: dpage/pgadmin4:9
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Los exige el entrypoint de la imagen aunque en modo escritorio no se usen.
+      # ".local" es un TLD "special-use" (RFC 6761): el validador de email de
+      # pgAdmin lo rechaza aunque CHECK_EMAIL_DELIVERABILITY esté en False.
+      PGADMIN_DEFAULT_EMAIL: dev@nutria.com
+      PGADMIN_DEFAULT_PASSWORD: nutria
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+      PGADMIN_SERVER_JSON_FILE: /tmp/servers.json
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        printf '{"Servers":{"1":{"Name":"NutrIA (local)","Group":"Servers","Host":"postgres","Port":5432,"MaintenanceDB":"%s","Username":"%s","SSLMode":"prefer","PassFile":"/tmp/pgpass"}}}' "$$POSTGRES_DB" "$$POSTGRES_USER" > /tmp/servers.json
+        printf 'postgres:5432:*:%s:%s\n' "$$POSTGRES_USER" "$$POSTGRES_PASSWORD" > /tmp/pgpass
+        chmod 600 /tmp/pgpass
+        exec /entrypoint.sh
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pgadmin.rule=Host(`db.local.nutria.com`)"
+      - "traefik.http.services.pgadmin.loadbalancer.server.port=80"
+
   # Cliente psql contra la base del stack (`npm run db:shell` desde la raíz).
   # `profiles` evita que levante con `up`.
   psql:

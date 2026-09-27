@@ -81,7 +81,7 @@ npm run docker:up
 # equivalente a: docker compose up --build
 ```
 
-Esto levanta cinco servicios: `proxy` (Traefik), `frontend`, `backend`, `ia` y `postgres`. El proxy resuelve peticiones por nombre de dominio en lugar de exponer un puerto distinto por servicio.
+Esto levanta seis servicios: `proxy` (Traefik), `frontend`, `backend`, `ia`, `postgres` y `pgadmin`. El proxy resuelve peticiones por nombre de dominio en lugar de exponer un puerto distinto por servicio.
 
 | Servicio   | Acceso                  | Descripción |
 |------------|-------------------------|-------------|
@@ -90,12 +90,13 @@ Esto levanta cinco servicios: `proxy` (Traefik), `frontend`, `backend`, `ia` y `
 | `ia`       | http://ia.local.nutria.com  | Servicio de IA (`/docs` para su Swagger propio, generado por FastAPI) |
 | documentación | http://swagger.local.nutria.com | Swagger UI con los endpoints del `backend` y los del `ia` en un mismo lugar, con un selector arriba a la derecha para cambiar de servicio. La sirve el contenedor del `backend`, no es un servicio aparte, y no se monta cuando `NODE_ENV=production`. |
 | `postgres` | localhost:5433 → 5432 en el contenedor | Imagen `pgvector/pgvector:pg16` (Postgres estándar; la extensión pgvector queda disponible pero no se activa en este incremento). No pasa por el proxy porque no es HTTP. |
+| `pgadmin`  | http://db.local.nutria.com  | pgAdmin 4, sin login, con el servidor `NutrIA (local)` ya registrado a partir de las credenciales de `.env`. |
 
 > El puerto host de `postgres` se publica en **5433** (no 5432) para no chocar con una instalación local de Postgres que ya pudiera estar corriendo en la máquina. La comunicación entre contenedores (`backend` → `postgres`) sigue usando el puerto interno 5432 y no se ve afectada.
 
 ### Configurar los virtual hosts
 
-Los dominios `local.nutria.com`, `api.local.nutria.com`, `ia.local.nutria.com` y `swagger.local.nutria.com` no existen en DNS público: hay que resolverlos a `127.0.0.1` a mano, una sola vez por máquina de desarrollo.
+Los dominios `local.nutria.com`, `api.local.nutria.com`, `ia.local.nutria.com`, `swagger.local.nutria.com` y `db.local.nutria.com` no existen en DNS público: hay que resolverlos a `127.0.0.1` a mano, una sola vez por máquina de desarrollo.
 
 **Windows** — editar `C:\Windows\System32\drivers\etc\hosts` con un editor abierto como administrador y agregar:
 
@@ -104,6 +105,7 @@ Los dominios `local.nutria.com`, `api.local.nutria.com`, `ia.local.nutria.com` y
 127.0.0.1 api.local.nutria.com
 127.0.0.1 ia.local.nutria.com
 127.0.0.1 swagger.local.nutria.com
+127.0.0.1 db.local.nutria.com
 ```
 
 **Linux/macOS** — agregar las mismas líneas a `/etc/hosts` (`sudo nano /etc/hosts`).
