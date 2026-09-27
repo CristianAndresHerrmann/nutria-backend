@@ -6,6 +6,9 @@ const config = {
   // Hostname interno de Docker: el navegador nunca lo usa. Todo lo que la
   // documentación necesita del servicio de IA pasa por el backend.
   iaServiceUrl: process.env.IA_SERVICE_URL || 'http://ia:8000',
+  // Tope de espera por llamada al servicio de IA: pasado este tiempo el backend
+  // responde 503 en vez de dejar la request colgada.
+  iaTimeoutMs: Number(process.env.IA_TIMEOUT_MS) || 3000,
   corsOrigins: (process.env.CORS_ORIGIN || 'http://local.nutria.com,http://localhost:5173')
     .split(',')
     .map((origin) => origin.trim())

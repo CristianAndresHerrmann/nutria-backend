@@ -1,8 +1,16 @@
 const { Router } = require('express');
 const patientController = require('../controllers/patient.controller');
 const requireAuth = require('../middlewares/auth');
+const validate = require('../middlewares/validate');
+const { emptyQuerySchema } = require('../schemas/common.schema');
+const { createPatientSchema, updatePatientSchema, patientIdParamsSchema } = require('../schemas/patient.schema');
+const { PATIENT_NOT_FOUND_MESSAGE } = require('../services/patient.service');
 
 const router = Router();
+
+// Un id que no es UUID responde 404 y no 400: el mismo error que un paciente
+// inexistente o de otro nutricionista, para que la API no distinga los casos.
+const byId = { notFoundOnInvalidParams: PATIENT_NOT_FOUND_MESSAGE };
 
 /**
  * @openapi
@@ -25,8 +33,9 @@ const router = Router();
  *               type: array
  *               items: { $ref: '#/components/schemas/Patient' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '500': { $ref: '#/components/responses/InternalError' }
  */
-router.get('/patients', requireAuth, patientController.getPatients);
+router.get('/patients', requireAuth, validate({ query: emptyQuerySchema }), patientController.getPatients);
 
 /**
  * @openapi
@@ -54,8 +63,14 @@ router.get('/patients', requireAuth, patientController.getPatients);
  *             schema: { $ref: '#/components/schemas/Patient' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
  *       '404': { $ref: '#/components/responses/PatientNotFound' }
+ *       '500': { $ref: '#/components/responses/InternalError' }
  */
-router.get('/patients/:id', requireAuth, patientController.getPatientById);
+router.get(
+  '/patients/:id',
+  requireAuth,
+  validate({ params: patientIdParamsSchema, query: emptyQuerySchema }, byId),
+  patientController.getPatientById,
+);
 
 /**
  * @openapi
@@ -100,8 +115,14 @@ router.get('/patients/:id', requireAuth, patientController.getPatientById);
  *             schema: { $ref: '#/components/schemas/Patient' }
  *       '400': { $ref: '#/components/responses/ValidationError' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '500': { $ref: '#/components/responses/InternalError' }
  */
-router.post('/patients', requireAuth, patientController.createPatient);
+router.post(
+  '/patients',
+  requireAuth,
+  validate({ query: emptyQuerySchema, body: createPatientSchema }),
+  patientController.createPatient,
+);
 
 /**
  * @openapi
@@ -136,7 +157,13 @@ router.post('/patients', requireAuth, patientController.createPatient);
  *       '400': { $ref: '#/components/responses/ValidationError' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
  *       '404': { $ref: '#/components/responses/PatientNotFound' }
+ *       '500': { $ref: '#/components/responses/InternalError' }
  */
-router.put('/patients/:id', requireAuth, patientController.updatePatient);
+router.put(
+  '/patients/:id',
+  requireAuth,
+  validate({ params: patientIdParamsSchema, query: emptyQuerySchema, body: updatePatientSchema }, byId),
+  patientController.updatePatient,
+);
 
 module.exports = router;

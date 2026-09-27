@@ -9,6 +9,7 @@ const openapiSpec = require('./openapi');
 // alguien agrega una ruta y se olvida de documentarla, este test falla.
 const EXPECTED_OPERATIONS = [
   'get /health',
+  'get /health/ia',
   'post /auth/login',
   'get /patients',
   'post /patients',
@@ -84,6 +85,7 @@ describe('spec OpenAPI del backend', () => {
 
   it('deja públicas las rutas que no pasan por requireAuth', () => {
     expect(openapiSpec.paths['/health'].get.security).toBeUndefined();
+    expect(openapiSpec.paths['/health/ia'].get.security).toBeUndefined();
     expect(openapiSpec.paths['/auth/login'].post.security).toBeUndefined();
   });
 
@@ -92,6 +94,17 @@ describe('spec OpenAPI del backend', () => {
 
     expect(responses['201']).toBeDefined();
     expect(responses['200']).toBeUndefined();
+  });
+
+  it('documenta el 503 del diagnóstico de IA', () => {
+    expect(openapiSpec.paths['/health/ia'].get.responses['503']).toBeDefined();
+  });
+
+  it('describe el error con el formato { error: { code, message, details? } }', () => {
+    const errorSchema = openapiSpec.components.schemas.Error;
+
+    expect(errorSchema.properties.error.required).toEqual(['code', 'message']);
+    expect(errorSchema.properties.error.properties.details.properties.fields).toBeDefined();
   });
 
   it('no deja ningún $ref colgado', () => {

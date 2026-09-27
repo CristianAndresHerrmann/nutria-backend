@@ -63,4 +63,14 @@ function requireGuardianForMinors(data, ctx) {
 // objeto completo, no un diff parcial de campos.
 const patientSchema = z.strictObject(basePatientFields).superRefine(requireGuardianForMinors);
 
-module.exports = { createPatientSchema: patientSchema, updatePatientSchema: patientSchema, GUARDIAN_FIELDS };
+// z.guid() y no z.uuid(): z.uuid() exige los bits de versión del RFC y
+// rechazaría ids con la forma 8-4-4-4-12 que el servicio sí acepta
+// (UUID_REGEX en patient.service.js). Las dos validaciones tienen que coincidir.
+const patientIdParamsSchema = z.strictObject({ id: z.guid() });
+
+module.exports = {
+  createPatientSchema: patientSchema,
+  updatePatientSchema: patientSchema,
+  patientIdParamsSchema,
+  GUARDIAN_FIELDS,
+};

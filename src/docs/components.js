@@ -90,7 +90,7 @@ const schemas = {
       '**Regla cruzada que no se puede expresar en JSON Schema:** si `birthDate` corresponde a ' +
       'un menor de 18 años, `guardianName`, `guardianRelationship`, `guardianContact` y ' +
       '`attendsAccompanied` pasan a ser obligatorios y su ausencia devuelve 400 con los cuatro ' +
-      'campos en `fields`.\n\n' +
+      'campos en `details.fields`.\n\n' +
       'Los campos opcionales aceptan el valor, `""`, `null` o su ausencia; las tres últimas ' +
       'formas se guardan como `null`. Eso permite dar de alta un paciente con solo nombre y ' +
       'apellido y completar el resto después.',
@@ -151,33 +151,73 @@ const schemas = {
     },
   },
 
+  IaHealth: {
+    type: 'object',
+    properties: {
+      status: { type: 'string', example: 'ok' },
+      service: { type: 'string', example: 'nutria-backend' },
+      ia: {
+        type: 'object',
+        description: 'Lo que respondió el `/health` del servicio de IA, más la latencia medida por el backend.',
+        properties: {
+          status: { type: 'string', example: 'ok' },
+          service: { type: 'string', example: 'nutria-ia' },
+          latencyMs: { type: 'integer', example: 12 },
+        },
+      },
+      timestamp: { type: 'string', format: 'date-time', example: '2026-09-23T14:03:11.204Z' },
+    },
+  },
+
   Error: {
     type: 'object',
     required: ['error'],
     description:
-      'Formato uniforme de error de la API. `error` está en toda respuesta de error; `fields` ' +
-      'es opcional y solo aparece en errores de validación (400).',
+      'Formato uniforme de toda respuesta de error de la API, incluida una ruta inexistente. ' +
+      '`message` es un texto en castellano pensado para mostrarse al usuario; `code` es estable ' +
+      'y es lo que conviene usar para decidir qué hacer. Una respuesta de error nunca incluye ' +
+      'el stack ni el mensaje interno de un error inesperado.',
     properties: {
-      error: { type: 'string', example: 'Credenciales inválidas' },
-      fields: {
+      error: {
         type: 'object',
-        additionalProperties: { type: 'string' },
-        description: 'Mapa de nombre de campo a su mensaje de error, para mostrarlo junto al input.',
+        required: ['code', 'message'],
+        properties: {
+          code: {
+            type: 'string',
+            description:
+              '`VALIDATION_ERROR`, `INVALID_JSON`, `BAD_REQUEST` (400); `UNAUTHORIZED` (401); ' +
+              '`NOT_FOUND` (404); `CONFLICT` (409); `PAYLOAD_TOO_LARGE` (413); `INTERNAL_ERROR` ' +
+              '(500); `BAD_GATEWAY` (502); `IA_UNAVAILABLE`, `SERVICE_UNAVAILABLE` (503).',
+            example: 'UNAUTHORIZED',
+          },
+          message: { type: 'string', example: 'Credenciales inválidas' },
+          details: {
+            type: 'object',
+            description:
+              'Opcional. En errores de validación (y en un 409 por valor duplicado) trae `fields`; ' +
+              'en `IA_UNAVAILABLE` trae `reason`.',
+            properties: {
+              fields: {
+                type: 'object',
+                additionalProperties: { type: 'string' },
+                description: 'Mapa de nombre de campo a su mensaje de error, para mostrarlo junto al input.',
+              },
+              reason: {
+                type: 'string',
+                enum: ['timeout', 'unreachable', 'bad_status', 'bad_body'],
+                description: 'Por qué no se pudo usar el servicio de IA.',
+              },
+            },
+          },
+        },
       },
     },
   },
-
-  NotFoundError: {
-    type: 'object',
-    description:
-      'Respuesta de una ruta que no existe. Es el único error de la API que no usa el formato ' +
-      '`{ error, fields? }`: agrega `path` y no lleva `fields`.',
-    properties: {
-      error: { type: 'string', example: 'Not found' },
-      path: { type: 'string', example: '/pacientes' },
-    },
-  },
 };
+
+function errorExample(code, message, details) {
+  return { error: details ? { code, message, details } : { code, message } };
+}
 
 const responses = {
   UnauthorizedError: {
@@ -188,11 +228,11 @@ const responses = {
         examples: {
           sinToken: {
             summary: 'Sin header Authorization o con un esquema distinto de Bearer',
-            value: { error: 'No autenticado' },
+            value: errorExample('UNAUTHORIZED', 'No autenticado'),
           },
           tokenInvalido: {
             summary: 'El token no verifica contra JWT_SECRET, o ya expiró',
-            value: { error: 'Token inválido o expirado' },
+            value: errorExample('UNAUTHORIZED', 'Token inválido o expirado'),
           },
         },
       },
@@ -200,15 +240,25 @@ const responses = {
   },
 
   ValidationError: {
-    description: 'El body no cumple el schema.',
+    description:
+      'La request no cumple el schema (body, parámetros de ruta o de query), o el body no es JSON ' +
+      'válido. Un parámetro de query desconocido también da 400.',
     content: {
       'application/json': {
         schema: { $ref: '#/components/schemas/Error' },
-        example: {
-          error: 'El nombre es obligatorio',
-          fields: {
-            firstName: 'El nombre es obligatorio',
-            guardianName: 'Dato del adulto responsable obligatorio: el paciente es menor de edad',
+        examples: {
+          campos: {
+            summary: 'Campos inválidos',
+            value: errorExample('VALIDATION_ERROR', 'El nombre es obligatorio', {
+              fields: {
+                firstName: 'El nombre es obligatorio',
+                guardianName: 'Dato del adulto responsable obligatorio: el paciente es menor de edad',
+              },
+            }),
+          },
+          jsonInvalido: {
+            summary: 'El body no se puede parsear como JSON',
+            value: errorExample('INVALID_JSON', 'El cuerpo de la solicitud no es JSON válido'),
           },
         },
       },
@@ -223,7 +273,29 @@ const responses = {
     content: {
       'application/json': {
         schema: { $ref: '#/components/schemas/Error' },
-        example: { error: 'Not found' },
+        example: errorExample('NOT_FOUND', 'Paciente no encontrado'),
+      },
+    },
+  },
+
+  InternalError: {
+    description:
+      'Error inesperado del servidor. El mensaje es siempre el mismo: el detalle queda en el log ' +
+      'del backend y nunca viaja en la respuesta.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        example: errorExample('INTERNAL_ERROR', 'Error interno del servidor'),
+      },
+    },
+  },
+
+  IaUnavailable: {
+    description: 'El servicio de IA está caído, no respondió a tiempo o respondió con error.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        example: errorExample('IA_UNAVAILABLE', 'El servicio de IA no está disponible', { reason: 'timeout' }),
       },
     },
   },
