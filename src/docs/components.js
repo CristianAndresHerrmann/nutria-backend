@@ -100,7 +100,9 @@ const schemas = {
         type: 'string',
         pattern: '^\\d{4}-\\d{2}-\\d{2}$',
         nullable: true,
-        description: 'Fecha de nacimiento en formato `AAAA-MM-DD`.',
+        description:
+          'Fecha de nacimiento en formato `AAAA-MM-DD`. Tiene que ser una fecha que exista ' +
+          '(`2023-02-30` da 400) y no puede ser posterior a hoy (UTC).',
         example: '1992-03-14',
       },
       registrationComplete: {
