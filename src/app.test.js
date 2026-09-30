@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const app = require('./app');
+const patientService = require('./services/patient.service');
 
 // Integración liviana: la app real levantada en un puerto efímero, sin base ni
 // servicio de IA. Cada caso corta antes de llegar a Prisma (ruta inexistente,
@@ -115,6 +116,86 @@ describe('formato uniforme de error de punta a punta', () => {
     const response = await request('/patients?page=2', { token: validToken() });
 
     expectUniformError(response, 400, 'VALIDATION_ERROR');
+  });
+});
+
+// Las capas tienen sus tests de aislamiento; estos verifican el cableado entre
+// ellas en cada ruta de pacientes. Sin requireAuth, req.nutricionistaId quedaría
+// undefined y Prisma ignoraría ese filtro: el agujero no lo detectaría ningún
+// test de capa. El servicio se espía, así que no hace falta base.
+describe('rutas de pacientes — autenticación y aislamiento de punta a punta', () => {
+  const PATIENT_ID = '11111111-1111-1111-1111-111111111111';
+  const tokenFor = (nutritionistId) => jwt.sign({ sub: nutritionistId }, process.env.JWT_SECRET, { expiresIn: '1h' });
+  const fakePatient = (nutritionistId) => ({
+    id: PATIENT_ID,
+    nutritionistId,
+    firstName: 'Ana',
+    lastName: 'Diaz',
+    birthDate: null,
+    referenceWeight: null,
+  });
+
+  function spyOnPatientService() {
+    return {
+      list: vi.spyOn(patientService, 'listForNutritionist').mockResolvedValue([]),
+      get: vi.spyOn(patientService, 'getForNutritionist').mockImplementation(async (_id, n) => fakePatient(n)),
+      create: vi.spyOn(patientService, 'createForNutritionist').mockImplementation(async (n) => fakePatient(n)),
+      update: vi.spyOn(patientService, 'updateForNutritionist').mockImplementation(async (_id, n) => fakePatient(n)),
+    };
+  }
+
+  const body = { firstName: 'Ana', lastName: 'Diaz' };
+
+  it.each([
+    ['GET', '/patients'],
+    ['GET', `/patients/${PATIENT_ID}`],
+    ['POST', '/patients'],
+    ['PUT', `/patients/${PATIENT_ID}`],
+  ])('%s %s sin token responde 401 y no llega al servicio', async (method, path) => {
+    const spies = spyOnPatientService();
+
+    const response = await request(path, { method, body: method === 'GET' ? undefined : body });
+
+    expectUniformError(response, 401, 'UNAUTHORIZED');
+    Object.values(spies).forEach((spy) => expect(spy).not.toHaveBeenCalled());
+  });
+
+  it.each(['nutri-1', 'nutri-2'])('cada ruta pasa al servicio el nutricionista del token (%s)', async (nutritionistId) => {
+    const spies = spyOnPatientService();
+    const token = tokenFor(nutritionistId);
+
+    await request('/patients', { token });
+    await request(`/patients/${PATIENT_ID}`, { token });
+    await request('/patients', { method: 'POST', token, body });
+    await request(`/patients/${PATIENT_ID}`, { method: 'PUT', token, body });
+
+    expect(spies.list).toHaveBeenCalledWith(nutritionistId);
+    expect(spies.get).toHaveBeenCalledWith(PATIENT_ID, nutritionistId);
+    expect(spies.create).toHaveBeenCalledWith(nutritionistId, expect.objectContaining(body));
+    expect(spies.update).toHaveBeenCalledWith(PATIENT_ID, nutritionistId, expect.objectContaining(body));
+  });
+
+  it('un nutritionistId en el body se rechaza con 400 y no llega al servicio', async () => {
+    const spies = spyOnPatientService();
+    const token = tokenFor('nutri-1');
+    const intruso = { ...body, nutritionistId: 'nutri-2' };
+
+    const alta = await request('/patients', { method: 'POST', token, body: intruso });
+    const edicion = await request(`/patients/${PATIENT_ID}`, { method: 'PUT', token, body: intruso });
+
+    expectUniformError(alta, 400, 'VALIDATION_ERROR');
+    expectUniformError(edicion, 400, 'VALIDATION_ERROR');
+    expect(spies.create).not.toHaveBeenCalled();
+    expect(spies.update).not.toHaveBeenCalled();
+  });
+
+  it('la respuesta no expone el nutritionistId', async () => {
+    spyOnPatientService();
+
+    const response = await request(`/patients/${PATIENT_ID}`, { token: tokenFor('nutri-1') });
+
+    expect(response.status).toBe(200);
+    expect(response.json).not.toHaveProperty('nutritionistId');
   });
 });
 

@@ -10,13 +10,21 @@ function requireAuth(req, res, next) {
     return next(new AppError(401, 'No autenticado'));
   }
 
+  let payload;
   try {
-    const payload = jwt.verify(token, config.jwtSecret);
-    req.nutricionistaId = payload.sub;
-    next();
+    payload = jwt.verify(token, config.jwtSecret);
   } catch (error) {
-    next(new AppError(401, 'Token inválido o expirado'));
+    return next(new AppError(401, 'Token inválido o expirado'));
   }
+
+  // Un token bien firmado pero sin sub dejaría req.nutricionistaId vacío, y
+  // todo el aislamiento depende de ese valor.
+  if (typeof payload.sub !== 'string' || payload.sub.length === 0) {
+    return next(new AppError(401, 'Token inválido o expirado'));
+  }
+
+  req.nutricionistaId = payload.sub;
+  next();
 }
 
 module.exports = requireAuth;
