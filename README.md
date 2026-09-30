@@ -15,7 +15,7 @@ stack levantado. Qué cambió en cada iteración se registra en
 Este repositorio es uno de los tres repos que componen NutrIA (`nutria-frontend`, `nutria-backend`, `nutria-ia`). Para que el `docker-compose.yml` de este repositorio pueda levantar el stack completo, los tres repositorios deben clonarse como carpetas **hermanas**, dentro de una misma carpeta raíz local:
 
 ```
-NutrIA/
+nutria/
 ├── nutria-backend/   (este repositorio)
 ├── nutria-frontend/
 └── nutria-ia/
@@ -41,7 +41,7 @@ Organizado por capas:
 - `prisma/schema.prisma` — modelo de datos, y `prisma/migrations/` — historial de migraciones generado por el CLI.
 - `scripts/seed.js` — carga de datos ficticios ejecutada por `prisma db seed`.
 - `Dockerfile` — imagen del backend.
-- `docker-compose.yml` — orquesta el stack (proxy, frontend, backend, ia, postgres). El proyecto se nombra explícitamente `nutria` (campo `name:`) para que las imágenes y contenedores se llamen `nutria-frontend`, `nutria-backend`, `nutria-ia`, etc., en lugar de heredar el nombre de esta carpeta.
+- `docker-compose.yml` — orquesta el stack (proxy, frontend, backend, ia, postgres, pgadmin). El proyecto se nombra explícitamente `nutria` (campo `name:`) para que las imágenes y contenedores se llamen `nutria-frontend`, `nutria-backend`, `nutria-ia`, etc., en lugar de heredar el nombre de esta carpeta.
 
 ## Variables de entorno
 
@@ -53,10 +53,10 @@ cp ../nutria-frontend/.env.example ../nutria-frontend/.env
 cp ../nutria-ia/.env.example ../nutria-ia/.env
 ```
 
-Completar `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` y `JWT_SECRET` con valores propios del entorno local. `CORS_ORIGIN` trae un valor por defecto (dominio de Docker Compose, puerto de Vite en local y dominio de la documentación interactiva) que alcanza para desarrollo; solo hace falta tocarlo si el frontend corre en otro origen. `IA_SERVICE_URL` es el hostname interno de Docker con el que el backend alcanza al servicio de IA; ningún navegador lo usa. `IA_TIMEOUT_MS` (opcional, 3000 por defecto) es cuánto espera el backend al servicio de IA antes de darlo por no disponible. Ninguno de los `.env` se versiona (están excluidos en el `.gitignore` de cada repo); solo se versiona el `.env.example` correspondiente.
+Completar `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` y `JWT_SECRET` con valores propios del entorno local. `CORS_ORIGIN` trae un valor por defecto (dominio de Docker Compose, puerto de Vite en local y dominio de la documentación interactiva) que alcanza para desarrollo; solo hace falta tocarlo si el frontend corre en otro origen. `IA_SERVICE_URL` es el hostname interno de Docker con el que el backend alcanza al servicio de IA; ningún navegador lo usa. `IA_TIMEOUT_MS` (opcional: si no se define vale 3000; el `.env.example` trae 5000) es cuánto espera el backend al servicio de IA antes de darlo por no disponible. Ninguno de los `.env` se versiona (están excluidos en el `.gitignore` de cada repo); solo se versiona el `.env.example` correspondiente.
 
-No hay alta de usuarios por interfaz: el único nutricionista disponible en local es
-el que crea el seed, y sus credenciales viven en `scripts/seed.js` (no se
+No hay alta de usuarios por interfaz: los nutricionistas disponibles en local son
+los dos que crea el seed, y sus credenciales viven en `scripts/seed.js` (no se
 documentan acá ni en el changelog).
 
 ## Cómo ejecutar (sin Docker)

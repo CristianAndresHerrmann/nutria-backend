@@ -33,6 +33,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 - `AppError` recibe `{ code, details }` como tercer argumento (antes, `fields`); el código por defecto sale del status.
 - Spec OpenAPI actualizado: schema `Error` con la forma nueva, respuestas `InternalError` e `IaUnavailable`, schema `IaHealth`, y el `400` de login referenciando `ValidationError`. Se elimina `NotFoundError`.
 - Se actualizan las credenciales de prueba sembradas por `scripts/seed.js` (ver el script para los valores vigentes).
+- `requireAuth` rechaza con `401` un token bien firmado que no trae `sub`: antes dejaba `req.nutricionistaId` vacío.
+- `patient.repository` corta con un error (`500`) cualquier consulta que llegue sin `nutritionistId`. Prisma ignora los filtros `undefined`, así que un error de cableado (una ruta sin `requireAuth`) habría devuelto o editado pacientes de cualquier nutricionista.
+- Tests de seguridad agregados: las cuatro rutas de pacientes responden `401` sin token y no llegan al servicio; cada ruta pasa al servicio el nutricionista del token; un `nutritionistId` en el body se rechaza en alta y edición; la respuesta no expone `nutritionistId`; un token firmado con otro secreto o sin `sub` se rechaza; el repositorio no consulta a Prisma con `nutritionistId` vacío. Verificado que sacar `requireAuth` de una ruta hace fallar la suite.
+- `scripts/seed.js` crea dos nutricionistas, cada uno con pacientes propios (el segundo con dos pacientes nuevos), para verificar a mano el aislamiento entre nutricionistas. Cada ejecución reemplaza los pacientes de ambos.
 - `docker-compose.yml` y variables de entorno actualizadas para levantar Postgres (`pgvector/pgvector:pg16`) junto al resto del stack.
 - `postgres` con healthcheck (`pg_isready`); `backend` espera a que esté `service_healthy` antes de arrancar, en vez de solo a que el contenedor exista.
 - El `CMD` del contenedor del backend corre `prisma migrate deploy` antes de levantar el server: el stack queda con las migraciones al día al hacer `up`, sin un paso manual aparte.
