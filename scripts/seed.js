@@ -5,25 +5,13 @@ const prisma = new PrismaClient();
 
 const SEED_PASSWORD = '123456aA!';
 
-async function main() {
-  const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
-
-  const nutritionist = await prisma.nutritionist.upsert({
-    where: { email: 'nutricionista@nutria.com' },
-    update: { passwordHash },
-    create: {
-      name: 'Camila Ríos',
-      email: 'nutricionista@nutria.com',
-      passwordHash,
-    },
-  });
-
-  await prisma.patient.deleteMany({ where: { nutritionistId: nutritionist.id } });
-
-  await prisma.patient.createMany({
-    data: [
+// Dos nutricionistas con pacientes propios: permite verificar a mano que cada uno
+// ve y edita solo los suyos (aislamiento por nutricionista, RNF-05).
+const SEED_DATA = [
+  {
+    nutritionist: { name: 'Camila Ríos', email: 'nutricionista@nutria.com' },
+    patients: [
       {
-        nutritionistId: nutritionist.id,
         firstName: 'Lucía',
         lastName: 'Fernández',
         birthDate: new Date('1992-03-14'),
@@ -37,7 +25,6 @@ async function main() {
         dataCompletedAt: new Date(),
       },
       {
-        nutritionistId: nutritionist.id,
         firstName: 'Tomás',
         lastName: 'Gómez',
         birthDate: new Date('2012-05-10'), // menor de edad
@@ -52,7 +39,6 @@ async function main() {
         dataCompletedAt: new Date(),
       },
       {
-        nutritionistId: nutritionist.id,
         firstName: 'Jorge',
         lastName: 'Ibarra',
         phone: '+54 342 555-0303',
@@ -60,10 +46,53 @@ async function main() {
         dataCompletedAt: null,
       },
     ],
-  });
+  },
+  {
+    nutritionist: { name: 'Martín Sosa', email: 'nutricionista2@nutria.com' },
+    patients: [
+      {
+        firstName: 'Valeria',
+        lastName: 'Acosta',
+        birthDate: new Date('1985-11-02'),
+        phone: '+54 342 555-0404',
+        email: 'valeria.acosta@example.com',
+        livesWith: 'Sola',
+        goal: 'Aumentar masa muscular',
+        referenceWeight: 61.0,
+        attendsAccompanied: false,
+        registrationComplete: true,
+        dataCompletedAt: new Date(),
+      },
+      {
+        firstName: 'Diego',
+        lastName: 'Paredes',
+        goal: 'Controlar glucemia',
+        registrationComplete: false,
+        dataCompletedAt: null,
+      },
+    ],
+  },
+];
 
-  console.log('Seed completado: 1 nutritionist, 3 patients (1 menor de edad, 1 con registro incompleto).');
-  console.log(`Login de prueba: ${nutritionist.email} / ${SEED_PASSWORD}`);
+async function main() {
+  const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
+
+  for (const { nutritionist: data, patients } of SEED_DATA) {
+    const nutritionist = await prisma.nutritionist.upsert({
+      where: { email: data.email },
+      update: { passwordHash },
+      create: { ...data, passwordHash },
+    });
+
+    await prisma.patient.deleteMany({ where: { nutritionistId: nutritionist.id } });
+    await prisma.patient.createMany({
+      data: patients.map((patient) => ({ ...patient, nutritionistId: nutritionist.id })),
+    });
+
+    console.log(`Seed: ${nutritionist.email} con ${patients.length} pacientes.`);
+  }
+
+  console.log(`Contraseña de prueba de ambos nutricionistas: ${SEED_PASSWORD}`);
 }
 
 main()
