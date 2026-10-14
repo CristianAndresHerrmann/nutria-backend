@@ -1,10 +1,19 @@
-// Modelo lógico del Incremento 1 (T4).
-// Alcance: Nutritionist y Patient con sus campos base (RF-02, RF-03, RF-15, RF-17).
-// Las columnas clínicas y contextuales (RF-04 a RF-14) se agregan por migración en el Incremento 2.
+// Modelo lógico vigente — Incrementos 1 y 2.
+// Incremento 1 (T4): Nutritionist y Patient con sus campos base (RF-02, RF-03, RF-15, RF-17).
+// Incremento 2 (T14): datos clínicos y contextuales del paciente (RF-04 a RF-14), consultas,
+// mediciones y laboratorio, hábitos pautados, y catálogos de alimentos, recetas y
+// recomendaciones (RF-24, RF-25, RF-27, RF-30). PLAN y lo que depende de él llegan en el
+// Incremento 3.
 //
 // Convención de nombres: campos en camelCase (idiomático de Prisma/JS), mapeados con
-// @map a columnas snake_case en Postgres. Los datos que se cargan (seed y uso real)
-// permanecen en español; solo los identificadores de esquema están en inglés.
+// @map a columnas snake_case en Postgres. Los valores de los enums también son
+// identificadores y van en inglés. Los datos que se cargan (seed y uso real)
+// permanecen en español.
+//
+// Las reglas que Prisma no puede expresar (exclusiones entre columnas, detalle
+// obligatorio según el tipo) son CHECK en el SQL de la migración
+// 20261014203321_agrega_datos_clinicos_consultas_y_catalogos y se validan también en
+// los schemas Zod. Correspondencia con el Anexo A: docs/decisiones/ajustes-al-modelo-del-anexo-a-incremento-2.md.
 
 generator client {
   provider = "prisma-client-js"
@@ -22,6 +31,7 @@ model Nutritionist {
   passwordHash String @map("password_hash")
 
   patients Patient[]
+  recipes  Recipe[]
 
   @@map("nutritionist")
 }
@@ -43,6 +53,39 @@ model Patient {
   goal             String?
   referenceWeight  Decimal? @map("reference_weight") @db.Decimal(5, 2)
 
+  // Antecedentes y medicación (RF-04). Las patologías diagnosticadas no van acá:
+  // son PatientCondition de tipo pathology.
+  medicalHistory String? @map("medical_history")
+  medication     String?
+
+  // Tratamiento psicológico o psiquiátrico en curso (RF-05)
+  externalTreatment String? @map("external_treatment")
+
+  // Hábitos (RF-06), un campo por ítem
+  physicalActivity String? @map("physical_activity")
+  smoking          String?
+  alcohol          String?
+  mealSchedule     String? @map("meal_schedule")
+  sleepSchedule    String? @map("sleep_schedule")
+
+  // Contexto de cocina (RF-08)
+  cooks              Boolean?
+  likesCooking       Boolean? @map("likes_cooking")
+  cookingTime        String?  @map("cooking_time")
+  homeEquipment      String?  @map("home_equipment")
+  usualShoppingPlace String?  @map("usual_shopping_place")
+
+  // Comidas fuera del hogar (RF-09)
+  mealsOutsideHome String? @map("meals_outside_home")
+  outsideEquipment String? @map("outside_equipment")
+
+  // Ocupación y contexto laboral (RF-10)
+  occupation  String?
+  workContext String? @map("work_context")
+
+  // Patrones de ingesta fuera de las comidas planificadas (RF-14)
+  intakePatterns String? @map("intake_patterns")
+
   // Adulto responsable, obligatorio en la aplicación cuando el paciente es menor (RF-17)
   guardianName         String?  @map("guardian_name")
   guardianRelationship String?  @map("guardian_relationship")
@@ -56,5 +99,291 @@ model Patient {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  conditions    PatientCondition[]
+  consultations Consultation[]
+  measurements  Measurement[]
+
   @@map("patient")
+}
+
+// ---------------------------------------------------------------------------
+// Pacientes y consultas (Anexo A.1)
+// ---------------------------------------------------------------------------
+
+// Catálogo común a todos los nutricionistas.
+model Pathology {
+  id          String  @id @default(uuid()) @db.Uuid
+  name        String  @unique
+  description String?
+
+  conditions      PatientCondition[]
+  recommendations ClinicalRecommendation[]
+
+  @@map("pathology")
+}
+
+enum ConditionType {
+  pathology
+  allergy
+  intolerance
+  rejection
+  preference
+
+  @@map("condition_type")
+}
+
+// Condición del paciente (RF-04, RF-07). CHECK en la migración: pathologyId existe
+// si y solo si type = pathology; una condición pathology no referencia alimentos y
+// las demás referencian exactamente uno de foodId / foodGroupId.
+model PatientCondition {
+  id           String        @id @default(uuid()) @db.Uuid
+  patientId    String        @map("patient_id") @db.Uuid
+  patient      Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  type         ConditionType
+  pathologyId  String?       @map("pathology_id") @db.Uuid
+  pathology    Pathology?    @relation(fields: [pathologyId], references: [id], onDelete: Restrict)
+  foodId       String?       @map("food_id") @db.Uuid
+  food         Food?         @relation(fields: [foodId], references: [id], onDelete: Restrict)
+  foodGroupId  String?       @map("food_group_id") @db.Uuid
+  foodGroup    FoodGroup?    @relation(fields: [foodGroupId], references: [id], onDelete: Restrict)
+  registeredAt DateTime      @default(now()) @map("registered_at") @db.Date
+  observations String?
+
+  @@index([patientId])
+  @@map("patient_condition")
+}
+
+enum ConsultationType {
+  first
+  follow_up
+
+  @@map("consultation_type")
+}
+
+// Consulta (RF-13, RF-18). Se aísla por nutricionista a través del paciente.
+model Consultation {
+  id                String           @id @default(uuid()) @db.Uuid
+  patientId         String           @map("patient_id") @db.Uuid
+  patient           Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  date              DateTime         @db.Date
+  type              ConsultationType
+  motivation        String?
+  decisionOrigin    String?          @map("decision_origin")
+  perceivedObstacle String?          @map("perceived_obstacle")
+  mainHabit         String?          @map("main_habit")
+  observations      String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  measurements     Measurement[]
+  habitsSet        PrescribedHabit[] @relation("HabitSetIn")
+  habitsEvaluated  PrescribedHabit[] @relation("HabitEvaluatedIn")
+
+  @@index([patientId, date])
+  @@map("consultation")
+}
+
+enum MeasurementType {
+  weight
+  height
+  skinfold
+  circumference
+  cholesterol
+  triglycerides
+  glucose
+  other
+
+  @@map("measurement_type")
+}
+
+// Medición antropométrica o de laboratorio (RF-11, RF-12). Puede cargarse fuera de
+// una consulta. El IMC no se guarda: se calcula a partir de peso y talla. CHECK en la
+// migración: detail obligatorio para skinfold, circumference y other; value > 0.
+model Measurement {
+  id             String          @id @default(uuid()) @db.Uuid
+  patientId      String          @map("patient_id") @db.Uuid
+  patient        Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  consultationId String?         @map("consultation_id") @db.Uuid
+  consultation   Consultation?   @relation(fields: [consultationId], references: [id], onDelete: SetNull)
+  type           MeasurementType
+  detail         String?
+  value          Decimal         @db.Decimal(8, 2)
+  unit           String?
+  date           DateTime        @db.Date
+
+  @@index([patientId, type, date])
+  @@map("measurement")
+}
+
+enum HabitCompliance {
+  pending
+  met
+  partial
+  not_met
+
+  @@map("habit_compliance")
+}
+
+// Hábito pautado al cierre de una consulta y evaluado en una posterior (RF-21).
+// CHECK en la migración: la consulta que evalúa no es la que establece.
+model PrescribedHabit {
+  id                       String          @id @default(uuid()) @db.Uuid
+  consultationId           String          @map("consultation_id") @db.Uuid
+  consultation             Consultation    @relation("HabitSetIn", fields: [consultationId], references: [id], onDelete: Cascade)
+  evaluationConsultationId String?         @map("evaluation_consultation_id") @db.Uuid
+  evaluationConsultation   Consultation?   @relation("HabitEvaluatedIn", fields: [evaluationConsultationId], references: [id], onDelete: SetNull)
+  description              String
+  compliance               HabitCompliance @default(pending)
+  evaluationObservations   String?         @map("evaluation_observations")
+
+  @@index([consultationId])
+  @@index([evaluationConsultationId])
+  @@map("prescribed_habit")
+}
+
+// ---------------------------------------------------------------------------
+// Catálogos (Anexo A.2). Comunes a todos los nutricionistas, salvo Recipe.
+// ---------------------------------------------------------------------------
+
+// Grupo de alimentos jerárquico (RF-24). CHECK en la migración: no es su propio padre.
+model FoodGroup {
+  id          String      @id @default(uuid()) @db.Uuid
+  parentId    String?     @map("parent_id") @db.Uuid
+  parent      FoodGroup?  @relation("FoodGroupHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children    FoodGroup[] @relation("FoodGroupHierarchy")
+  name        String      @unique
+  description String?
+
+  foods      Food[]
+  conditions PatientCondition[]
+
+  @@index([parentId])
+  @@map("food_group")
+}
+
+// Alimento (RF-24). Se desactiva con active = false en vez de borrarse, porque lo
+// referencian condiciones e ingredientes.
+model Food {
+  id          String    @id @default(uuid()) @db.Uuid
+  foodGroupId String    @map("food_group_id") @db.Uuid
+  foodGroup   FoodGroup @relation(fields: [foodGroupId], references: [id], onDelete: Restrict)
+  name        String    @unique
+  active      Boolean   @default(true)
+
+  categories  FoodCategory[]
+  conditions  PatientCondition[]
+  ingredients RecipeIngredient[]
+
+  @@index([foodGroupId])
+  @@map("food")
+}
+
+enum FoodCategoryType {
+  protein
+  carbohydrate
+  fiber
+  vegetable
+  healthy_fat
+  infusion
+
+  @@map("food_category_type")
+}
+
+// Categorías nutricionales de un alimento, una o más (RF-25).
+model FoodCategory {
+  id       String           @id @default(uuid()) @db.Uuid
+  foodId   String           @map("food_id") @db.Uuid
+  food     Food             @relation(fields: [foodId], references: [id], onDelete: Cascade)
+  category FoodCategoryType
+
+  @@unique([foodId, category])
+  @@map("food_category")
+}
+
+enum CookingMethod {
+  oven
+  stovetop
+  microwave
+  no_cooking
+
+  @@map("cooking_method")
+}
+
+enum RecipeOrigin {
+  professional
+  ai_generated
+
+  @@map("recipe_origin")
+}
+
+// Receta (RF-27). Pertenece a un nutricionista (RNF-05). plan_origen_id del Anexo A
+// se agrega en el Incremento 3, junto con PLAN. CHECK en la migración: timeMinutes > 0.
+model Recipe {
+  id                 String         @id @default(uuid()) @db.Uuid
+  nutritionistId     String         @map("nutritionist_id") @db.Uuid
+  nutritionist       Nutritionist   @relation(fields: [nutritionistId], references: [id])
+  name               String
+  preparation        String?
+  finalNote          String?        @map("final_note")
+  cookingMethod      CookingMethod? @map("cooking_method")
+  timeMinutes        Int?           @map("time_minutes")
+  purchasePlace      String?        @map("purchase_place")
+  origin             RecipeOrigin   @default(professional)
+  availableInCatalog Boolean        @default(true) @map("available_in_catalog")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  ingredients RecipeIngredient[]
+  mealTypes   RecipeMealType[]
+
+  @@index([nutritionistId])
+  @@map("recipe")
+}
+
+model RecipeIngredient {
+  id                  String  @id @default(uuid()) @db.Uuid
+  recipeId            String  @map("recipe_id") @db.Uuid
+  recipe              Recipe  @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  foodId              String  @map("food_id") @db.Uuid
+  food                Food    @relation(fields: [foodId], references: [id], onDelete: Restrict)
+  quantityDescription String? @map("quantity_description")
+  order               Int
+
+  @@unique([recipeId, order])
+  @@index([foodId])
+  @@map("recipe_ingredient")
+}
+
+enum MealType {
+  breakfast
+  lunch
+  afternoon_snack
+  dinner
+
+  @@map("meal_type")
+}
+
+model RecipeMealType {
+  id       String   @id @default(uuid()) @db.Uuid
+  recipeId String   @map("recipe_id") @db.Uuid
+  recipe   Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  mealType MealType @map("meal_type")
+
+  @@unique([recipeId, mealType])
+  @@map("recipe_meal_type")
+}
+
+// Recomendación clínica estándar por patología (RF-30). Catálogo común.
+model ClinicalRecommendation {
+  id          String    @id @default(uuid()) @db.Uuid
+  pathologyId String    @map("pathology_id") @db.Uuid
+  pathology   Pathology @relation(fields: [pathologyId], references: [id], onDelete: Restrict)
+  title       String
+  text        String
+  active      Boolean   @default(true)
+
+  @@index([pathologyId])
+  @@map("clinical_recommendation")
 }

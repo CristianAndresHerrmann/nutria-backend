@@ -1,95 +1,417 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
+const { FOOD_GROUPS, FOODS, PATHOLOGIES } = require('./seed-data/catalogs');
 
 const prisma = new PrismaClient();
 
 const SEED_PASSWORD = '123456aA!';
 
-// Dos nutricionistas con pacientes propios: permite verificar a mano que cada uno
-// ve y edita solo los suyos (aislamiento por nutricionista, RNF-05).
+// Todo es ficticio (RNF-08). Dos nutricionistas con pacientes propios: permite
+// verificar a mano que cada uno ve y edita solo los suyos (aislamiento por
+// nutricionista, RNF-05).
+//
+// Por paciente:
+// - `conditions` referencian catálogos por nombre (pathology, food o foodGroup).
+// - Cada consulta trae sus mediciones (con la fecha de la consulta) y los hábitos
+//   que se pautan al cerrarla. Un hábito con `evaluation` se evalúa en la consulta
+//   siguiente; sin `evaluation` queda pending.
+// - `looseMeasurements` son mediciones cargadas fuera de una consulta.
 const SEED_DATA = [
   {
     nutritionist: { name: 'Camila Ríos', email: 'nutricionista@nutria.com' },
+    recipes: [
+      {
+        name: 'Ensalada de arroz y atún',
+        preparation: '1. Hervir el arroz y dejarlo enfriar.\n2. Cortar el tomate y la lechuga.\n3. Mezclar todo con el atún y condimentar con aceite.',
+        finalNote: 'Se conserva en heladera hasta el día siguiente.',
+        cookingMethod: 'stovetop',
+        timeMinutes: 25,
+        purchasePlace: 'Supermercado',
+        ingredients: [
+          { food: 'Arroz blanco', quantityDescription: '1 taza cocida' },
+          { food: 'Atún al natural', quantityDescription: '1 lata' },
+          { food: 'Tomate', quantityDescription: '1 unidad' },
+          { food: 'Lechuga', quantityDescription: 'A gusto' },
+          { food: 'Aceite de oliva', quantityDescription: '1 cucharada' },
+        ],
+        mealTypes: ['lunch', 'dinner'],
+      },
+    ],
     patients: [
       {
-        firstName: 'Lucía',
-        lastName: 'Fernández',
-        birthDate: new Date('1992-03-14'),
-        phone: '+54 342 555-0101',
-        email: 'lucia.fernandez@example.com',
-        livesWith: 'Pareja',
-        goal: 'Bajar de peso',
-        referenceWeight: 68.5,
-        attendsAccompanied: false,
-        registrationComplete: true,
-        dataCompletedAt: new Date(),
+        data: {
+          firstName: 'Lucía',
+          lastName: 'Fernández',
+          birthDate: new Date('1992-03-14'),
+          phone: '+54 342 555-0101',
+          email: 'lucia.fernandez@example.com',
+          livesWith: 'Pareja',
+          goal: 'Bajar de peso',
+          referenceWeight: 68.5,
+          medicalHistory: 'Sin antecedentes relevantes.',
+          physicalActivity: 'Camina 30 minutos, dos veces por semana',
+          smoking: 'No fuma',
+          alcohol: 'Ocasional, fines de semana',
+          mealSchedule: 'Desayuno 7 h, almuerzo 13 h, cena 21 h',
+          sleepSchedule: 'De 23 h a 6:30 h',
+          cooks: true,
+          likesCooking: true,
+          cookingTime: '30 minutos por día',
+          homeEquipment: 'Horno, anafe y microondas',
+          usualShoppingPlace: 'Supermercado y verdulería del barrio',
+          mealsOutsideHome: 'Almuerzo de lunes a viernes',
+          outsideEquipment: 'Heladera y microondas en la oficina',
+          occupation: 'Administrativa',
+          workContext: 'Oficina, de 8 a 16 h, horario regular',
+          intakePatterns: 'Picoteo por la tarde',
+          attendsAccompanied: false,
+          registrationComplete: true,
+          dataCompletedAt: new Date(),
+        },
+        conditions: [
+          { type: 'pathology', pathology: 'Celiaquía' },
+          { type: 'intolerance', food: 'Leche' },
+        ],
+        consultations: [
+          {
+            date: '2026-08-04',
+            type: 'first',
+            motivation: 'Sentirse con más energía',
+            decisionOrigin: 'Propia',
+            perceivedObstacle: 'Falta de tiempo para cocinar en la semana',
+            mainHabit: 'Picoteo por la tarde',
+            measurements: [
+              { type: 'weight', value: 70.2, unit: 'kg' },
+              { type: 'height', value: 165, unit: 'cm' },
+              { type: 'circumference', detail: 'Cintura', value: 84, unit: 'cm' },
+            ],
+            habits: [
+              { description: 'Caminar 30 minutos tres veces por semana', evaluation: { compliance: 'met' } },
+              {
+                description: 'Incorporar una fruta en la merienda',
+                evaluation: { compliance: 'partial', observations: 'Lo cumple solo los fines de semana' },
+              },
+            ],
+          },
+          {
+            date: '2026-09-01',
+            type: 'follow_up',
+            observations: 'Buena adherencia a la caminata.',
+            measurements: [{ type: 'weight', value: 69.1, unit: 'kg' }],
+            habits: [{ description: 'Llevar vianda preparada en casa', evaluation: { compliance: 'not_met' } }],
+          },
+          {
+            date: '2026-10-06',
+            type: 'follow_up',
+            measurements: [{ type: 'weight', value: 68.3, unit: 'kg' }],
+            habits: [{ description: 'Tomar agua durante la jornada laboral' }],
+          },
+        ],
       },
       {
-        firstName: 'Tomás',
-        lastName: 'Gómez',
-        birthDate: new Date('2012-05-10'), // menor de edad
-        livesWith: 'Padres',
-        goal: 'Mejorar hábitos alimentarios',
-        referenceWeight: 45.0,
-        guardianName: 'María Gómez',
-        guardianRelationship: 'Madre',
-        guardianContact: '+54 342 555-0202',
-        attendsAccompanied: true,
-        registrationComplete: true,
-        dataCompletedAt: new Date(),
+        data: {
+          firstName: 'Tomás',
+          lastName: 'Gómez',
+          birthDate: new Date('2012-05-10'), // menor de edad
+          livesWith: 'Padres',
+          goal: 'Mejorar hábitos alimentarios',
+          referenceWeight: 45.0,
+          physicalActivity: 'Fútbol dos veces por semana',
+          cooks: false,
+          likesCooking: false,
+          mealsOutsideHome: 'Merienda en la escuela',
+          occupation: 'Estudiante',
+          guardianName: 'María Gómez',
+          guardianRelationship: 'Madre',
+          guardianContact: '+54 342 555-0202',
+          attendsAccompanied: true,
+          registrationComplete: true,
+          dataCompletedAt: new Date(),
+        },
+        conditions: [
+          { type: 'rejection', foodGroup: 'Pescados' },
+          { type: 'preference', food: 'Banana', observations: 'La elige para la merienda' },
+        ],
+        consultations: [
+          {
+            date: '2026-09-10',
+            type: 'first',
+            motivation: 'Lo trae la familia',
+            decisionOrigin: 'Familiar',
+            measurements: [
+              { type: 'weight', value: 45.0, unit: 'kg' },
+              { type: 'height', value: 152, unit: 'cm' },
+            ],
+            habits: [{ description: 'Desayunar antes de ir a la escuela', evaluation: { compliance: 'met' } }],
+          },
+          {
+            date: '2026-10-08',
+            type: 'follow_up',
+            measurements: [{ type: 'weight', value: 45.4, unit: 'kg' }],
+            habits: [],
+          },
+        ],
       },
       {
-        firstName: 'Jorge',
-        lastName: 'Ibarra',
-        phone: '+54 342 555-0303',
-        registrationComplete: false,
-        dataCompletedAt: null,
+        // Ficha incompleta y sin consultas.
+        data: {
+          firstName: 'Jorge',
+          lastName: 'Ibarra',
+          phone: '+54 342 555-0303',
+          registrationComplete: false,
+          dataCompletedAt: null,
+        },
       },
     ],
   },
   {
     nutritionist: { name: 'Martín Sosa', email: 'nutricionista2@nutria.com' },
+    recipes: [
+      {
+        name: 'Avena con yogur y manzana',
+        preparation: '1. Mezclar la avena con el yogur.\n2. Agregar la manzana en cubos y las semillas.',
+        cookingMethod: 'no_cooking',
+        timeMinutes: 5,
+        ingredients: [
+          { food: 'Avena arrollada', quantityDescription: '3 cucharadas' },
+          { food: 'Yogur natural', quantityDescription: '1 pote' },
+          { food: 'Manzana', quantityDescription: '1 unidad' },
+          { food: 'Semillas de chía', quantityDescription: '1 cucharadita' },
+        ],
+        mealTypes: ['breakfast', 'afternoon_snack'],
+      },
+    ],
     patients: [
       {
-        firstName: 'Valeria',
-        lastName: 'Acosta',
-        birthDate: new Date('1985-11-02'),
-        phone: '+54 342 555-0404',
-        email: 'valeria.acosta@example.com',
-        livesWith: 'Sola',
-        goal: 'Aumentar masa muscular',
-        referenceWeight: 61.0,
-        attendsAccompanied: false,
-        registrationComplete: true,
-        dataCompletedAt: new Date(),
+        data: {
+          firstName: 'Valeria',
+          lastName: 'Acosta',
+          birthDate: new Date('1985-11-02'),
+          phone: '+54 342 555-0404',
+          email: 'valeria.acosta@example.com',
+          livesWith: 'Sola',
+          goal: 'Aumentar masa muscular',
+          referenceWeight: 61.0,
+          physicalActivity: 'Gimnasio tres veces por semana',
+          smoking: 'No fuma',
+          cooks: true,
+          likesCooking: false,
+          cookingTime: 'Poco tiempo en la semana, más los domingos',
+          occupation: 'Docente',
+          workContext: 'Turno mañana y tarde en dos escuelas, horarios irregulares',
+          mealsOutsideHome: 'Almuerzo entre turnos',
+          outsideEquipment: 'Sin heladera; lleva conservadora',
+          attendsAccompanied: false,
+          registrationComplete: true,
+          dataCompletedAt: new Date(),
+        },
+        conditions: [{ type: 'pathology', pathology: 'Hipertensión' }],
+        consultations: [
+          {
+            date: '2026-08-20',
+            type: 'first',
+            motivation: 'Mejorar el rendimiento en el gimnasio',
+            decisionOrigin: 'Propia',
+            perceivedObstacle: 'Horarios cortados entre escuelas',
+            mainHabit: 'Saltear el almuerzo',
+            measurements: [
+              { type: 'weight', value: 61.0, unit: 'kg' },
+              { type: 'height', value: 168, unit: 'cm' },
+              { type: 'skinfold', detail: 'Tricipital', value: 18, unit: 'mm' },
+              { type: 'cholesterol', value: 190, unit: 'mg/dL' },
+              { type: 'triglycerides', value: 120, unit: 'mg/dL' },
+            ],
+            habits: [{ description: 'Llevar el almuerzo los días de doble turno', evaluation: { compliance: 'partial' } }],
+          },
+          {
+            date: '2026-09-24',
+            type: 'follow_up',
+            measurements: [{ type: 'weight', value: 61.8, unit: 'kg' }],
+            habits: [],
+          },
+        ],
       },
       {
-        firstName: 'Diego',
-        lastName: 'Paredes',
-        goal: 'Controlar glucemia',
-        registrationComplete: false,
-        dataCompletedAt: null,
+        // Ficha incompleta, con una consulta y un análisis traído después.
+        data: {
+          firstName: 'Diego',
+          lastName: 'Paredes',
+          goal: 'Controlar glucemia',
+          registrationComplete: false,
+          dataCompletedAt: null,
+        },
+        conditions: [{ type: 'pathology', pathology: 'Diabetes' }],
+        consultations: [
+          {
+            date: '2026-09-15',
+            type: 'first',
+            measurements: [
+              { type: 'weight', value: 82.5, unit: 'kg' },
+              { type: 'glucose', value: 112, unit: 'mg/dL' },
+            ],
+            habits: [{ description: 'Registrar lo que come durante una semana' }],
+          },
+        ],
+        looseMeasurements: [
+          { type: 'glucose', value: 105, unit: 'mg/dL', date: '2026-10-01' },
+          { type: 'other', detail: 'Hemoglobina glicosilada', value: 6.1, unit: '%', date: '2026-10-01' },
+        ],
       },
     ],
   },
 ];
 
+function toDate(value) {
+  return new Date(`${value}T00:00:00.000Z`);
+}
+
+// Catálogos: upsert por nombre, así el seed se puede correr sobre una base con
+// datos sin duplicarlos. Devuelve los ids por nombre para resolver referencias.
+async function seedCatalogs() {
+  const groupIds = {};
+  for (const { name, parent } of FOOD_GROUPS) {
+    const parentId = parent ? groupIds[parent] : null;
+    const group = await prisma.foodGroup.upsert({
+      where: { name },
+      update: { parentId },
+      create: { name, parentId },
+    });
+    groupIds[name] = group.id;
+  }
+
+  const foodIds = {};
+  for (const { name, group, categories } of FOODS) {
+    const food = await prisma.food.upsert({
+      where: { name },
+      update: { foodGroupId: groupIds[group], active: true },
+      create: { name, foodGroupId: groupIds[group] },
+    });
+    await prisma.foodCategory.deleteMany({ where: { foodId: food.id } });
+    await prisma.foodCategory.createMany({
+      data: categories.map((category) => ({ foodId: food.id, category })),
+    });
+    foodIds[name] = food.id;
+  }
+
+  const pathologyIds = {};
+  for (const { name, description } of PATHOLOGIES) {
+    const pathology = await prisma.pathology.upsert({
+      where: { name },
+      update: { description },
+      create: { name, description },
+    });
+    pathologyIds[name] = pathology.id;
+  }
+
+  console.log(
+    `Seed: catálogo con ${FOOD_GROUPS.length} grupos, ${FOODS.length} alimentos y ${PATHOLOGIES.length} patologías.`,
+  );
+  return { groupIds, foodIds, pathologyIds };
+}
+
+function requireId(ids, name, kind) {
+  if (!ids[name]) throw new Error(`Seed: ${kind} "${name}" no está en el catálogo`);
+  return ids[name];
+}
+
+async function seedPatient(nutritionistId, patient, catalog) {
+  const { data, conditions = [], consultations = [], looseMeasurements = [] } = patient;
+
+  const { id: patientId } = await prisma.patient.create({ data: { ...data, nutritionistId } });
+
+  await prisma.patientCondition.createMany({
+    data: conditions.map(({ type, pathology, food, foodGroup, observations }) => ({
+      patientId,
+      type,
+      pathologyId: pathology ? requireId(catalog.pathologyIds, pathology, 'patología') : null,
+      foodId: food ? requireId(catalog.foodIds, food, 'alimento') : null,
+      foodGroupId: foodGroup ? requireId(catalog.groupIds, foodGroup, 'grupo') : null,
+      observations: observations ?? null,
+    })),
+  });
+
+  // Hábitos pautados en la consulta anterior que se evalúan en la actual.
+  let habitsToEvaluate = [];
+  for (const { date, measurements, habits, ...consultationData } of consultations) {
+    const consultation = await prisma.consultation.create({
+      data: { ...consultationData, date: toDate(date), patientId },
+    });
+
+    for (const { habitId, evaluation } of habitsToEvaluate) {
+      await prisma.prescribedHabit.update({
+        where: { id: habitId },
+        data: {
+          evaluationConsultationId: consultation.id,
+          compliance: evaluation.compliance,
+          evaluationObservations: evaluation.observations ?? null,
+        },
+      });
+    }
+
+    await prisma.measurement.createMany({
+      data: measurements.map((measurement) => ({
+        ...measurement,
+        date: consultation.date,
+        patientId,
+        consultationId: consultation.id,
+      })),
+    });
+
+    habitsToEvaluate = [];
+    for (const { description, evaluation } of habits) {
+      const habit = await prisma.prescribedHabit.create({
+        data: { description, consultationId: consultation.id },
+      });
+      if (evaluation) habitsToEvaluate.push({ habitId: habit.id, evaluation });
+    }
+  }
+
+  await prisma.measurement.createMany({
+    data: looseMeasurements.map(({ date, ...measurement }) => ({ ...measurement, date: toDate(date), patientId })),
+  });
+}
+
+async function seedRecipes(nutritionistId, recipes, catalog) {
+  await prisma.recipe.deleteMany({ where: { nutritionistId } });
+
+  for (const { ingredients, mealTypes, ...recipeData } of recipes) {
+    await prisma.recipe.create({
+      data: {
+        ...recipeData,
+        nutritionistId,
+        ingredients: {
+          create: ingredients.map(({ food, quantityDescription }, index) => ({
+            foodId: requireId(catalog.foodIds, food, 'alimento'),
+            quantityDescription,
+            order: index + 1,
+          })),
+        },
+        mealTypes: { create: mealTypes.map((mealType) => ({ mealType })) },
+      },
+    });
+  }
+}
+
 async function main() {
   const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
+  const catalog = await seedCatalogs();
 
-  for (const { nutritionist: data, patients } of SEED_DATA) {
+  for (const { nutritionist: data, patients, recipes } of SEED_DATA) {
     const nutritionist = await prisma.nutritionist.upsert({
       where: { email: data.email },
       update: { passwordHash },
       create: { ...data, passwordHash },
     });
 
+    // Borrar los pacientes arrastra en cascada sus condiciones, consultas,
+    // mediciones y hábitos pautados.
     await prisma.patient.deleteMany({ where: { nutritionistId: nutritionist.id } });
-    await prisma.patient.createMany({
-      data: patients.map((patient) => ({ ...patient, nutritionistId: nutritionist.id })),
-    });
+    for (const patient of patients) {
+      await seedPatient(nutritionist.id, patient, catalog);
+    }
+    await seedRecipes(nutritionist.id, recipes, catalog);
 
-    console.log(`Seed: ${nutritionist.email} con ${patients.length} pacientes.`);
+    console.log(`Seed: ${nutritionist.email} con ${patients.length} pacientes y ${recipes.length} receta(s).`);
   }
 
   console.log(`Contraseña de prueba de ambos nutricionistas: ${SEED_PASSWORD}`);

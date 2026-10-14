@@ -41,6 +41,31 @@ const sharedPatientFields = {
   attendsAccompanied: { type: 'boolean', nullable: true, example: true },
 };
 
+// Datos clínicos y contextuales (RF-04 a RF-14, T14). Por ahora solo salen en la
+// respuesta: PatientInput los rechaza hasta que se implemente la ficha clínica.
+const nullableText = (example) => ({ type: 'string', nullable: true, example });
+
+const clinicalPatientFields = {
+  medicalHistory: nullableText('Sin antecedentes relevantes.'),
+  medication: nullableText(null),
+  externalTreatment: nullableText(null),
+  physicalActivity: nullableText('Camina 30 minutos, dos veces por semana'),
+  smoking: nullableText('No fuma'),
+  alcohol: nullableText('Ocasional, fines de semana'),
+  mealSchedule: nullableText('Desayuno 7 h, almuerzo 13 h, cena 21 h'),
+  sleepSchedule: nullableText('De 23 h a 6:30 h'),
+  cooks: { type: 'boolean', nullable: true, example: true },
+  likesCooking: { type: 'boolean', nullable: true, example: true },
+  cookingTime: nullableText('30 minutos por día'),
+  homeEquipment: nullableText('Horno, anafe y microondas'),
+  usualShoppingPlace: nullableText('Supermercado y verdulería del barrio'),
+  mealsOutsideHome: nullableText('Almuerzo de lunes a viernes'),
+  outsideEquipment: nullableText('Heladera y microondas en la oficina'),
+  occupation: nullableText('Administrativa'),
+  workContext: nullableText('Oficina, de 8 a 16 h, horario regular'),
+  intakePatterns: nullableText('Picoteo por la tarde'),
+};
+
 const schemas = {
   Health: {
     type: 'object',
@@ -120,10 +145,13 @@ const schemas = {
     type: 'object',
     description:
       'Paciente tal como lo devuelve la API. `nutritionistId` no viaja: es siempre el del ' +
-      'nutricionista autenticado.',
+      'nutricionista autenticado.\n\n' +
+      'Los datos clínicos y contextuales (`medicalHistory` a `intakePatterns`) por ahora solo ' +
+      'se leen: el alta y la edición todavía no los aceptan.',
     properties: {
       id: { type: 'string', format: 'uuid' },
       ...sharedPatientFields,
+      ...clinicalPatientFields,
       birthDate: {
         type: 'string',
         format: 'date-time',
