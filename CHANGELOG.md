@@ -6,6 +6,31 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ### Added
 
+- Modelo de datos del Incremento 2 (T14), en la migración `20261014203321_agrega_datos_clinicos_consultas_y_catalogos`. `schema.prisma` pasa a ser el modelo lógico vigente de los Incrementos 1 y 2. Lo que se agrega:
+  - **Paciente**, con todas las columnas nuevas opcionales (RNF-03, RNF-09): antecedentes y medicación (RF-04); tratamiento externo (RF-05); hábitos en cinco campos (actividad física, tabaco, alcohol, horarios de comida y de sueño, RF-06); contexto de cocina, con `cooks` agregado al Anexo A (RF-08); comidas y equipamiento fuera del hogar (RF-09); ocupación y contexto laboral (RF-10); patrones de ingesta (RF-14).
+  - **Pacientes y consultas**: `pathology`, `patient_condition`, `consultation`, `measurement` (antropometría y laboratorio en una sola tabla, con `detail` para precisar el tipo) y `prescribed_habit` (consulta que lo establece y consulta que lo evalúa).
+  - **Catálogos**: `food_group` (jerárquico), `food`, `food_category`, `recipe` (con `nutritionist_id`, RNF-05), `recipe_ingredient`, `recipe_meal_type` y `clinical_recommendation`. Alimentos, grupos, patologías y recomendaciones son comunes a todos los nutricionistas. `recipe.plan_origen_id` llega en el Incremento 3.
+  - Valores de enum en inglés (`pathology`, `follow_up`, `skinfold`, `afternoon_snack`, etc.).
+  - Restricciones `CHECK` en el SQL de la migración: alimento y grupo excluyentes en una condición; `pathology_id` si y solo si el tipo es `pathology`; las condiciones que no son patología referencian un alimento o un grupo; `detail` obligatorio para `skinfold`, `circumference` y `other`; `value > 0`; un hábito no se evalúa en la misma consulta que lo pauta; un grupo no es su propio padre; `time_minutes > 0`.
+  - Correspondencia completa con el Anexo A y el porqué de cada ajuste: `docs/decisiones/ajustes-al-modelo-del-anexo-a-incremento-2.md` y `docs/decisiones/catalogos-comunes-entre-nutricionistas.md` en el repo raíz.
+- `src/schemas/patientCondition.schema.js` y `src/schemas/measurement.schema.js`, con sus tests: validan en la aplicación las mismas reglas que los `CHECK`, para que los endpoints de esos módulos respondan `400` con el campo puntual. Todavía no están montados en ninguna ruta.
+- Seed (`scripts/seed.js` + `scripts/seed-data/catalogs.js`), solo con datos ficticios: 15 grupos de alimentos en dos niveles, 31 alimentos con sus categorías y las patologías de los casos de prueba (celiaquía, diabetes, hipertensión), cargados con `upsert` por nombre. Los pacientes existentes ahora tienen condiciones, consultas con mediciones y laboratorio, hábitos pautados y evaluados, y mediciones cargadas fuera de una consulta. Cada nutricionista tiene una receta propia. No se cargan recomendaciones clínicas, porque serían contenido clínico real.
+
+### Changed
+
+- `GET /patients` y `GET /patients/:id` devuelven también las columnas nuevas del paciente (T14), en `null` cuando no hay dato, porque el serializer expone el registro completo. `POST` y `PUT` todavía no las aceptan (schema `.strict()`): se suman con la tarea del módulo de ficha clínica. El schema `Patient` del spec OpenAPI las documenta; `PatientInput` no cambia.
+- `optionalField` y el parseo de fechas `AAAA-MM-DD` (`pastOrTodayDate`) pasan de `patient.schema.js` a `common.schema.js`, para reutilizarlos. Los mensajes de `birthDate` no cambian.
+
+### Fixed
+
+- Antes, cualquier cambio en `prisma/` (el schema, una migración nueva o un `migration.sql` editado) hacía que la imagen del backend reinstalara todas las dependencias, y cada `test:backend`, `db:*` o `up` tardaba unos 5 minutos. Pasaba porque el `Dockerfile` copiaba `prisma/` antes del `npm install`. Ahora instala primero y genera el cliente después, en un `RUN npx prisma generate` propio. Así, un cambio de schema solo repite ese paso (segundos), y `npm install` corre únicamente cuando cambian `package.json` o `package-lock.json`, como ya decía el README de la raíz.
+
+## [0.0.1] - 2026-09-30
+
+Incremento 1: tareas T1 a T8 y las de soporte (ver `docs/cierre-incremento-1.md` en el repo raíz).
+
+### Added
+
 - `GET /health/ia` (T7), público: prueba de comunicación backend → servicio de IA. El backend pide el `/health` de `nutria-ia` por la red interna y devuelve `{ status, service, ia: { status, service, latencyMs }, timestamp }`. Si el servicio de IA está caído, no responde dentro de `IA_TIMEOUT_MS` (variable nueva, 3000 ms por defecto) o responde con error, el backend contesta `503` con `code: IA_UNAVAILABLE` y el motivo en `details.reason` (`timeout`, `unreachable`, `bad_status`, `bad_body`), sin colgar la request ni caerse. Toda llamada del backend a la IA pasa por `src/clients/ia.client.js`, que es donde se va a adjuntar el identity token en el Incremento 3.
 - Middleware `validate` (`src/middlewares/validate.js`, T7): cada endpoint declara en la ruta los schemas Zod de `params`, `query` y `body`, y el controlador lee los datos ya parseados de `req.validated`. Las rutas sin parámetros de query rechazan uno desconocido con `400`. En `/patients/:id` un id que no es UUID sigue respondiendo `404`, igual que un paciente inexistente o de otro nutricionista.
 - `process.on('unhandledRejection')` en `src/server.js`: una promesa rechazada fuera de una request se loguea en vez de terminar el proceso.
@@ -46,6 +71,6 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 - El `Dockerfile` no copiaba `prisma/` a la imagen: `prisma generate` no tenía el schema contra el que generar, así que el cliente de Prisma nunca se generaba dentro del contenedor.
 - `birthDate` aceptaba fechas inexistentes (`2023-02-30` se guardaba como `2023-03-02`, por el desborde de días de `Date`) y fechas futuras (que daban edad negativa y podían disparar la exigencia de datos del adulto responsable). Ambos casos ahora responden `400` en `details.fields.birthDate`.
 
-## Tags
+## Versiones
 
-Sin versiones publicadas todavía. Cuando cierre la iteración actual, sus cambios pasarán de "Unreleased" a una entrada `## [0.1] - AAAA-MM-DD` (siguiendo versionado semántico) en esta sección.
+Cada incremento cerrado es una versión. Al cerrar el incremento en curso, el contenido de "Unreleased" pasa a una entrada `## [X.Y.Z] - AAAA-MM-DD` nueva, arriba de la anterior, y "Unreleased" queda vacío para lo que siga. Las versiones siguen el versionado semántico.
