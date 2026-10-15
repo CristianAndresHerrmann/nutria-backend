@@ -3,7 +3,7 @@
 // Incremento 2 (T14): datos clínicos y contextuales del paciente (RF-04 a RF-14), consultas,
 // mediciones y laboratorio, hábitos pautados, y catálogos de alimentos, recetas y
 // recomendaciones (RF-24, RF-25, RF-27, RF-30). PLAN y lo que depende de él llegan en el
-// Incremento 3.
+// Incremento 3. T15: autoría y nombre sin distinguir mayúsculas en los catálogos.
 //
 // Convención de nombres: campos en camelCase (idiomático de Prisma/JS), mapeados con
 // @map a columnas snake_case en Postgres. Los valores de los enums también son
@@ -32,6 +32,11 @@ model Nutritionist {
 
   patients Patient[]
   recipes  Recipe[]
+
+  // Ítems de los catálogos comunes que cargó (T15): solo su autor los modifica.
+  foodGroups  FoodGroup[]
+  foods       Food[]
+  pathologies Pathology[]
 
   @@map("nutritionist")
 }
@@ -110,11 +115,14 @@ model Patient {
 // Pacientes y consultas (Anexo A.1)
 // ---------------------------------------------------------------------------
 
-// Catálogo común a todos los nutricionistas.
+// Catálogo común a todos los nutricionistas. Ver "Autoría y nombre en los
+// catálogos" más abajo, en FoodGroup.
 model Pathology {
-  id          String  @id @default(uuid()) @db.Uuid
-  name        String  @unique
+  id          String        @id @default(uuid()) @db.Uuid
+  name        String        @unique @db.Citext
   description String?
+  createdById String?       @map("created_by_id") @db.Uuid
+  createdBy   Nutritionist? @relation(fields: [createdById], references: [id], onDelete: Restrict)
 
   conditions      PatientCondition[]
   recommendations ClinicalRecommendation[]
@@ -246,14 +254,26 @@ model PrescribedHabit {
 // Catálogos (Anexo A.2). Comunes a todos los nutricionistas, salvo Recipe.
 // ---------------------------------------------------------------------------
 
+// Autoría y nombre en los catálogos (T15), comunes a FoodGroup, Food y Pathology:
+// - createdById es el nutricionista que cargó el ítem. Todos leen el catálogo
+//   completo, pero solo el autor lo modifica. null = base inicial (seed), de solo
+//   lectura por la API.
+// - name es citext: el @unique no distingue mayúsculas ("Leche" y "leche" chocan).
+//   La extensión se crea en la migración 20261015013417_agrega_autor_y_nombre_sin_mayusculas_a_catalogos.
+// Ver docs/decisiones/abm-de-catalogos-comunes.md y
+// docs/decisiones/nombres-de-catalogo-sin-distinguir-mayusculas.md en el repo raíz.
+
 // Grupo de alimentos jerárquico (RF-24). CHECK en la migración: no es su propio padre.
+// Los ciclos más largos los impide el servicio (no se pueden expresar como CHECK).
 model FoodGroup {
-  id          String      @id @default(uuid()) @db.Uuid
-  parentId    String?     @map("parent_id") @db.Uuid
-  parent      FoodGroup?  @relation("FoodGroupHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
-  children    FoodGroup[] @relation("FoodGroupHierarchy")
-  name        String      @unique
+  id          String        @id @default(uuid()) @db.Uuid
+  parentId    String?       @map("parent_id") @db.Uuid
+  parent      FoodGroup?    @relation("FoodGroupHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children    FoodGroup[]   @relation("FoodGroupHierarchy")
+  name        String        @unique @db.Citext
   description String?
+  createdById String?       @map("created_by_id") @db.Uuid
+  createdBy   Nutritionist? @relation(fields: [createdById], references: [id], onDelete: Restrict)
 
   foods      Food[]
   conditions PatientCondition[]
@@ -263,13 +283,16 @@ model FoodGroup {
 }
 
 // Alimento (RF-24). Se desactiva con active = false en vez de borrarse, porque lo
-// referencian condiciones e ingredientes.
+// referencian condiciones e ingredientes: la API no tiene DELETE y las FK con
+// onDelete: Restrict impiden el borrado físico de uno en uso.
 model Food {
-  id          String    @id @default(uuid()) @db.Uuid
-  foodGroupId String    @map("food_group_id") @db.Uuid
-  foodGroup   FoodGroup @relation(fields: [foodGroupId], references: [id], onDelete: Restrict)
-  name        String    @unique
-  active      Boolean   @default(true)
+  id          String        @id @default(uuid()) @db.Uuid
+  foodGroupId String        @map("food_group_id") @db.Uuid
+  foodGroup   FoodGroup     @relation(fields: [foodGroupId], references: [id], onDelete: Restrict)
+  name        String        @unique @db.Citext
+  active      Boolean       @default(true)
+  createdById String?       @map("created_by_id") @db.Uuid
+  createdBy   Nutritionist? @relation(fields: [createdById], references: [id], onDelete: Restrict)
 
   categories  FoodCategory[]
   conditions  PatientCondition[]

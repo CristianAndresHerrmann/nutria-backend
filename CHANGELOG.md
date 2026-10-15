@@ -16,8 +16,41 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 - `src/schemas/patientCondition.schema.js` y `src/schemas/measurement.schema.js`, con sus tests: validan en la aplicación las mismas reglas que los `CHECK`, para que los endpoints de esos módulos respondan `400` con el campo puntual. Todavía no están montados en ninguna ruta.
 - Seed (`scripts/seed.js` + `scripts/seed-data/catalogs.js`), solo con datos ficticios: 15 grupos de alimentos en dos niveles, 31 alimentos con sus categorías y las patologías de los casos de prueba (celiaquía, diabetes, hipertensión), cargados con `upsert` por nombre. Los pacientes existentes ahora tienen condiciones, consultas con mediciones y laboratorio, hábitos pautados y evaluados, y mediciones cargadas fuera de una consulta. Cada nutricionista tiene una receta propia. No se cargan recomendaciones clínicas, porque serían contenido clínico real.
 
+- Catálogos comunes (T15; RF-04 patologías, RF-24, RF-25): `GET`/`POST` `/food-groups`, `/foods` y `/pathologies`, y `GET`/`PUT` `/{recurso}/:id`, todos con token.
+  - **Autoría:** todos los nutricionistas leen el catálogo completo y cualquiera da de alta, pero solo quien cargó un ítem lo edita o lo da de baja. Los demás reciben `403 FORBIDDEN`.
+    - Los ítems del seed no tienen autor: son de solo lectura por la API.
+    - El autor sale del token. Un `createdById` en el body da `400`.
+    - La respuesta trae `editable` (`true` si lo cargó el nutricionista autenticado) y no expone el autor.
+    - Además del chequeo del servicio, el repositorio edita con `updateMany` filtrado por autor y corta cualquier escritura sin autor, como `patient.repository`.
+  - **Nombre único sin distinguir mayúsculas** en los tres catálogos: "leche" choca con "Leche" y responde `409 CONFLICT` con el campo en `details.fields.name`.
+    - Los espacios de más se normalizan antes de guardar.
+    - No ignora acentos: "Cafe" y "Café" son nombres distintos.
+  - **Grupos:** jerarquía de cualquier profundidad. Un `parentId` que pondría al grupo dentro de sí mismo o de uno de sus subgrupos responde `400` en `details.fields.parentId` (`src/utils/foodGroupTree.js`), y un padre inexistente también da `400`.
+  - **Alimentos:**
+    - Una o más categorías nutricionales, sin repetir. Un array vacío, un valor desconocido o un repetido dan `400` en `details.fields.categories`.
+    - Un grupo inexistente da `400` en `foodGroupId`.
+    - `GET /foods` acepta `search` (parte del nombre), `groupId` (incluye los subgrupos) e `includeInactive`. Por defecto solo devuelve los vigentes.
+  - **Baja lógica:** no hay `DELETE`. Un alimento se da de baja con `active: false` en el `PUT`, que exige `active` para que omitirlo no dé de baja ni reactive sin querer. La base tampoco deja borrar uno en uso: las FK de condiciones e ingredientes son `RESTRICT`.
+  - Documentados en Swagger, bajo el tag "Catálogos".
+- Migración `20261015013417_agrega_autor_y_nombre_sin_mayusculas_a_catalogos`:
+  - Agrega `created_by_id` (FK a `nutritionist`, nullable) a `food`, `food_group` y `pathology`.
+  - Pasa `name` a `citext` en las tres tablas. Así, el índice único existente pasa a no distinguir mayúsculas.
+  - La extensión `citext` se crea a mano al principio del `migration.sql`, y Prisma no la detecta como drift.
+  - **Si el backend está levantado mientras se aplica esta migración o se corre `npm run db:reset`, hay que reiniciarlo** (`docker restart nutria-backend-1`). Prisma cachea los tipos de la base y, hasta reiniciar, responde `500` ("cache lookup failed for type…"). `npm run up` no tiene el problema, porque migra antes de arrancar.
+- Tests de T15:
+  - Categorías válidas.
+  - Jerarquía sin ciclos.
+  - Nombre duplicado → `CONFLICT`.
+  - Autoría: `403` sobre un ítem ajeno o del seed, y el autor del alta tomado del token.
+  - Baja lógica, y que el servicio no exponga un borrado.
+  - Filtros del listado.
+  - Escrituras del repositorio filtradas por autor.
+  - De punta a punta: `401` sin token en las 12 rutas, nutricionista del token hasta el servicio, `DELETE /foods/:id` inexistente, `403` y `409` con el formato uniforme.
+- Pendiente para el Incremento 3: la composición esperada por tipo de comida (RF-26) se recortó de T15. La consume el motor de reglas, y desayuno y merienda dependen de la entrevista de validación.
+
 ### Changed
 
+- `AppError` asigna `FORBIDDEN` por defecto al status `403`.
 - `GET /patients` y `GET /patients/:id` devuelven también las columnas nuevas del paciente (T14), en `null` cuando no hay dato, porque el serializer expone el registro completo. `POST` y `PUT` todavía no las aceptan (schema `.strict()`): se suman con la tarea del módulo de ficha clínica. El schema `Patient` del spec OpenAPI las documenta; `PatientInput` no cambia.
 - `optionalField` y el parseo de fechas `AAAA-MM-DD` (`pastOrTodayDate`) pasan de `patient.schema.js` a `common.schema.js`, para reutilizarlos. Los mensajes de `birthDate` no cambian.
 

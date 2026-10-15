@@ -3,6 +3,9 @@ const config = require('../config/env');
 const healthRoutes = require('./health.routes');
 const authRoutes = require('./auth.routes');
 const patientRoutes = require('./patient.routes');
+const foodGroupRoutes = require('./foodGroup.routes');
+const foodRoutes = require('./food.routes');
+const pathologyRoutes = require('./pathology.routes');
 
 function createRouter(nodeEnv) {
   const router = Router();
@@ -10,6 +13,9 @@ function createRouter(nodeEnv) {
   router.use(healthRoutes);
   router.use(authRoutes);
   router.use(patientRoutes);
+  router.use(foodGroupRoutes);
+  router.use(foodRoutes);
+  router.use(pathologyRoutes);
 
   // La documentación interactiva es una herramienta de desarrollo, no parte de la
   // API. Con el require adentro del if, en producción swagger-ui ni se carga.

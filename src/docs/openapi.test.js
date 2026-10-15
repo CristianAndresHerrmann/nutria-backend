@@ -15,13 +15,33 @@ const EXPECTED_OPERATIONS = [
   'post /patients',
   'get /patients/{id}',
   'put /patients/{id}',
+  'get /food-groups',
+  'post /food-groups',
+  'get /food-groups/{id}',
+  'put /food-groups/{id}',
+  'get /foods',
+  'post /foods',
+  'get /foods/{id}',
+  'put /foods/{id}',
+  'get /pathologies',
+  'post /pathologies',
+  'get /pathologies/{id}',
+  'put /pathologies/{id}',
 ];
+
+const CATALOG_PATHS = ['/food-groups', '/foods', '/pathologies'];
 
 const PROTECTED_OPERATIONS = [
   ['/patients', 'get'],
   ['/patients', 'post'],
   ['/patients/{id}', 'get'],
   ['/patients/{id}', 'put'],
+  ...CATALOG_PATHS.flatMap((path) => [
+    [path, 'get'],
+    [path, 'post'],
+    [`${path}/{id}`, 'get'],
+    [`${path}/{id}`, 'put'],
+  ]),
 ];
 
 function listOperations(spec) {
@@ -94,6 +114,17 @@ describe('spec OpenAPI del backend', () => {
 
     expect(responses['201']).toBeDefined();
     expect(responses['200']).toBeUndefined();
+  });
+
+  it.each(CATALOG_PATHS)('%s: el alta es 201 y la edición documenta 403 (no es el autor) y 409 (nombre repetido)', (path) => {
+    expect(openapiSpec.paths[path].post.responses['201']).toBeDefined();
+    expect(openapiSpec.paths[path].post.responses['409']).toBeDefined();
+    expect(openapiSpec.paths[`${path}/{id}`].put.responses['403']).toBeDefined();
+    expect(openapiSpec.paths[`${path}/{id}`].put.responses['409']).toBeDefined();
+  });
+
+  it('no documenta ningún DELETE de alimentos: la baja es lógica', () => {
+    expect(openapiSpec.paths['/foods/{id}'].delete).toBeUndefined();
   });
 
   it('documenta el 503 del diagnóstico de IA', () => {
