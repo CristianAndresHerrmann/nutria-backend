@@ -3,15 +3,17 @@ const { foodController } = require('../controllers/catalog.controller');
 const requireAuth = require('../middlewares/auth');
 const validate = require('../middlewares/validate');
 const { emptyQuerySchema, catalogIdParamsSchema } = require('../schemas/common.schema');
-const { createFoodSchema, updateFoodSchema, listFoodsQuerySchema } = require('../schemas/food.schema');
+const { createFoodSchema, listFoodsQuerySchema } = require('../schemas/food.schema');
 const { FOOD_NOT_FOUND_MESSAGE } = require('../services/food.service');
 
 const router = Router();
 
+// Un id que no es UUID responde 404, igual que un alimento inexistente o privado
+// de otro nutricionista.
 const byId = { notFoundOnInvalidParams: FOOD_NOT_FOUND_MESSAGE };
 
-// No hay DELETE: un alimento se da de baja con `active: false` en el PUT (baja
-// lógica). Lo referencian condiciones de pacientes e ingredientes de recetas.
+// No hay PUT ni DELETE: el nutricionista no edita ni da de baja alimentos. Lo
+// hace el administrador (tarea aparte), y la baja es lógica (active = false).
 
 /**
  * @openapi
@@ -20,9 +22,10 @@ const byId = { notFoundOnInvalidParams: FOOD_NOT_FOUND_MESSAGE };
  *     tags: [Catálogos]
  *     summary: Lista y busca alimentos
  *     description: >
- *       Catálogo común a todos los nutricionistas, ordenado por nombre. Por defecto devuelve
- *       solo los vigentes. Filtrar por un grupo incluye los alimentos de sus subgrupos; un
- *       grupo inexistente devuelve una lista vacía.
+ *       Devuelve los alimentos comunes y los privados del nutricionista autenticado, solo los
+ *       vigentes, ordenados por nombre. Los privados de otros nutricionistas nunca aparecen.
+ *       Filtrar por un grupo incluye los alimentos de sus subgrupos; un grupo inexistente
+ *       devuelve una lista vacía.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -34,10 +37,6 @@ const byId = { notFoundOnInvalidParams: FOOD_NOT_FOUND_MESSAGE };
  *         in: query
  *         description: Grupo de alimentos; incluye sus subgrupos.
  *         schema: { type: string, format: uuid }
- *       - name: includeInactive
- *         in: query
- *         description: Con `true` incluye los alimentos dados de baja.
- *         schema: { type: string, enum: ['true', 'false'], default: 'false' }
  *     responses:
  *       '200':
  *         description: Alimentos que cumplen el filtro, eventualmente ninguno
@@ -58,7 +57,9 @@ router.get('/foods', requireAuth, validate({ query: listFoodsQuerySchema }), foo
  *   get:
  *     tags: [Catálogos]
  *     summary: Obtiene un alimento
- *     description: Devuelve el alimento aunque esté dado de baja.
+ *     description: >
+ *       Un alimento común o uno privado del nutricionista autenticado. Uno privado de otro
+ *       nutricionista responde 404, igual que uno inexistente.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -85,18 +86,19 @@ router.get(
  * /foods:
  *   post:
  *     tags: [Catálogos]
- *     summary: Da de alta un alimento
+ *     summary: Da de alta un alimento privado
  *     description: >
- *       Nace vigente y a nombre del nutricionista del token, que es el único que después
- *       puede editarlo. Puede ir en cualquier grupo existente. El nombre es único sin
- *       distinguir mayúsculas: "leche" choca con "Leche" y responde 409.
+ *       El alimento queda privado del nutricionista del token: solo él lo ve y lo usa. Nace
+ *       vigente y después no se puede modificar desde la cuenta del nutricionista. El nombre
+ *       no puede repetir uno común ni uno propio, sin distinguir mayúsculas ("leche" choca
+ *       con "Leche"): responde 409.
  *     security:
  *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
- *           schema: { $ref: '#/components/schemas/FoodCreateInput' }
+ *           schema: { $ref: '#/components/schemas/FoodInput' }
  *     responses:
  *       '201':
  *         description: Alimento creado
@@ -109,44 +111,5 @@ router.get(
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.post('/foods', requireAuth, validate({ query: emptyQuerySchema, body: createFoodSchema }), foodController.create);
-
-/**
- * @openapi
- * /foods/{id}:
- *   put:
- *     tags: [Catálogos]
- *     summary: Edita o da de baja un alimento propio
- *     description: >
- *       Reemplazo completo, incluidas las categorías. `active: false` es la baja lógica:
- *       el alimento no se borra y sigue referenciado por condiciones e ingredientes. Solo lo
- *       puede editar quien lo cargó; los de la base inicial no se editan por la API.
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - { $ref: '#/components/parameters/CatalogId' }
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema: { $ref: '#/components/schemas/FoodUpdateInput' }
- *     responses:
- *       '200':
- *         description: Alimento actualizado
- *         content:
- *           application/json:
- *             schema: { $ref: '#/components/schemas/Food' }
- *       '400': { $ref: '#/components/responses/ValidationError' }
- *       '401': { $ref: '#/components/responses/UnauthorizedError' }
- *       '403': { $ref: '#/components/responses/ForbiddenError' }
- *       '404': { $ref: '#/components/responses/FoodNotFound' }
- *       '409': { $ref: '#/components/responses/ConflictError' }
- *       '500': { $ref: '#/components/responses/InternalError' }
- */
-router.put(
-  '/foods/:id',
-  requireAuth,
-  validate({ params: catalogIdParamsSchema, query: emptyQuerySchema, body: updateFoodSchema }, byId),
-  foodController.update,
-);
 
 module.exports = router;

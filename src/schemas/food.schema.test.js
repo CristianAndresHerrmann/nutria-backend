@@ -1,4 +1,4 @@
-const { createFoodSchema, updateFoodSchema, listFoodsQuerySchema } = require('./food.schema');
+const { createFoodSchema, listFoodsQuerySchema } = require('./food.schema');
 
 const GROUP_ID = '33333333-3333-3333-3333-333333333333';
 
@@ -55,7 +55,7 @@ describe('food.schema — categorías (RF-25)', () => {
   });
 });
 
-describe('food.schema — resto del alta y la edición', () => {
+describe('food.schema — resto del alta', () => {
   it('normaliza los espacios del nombre', () => {
     const result = createFoodSchema.safeParse({ ...validFood, name: '  Pan   francés ' });
 
@@ -75,38 +75,22 @@ describe('food.schema — resto del alta y la edición', () => {
     expect(issuesByField(result).foodGroupId).toBe('Indicá el grupo de alimentos');
   });
 
-  it('el alta no acepta active: el alimento nace vigente', () => {
+  it('no acepta active: el alimento nace vigente', () => {
     expect(createFoodSchema.safeParse({ ...validFood, active: false }).success).toBe(false);
   });
 
-  it('rechaza createdById y editable en el body: el autor sale del token', () => {
-    expect(createFoodSchema.safeParse({ ...validFood, createdById: GROUP_ID }).success).toBe(false);
-    expect(updateFoodSchema.safeParse({ ...validFood, active: true, editable: true }).success).toBe(false);
-  });
-
-  it('la edición exige active, para que omitirlo no dé de baja ni reactive sin querer', () => {
-    const result = updateFoodSchema.safeParse(validFood);
-
-    expect(result.success).toBe(false);
-    expect(issuesByField(result)).toHaveProperty('active');
-    expect(updateFoodSchema.safeParse({ ...validFood, active: false }).success).toBe(true);
+  it('rechaza nutritionistId en el body: el dueño sale del token', () => {
+    expect(createFoodSchema.safeParse({ ...validFood, nutritionistId: GROUP_ID }).success).toBe(false);
   });
 });
 
 describe('food.schema — query del listado', () => {
-  it('sin parámetros lista solo vigentes', () => {
-    const result = listFoodsQuerySchema.safeParse({});
-
-    expect(result.data).toEqual({ search: null, groupId: null, includeInactive: false });
-  });
-
-  it('convierte includeInactive a booleano', () => {
-    expect(listFoodsQuerySchema.safeParse({ includeInactive: 'true' }).data.includeInactive).toBe(true);
-    expect(listFoodsQuerySchema.safeParse({ includeInactive: 'si' }).success).toBe(false);
+  it('sin parámetros no filtra', () => {
+    expect(listFoodsQuerySchema.safeParse({}).data).toEqual({ search: null, groupId: null });
   });
 
   it('rechaza un groupId que no es UUID y un parámetro desconocido', () => {
     expect(listFoodsQuerySchema.safeParse({ groupId: 'carnes' }).success).toBe(false);
-    expect(listFoodsQuerySchema.safeParse({ page: '2' }).success).toBe(false);
+    expect(listFoodsQuerySchema.safeParse({ includeInactive: 'true' }).success).toBe(false);
   });
 });

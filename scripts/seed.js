@@ -16,9 +16,13 @@ const SEED_PASSWORD = '123456aA!';
 //   que se pautan al cerrarla. Un hábito con `evaluation` se evalúa en la consulta
 //   siguiente; sin `evaluation` queda pending.
 // - `looseMeasurements` son mediciones cargadas fuera de una consulta.
+//
+// Por nutricionista, `privateFoods` son alimentos privados (T15): solo los ve ese
+// nutricionista. Sirven para verificar a mano que el otro no los ve.
 const SEED_DATA = [
   {
     nutritionist: { name: 'Camila Ríos', email: 'nutricionista@nutria.com' },
+    privateFoods: [{ name: 'Kéfir', group: 'Lácteos', categories: ['protein'] }],
     recipes: [
       {
         name: 'Ensalada de arroz y atún',
@@ -261,6 +265,23 @@ const SEED_DATA = [
   },
 ];
 
+async function setCategories(foodId, categories) {
+  await prisma.foodCategory.deleteMany({ where: { foodId } });
+  await prisma.foodCategory.createMany({ data: categories.map((category) => ({ foodId, category })) });
+}
+
+async function seedPrivateFoods(nutritionistId, foods, catalog) {
+  for (const { name, group, categories } of foods) {
+    const foodGroupId = requireId(catalog.groupIds, group, 'grupo');
+    const food = await prisma.food.upsert({
+      where: { nutritionistId_name: { nutritionistId, name } },
+      update: { foodGroupId, active: true },
+      create: { name, foodGroupId, nutritionistId },
+    });
+    await setCategories(food.id, categories);
+  }
+}
+
 function toDate(value) {
   return new Date(`${value}T00:00:00.000Z`);
 }
@@ -279,17 +300,16 @@ async function seedCatalogs() {
     groupIds[name] = group.id;
   }
 
+  // Los alimentos del seed son comunes (nutritionistId null). No hay upsert por
+  // nombre: el único es (nutritionistId, name) y Prisma no acepta null en esa clave.
   const foodIds = {};
   for (const { name, group, categories } of FOODS) {
-    const food = await prisma.food.upsert({
-      where: { name },
-      update: { foodGroupId: groupIds[group], active: true },
-      create: { name, foodGroupId: groupIds[group] },
-    });
-    await prisma.foodCategory.deleteMany({ where: { foodId: food.id } });
-    await prisma.foodCategory.createMany({
-      data: categories.map((category) => ({ foodId: food.id, category })),
-    });
+    const existing = await prisma.food.findFirst({ where: { name, nutritionistId: null } });
+    const data = { foodGroupId: groupIds[group], active: true };
+    const food = existing
+      ? await prisma.food.update({ where: { id: existing.id }, data })
+      : await prisma.food.create({ data: { ...data, name } });
+    await setCategories(food.id, categories);
     foodIds[name] = food.id;
   }
 
@@ -396,7 +416,7 @@ async function main() {
   const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
   const catalog = await seedCatalogs();
 
-  for (const { nutritionist: data, patients, recipes } of SEED_DATA) {
+  for (const { nutritionist: data, patients, recipes, privateFoods = [] } of SEED_DATA) {
     const nutritionist = await prisma.nutritionist.upsert({
       where: { email: data.email },
       update: { passwordHash },
@@ -410,8 +430,12 @@ async function main() {
       await seedPatient(nutritionist.id, patient, catalog);
     }
     await seedRecipes(nutritionist.id, recipes, catalog);
+    await seedPrivateFoods(nutritionist.id, privateFoods, catalog);
 
-    console.log(`Seed: ${nutritionist.email} con ${patients.length} pacientes y ${recipes.length} receta(s).`);
+    console.log(
+      `Seed: ${nutritionist.email} con ${patients.length} pacientes, ${recipes.length} receta(s) y ` +
+        `${privateFoods.length} alimento(s) privado(s).`,
+    );
   }
 
   console.log(`Contraseña de prueba de ambos nutricionistas: ${SEED_PASSWORD}`);

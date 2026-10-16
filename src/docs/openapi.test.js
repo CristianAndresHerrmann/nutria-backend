@@ -16,32 +16,26 @@ const EXPECTED_OPERATIONS = [
   'get /patients/{id}',
   'put /patients/{id}',
   'get /food-groups',
-  'post /food-groups',
   'get /food-groups/{id}',
-  'put /food-groups/{id}',
   'get /foods',
   'post /foods',
   'get /foods/{id}',
-  'put /foods/{id}',
   'get /pathologies',
-  'post /pathologies',
   'get /pathologies/{id}',
-  'put /pathologies/{id}',
 ];
-
-const CATALOG_PATHS = ['/food-groups', '/foods', '/pathologies'];
 
 const PROTECTED_OPERATIONS = [
   ['/patients', 'get'],
   ['/patients', 'post'],
   ['/patients/{id}', 'get'],
   ['/patients/{id}', 'put'],
-  ...CATALOG_PATHS.flatMap((path) => [
-    [path, 'get'],
-    [path, 'post'],
-    [`${path}/{id}`, 'get'],
-    [`${path}/{id}`, 'put'],
-  ]),
+  ['/food-groups', 'get'],
+  ['/food-groups/{id}', 'get'],
+  ['/foods', 'get'],
+  ['/foods', 'post'],
+  ['/foods/{id}', 'get'],
+  ['/pathologies', 'get'],
+  ['/pathologies/{id}', 'get'],
 ];
 
 function listOperations(spec) {
@@ -116,14 +110,15 @@ describe('spec OpenAPI del backend', () => {
     expect(responses['200']).toBeUndefined();
   });
 
-  it.each(CATALOG_PATHS)('%s: el alta es 201 y la edición documenta 403 (no es el autor) y 409 (nombre repetido)', (path) => {
-    expect(openapiSpec.paths[path].post.responses['201']).toBeDefined();
-    expect(openapiSpec.paths[path].post.responses['409']).toBeDefined();
-    expect(openapiSpec.paths[`${path}/{id}`].put.responses['403']).toBeDefined();
-    expect(openapiSpec.paths[`${path}/{id}`].put.responses['409']).toBeDefined();
+  it('documenta el alta de alimento como 201, con el 409 por nombre repetido', () => {
+    const responses = openapiSpec.paths['/foods'].post.responses;
+
+    expect(responses['201']).toBeDefined();
+    expect(responses['409']).toBeDefined();
   });
 
-  it('no documenta ningún DELETE de alimentos: la baja es lógica', () => {
+  it('no documenta edición ni borrado de alimentos: el nutricionista no los modifica', () => {
+    expect(openapiSpec.paths['/foods/{id}'].put).toBeUndefined();
     expect(openapiSpec.paths['/foods/{id}'].delete).toBeUndefined();
   });
 

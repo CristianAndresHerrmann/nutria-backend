@@ -66,15 +66,7 @@ const clinicalPatientFields = {
   intakePatterns: nullableText('Picoteo por la tarde'),
 };
 
-// Campos compartidos por los schemas de catálogos (T15).
-const editableField = {
-  type: 'boolean',
-  description:
-    '`true` si el nutricionista autenticado cargó el ítem y por lo tanto puede editarlo. Los ' +
-    'ítems de la base inicial son `false` para todos.',
-  example: false,
-};
-
+// Categorías de un alimento, compartidas por el alta y la respuesta (T15).
 const foodCategoriesField = {
   type: 'array',
   minItems: 1,
@@ -199,70 +191,41 @@ const schemas = {
     },
   },
 
-  // Catálogos comunes (T15). `editable` reemplaza al autor en la respuesta.
-  FoodGroupInput: {
-    type: 'object',
-    required: ['name'],
-    additionalProperties: false,
-    description:
-      'Body de alta y de edición. El nombre se guarda sin espacios de más y es único sin ' +
-      'distinguir mayúsculas. El autor no se manda: sale del token.',
-    properties: {
-      name: { type: 'string', minLength: 1, maxLength: 100, example: 'Aves' },
-      description: { type: 'string', nullable: true, maxLength: 500, example: null },
-      parentId: {
-        type: 'string',
-        format: 'uuid',
-        nullable: true,
-        description: 'Grupo padre. `null` u omitido: el grupo queda en la raíz.',
-      },
-    },
-  },
-
+  // Catálogos (T15). Grupos y patologías son comunes y de solo lectura; un
+  // alimento es común o privado del nutricionista que lo cargó.
   FoodGroup: {
     type: 'object',
     properties: {
       id: { type: 'string', format: 'uuid' },
       name: { type: 'string', example: 'Aves' },
       description: { type: 'string', nullable: true, example: null },
-      parentId: { type: 'string', format: 'uuid', nullable: true },
-      editable: editableField,
+      parentId: { type: 'string', format: 'uuid', nullable: true, description: '`null` en un grupo raíz.' },
     },
   },
 
-  FoodCreateInput: {
+  FoodInput: {
     type: 'object',
     required: ['name', 'foodGroupId', 'categories'],
     additionalProperties: false,
     description:
-      'Alta de un alimento: nace vigente. El nombre se guarda sin espacios de más y es único ' +
-      'sin distinguir mayúsculas. El autor no se manda: sale del token.',
+      'Alta de un alimento privado. El nombre se guarda sin espacios de más. El dueño no se manda: ' +
+      'sale del token.',
     properties: {
       name: { type: 'string', minLength: 1, maxLength: 100, example: 'Caballa' },
       foodGroupId: { type: 'string', format: 'uuid' },
       categories: foodCategoriesField,
-    },
-  },
-
-  FoodUpdateInput: {
-    type: 'object',
-    required: ['name', 'foodGroupId', 'categories', 'active'],
-    additionalProperties: false,
-    description: 'Edición completa de un alimento. `active: false` es la baja lógica.',
-    properties: {
-      name: { type: 'string', minLength: 1, maxLength: 100, example: 'Caballa' },
-      foodGroupId: { type: 'string', format: 'uuid' },
-      categories: foodCategoriesField,
-      active: { type: 'boolean', example: true },
     },
   },
 
   Food: {
     type: 'object',
+    description:
+      'Alimento común o privado del nutricionista autenticado. El dueño de un privado no viaja: ' +
+      'el único privado que un nutricionista ve es suyo.',
     properties: {
       id: { type: 'string', format: 'uuid' },
       name: { type: 'string', example: 'Caballa' },
-      active: { type: 'boolean', description: 'Vigente. `false` = dado de baja (baja lógica).', example: true },
+      active: { type: 'boolean', description: 'Vigente. El listado solo devuelve vigentes.', example: true },
       foodGroupId: { type: 'string', format: 'uuid' },
       foodGroup: {
         type: 'object',
@@ -273,18 +236,6 @@ const schemas = {
         },
       },
       categories: foodCategoriesField,
-      editable: editableField,
-    },
-  },
-
-  PathologyInput: {
-    type: 'object',
-    required: ['name'],
-    additionalProperties: false,
-    description: 'Body de alta y de edición. El nombre es único sin distinguir mayúsculas.',
-    properties: {
-      name: { type: 'string', minLength: 1, maxLength: 100, example: 'Hipotiroidismo' },
-      description: { type: 'string', nullable: true, maxLength: 1000, example: null },
     },
   },
 
@@ -294,7 +245,6 @@ const schemas = {
       id: { type: 'string', format: 'uuid' },
       name: { type: 'string', example: 'Celiaquía' },
       description: { type: 'string', nullable: true },
-      editable: editableField,
     },
   },
 
@@ -333,7 +283,6 @@ const schemas = {
             type: 'string',
             description:
               '`VALIDATION_ERROR`, `INVALID_JSON`, `BAD_REQUEST` (400); `UNAUTHORIZED` (401); ' +
-              '`FORBIDDEN` (403); ' +
               '`NOT_FOUND` (404); `CONFLICT` (409); `PAYLOAD_TOO_LARGE` (413); `INTERNAL_ERROR` ' +
               '(500); `BAD_GATEWAY` (502); `IA_UNAVAILABLE`, `SERVICE_UNAVAILABLE` (503).',
             example: 'UNAUTHORIZED',
@@ -367,10 +316,11 @@ function errorExample(code, message, details) {
   return { error: details ? { code, message, details } : { code, message } };
 }
 
-// 404 de un ítem de catálogo: inexistente o con un id que no es UUID.
+// 404 de un ítem de catálogo: inexistente, con un id que no es UUID o, en un
+// alimento, privado de otro nutricionista.
 function notFoundResponse(message) {
   return {
-    description: `${message}: no existe un ítem con ese id, o el id no es un UUID.`,
+    description: `${message}: no existe un ítem visible con ese id, o el id no es un UUID.`,
     content: {
       'application/json': {
         schema: { $ref: '#/components/schemas/Error' },
@@ -439,20 +389,10 @@ const responses = {
     },
   },
 
-  ForbiddenError: {
-    description:
-      'El ítem del catálogo existe pero no lo cargó el nutricionista autenticado (o es de la base ' +
-      'inicial): solo su autor lo puede modificar.',
-    content: {
-      'application/json': {
-        schema: { $ref: '#/components/schemas/Error' },
-        example: errorExample('FORBIDDEN', 'Solo quien cargó este ítem puede modificarlo'),
-      },
-    },
-  },
-
   ConflictError: {
-    description: 'Ya existe un ítem con ese nombre, sin distinguir mayúsculas.',
+    description:
+      'Ya existe un alimento con ese nombre entre los comunes o los propios, sin distinguir ' +
+      'mayúsculas.',
     content: {
       'application/json': {
         schema: { $ref: '#/components/schemas/Error' },
