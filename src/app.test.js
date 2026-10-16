@@ -107,6 +107,20 @@ describe('formato uniforme de error de punta a punta', () => {
     });
   });
 
+  it('un dato clínico inválido responde 400 con el error en su campo de details.fields', async () => {
+    const response = await request('/patients', {
+      method: 'POST',
+      token: validToken(),
+      body: { firstName: 'Ana', lastName: 'Diaz', medicalHistory: 'a'.repeat(2001), cooks: 'si' },
+    });
+
+    expectUniformError(response, 400, 'VALIDATION_ERROR');
+    expect(response.json.error.details.fields).toEqual({
+      medicalHistory: 'No puede superar los 2000 caracteres',
+      cooks: 'Debe ser sí o no',
+    });
+  });
+
   it('un id que no es UUID responde 404, igual que un paciente inexistente', async () => {
     const response = await request('/patients/no-es-un-uuid', { token: validToken() });
 
@@ -141,13 +155,17 @@ describe('rutas de pacientes — autenticación y aislamiento de punta a punta',
   function spyOnPatientService() {
     return {
       list: vi.spyOn(patientService, 'listForNutritionist').mockResolvedValue([]),
-      get: vi.spyOn(patientService, 'getForNutritionist').mockImplementation(async (_id, n) => fakePatient(n)),
+      get: vi
+        .spyOn(patientService, 'getForNutritionist')
+        .mockImplementation(async (_id, n) => ({ ...fakePatient(n), missingClinicalData: true })),
       create: vi.spyOn(patientService, 'createForNutritionist').mockImplementation(async (n) => fakePatient(n)),
       update: vi.spyOn(patientService, 'updateForNutritionist').mockImplementation(async (_id, n) => fakePatient(n)),
     };
   }
 
-  const body = { firstName: 'Ana', lastName: 'Diaz' };
+  // Incluye datos clínicos (T16): viajan por las mismas rutas y con el mismo
+  // nutricionista del token que el resto de la ficha.
+  const body = { firstName: 'Ana', lastName: 'Diaz', medicalHistory: 'Hipotiroidismo familiar', cooks: true };
 
   it.each([
     ['GET', '/patients'],
@@ -199,6 +217,15 @@ describe('rutas de pacientes — autenticación y aislamiento de punta a punta',
 
     expect(response.status).toBe(200);
     expect(response.json).not.toHaveProperty('nutritionistId');
+  });
+
+  it('el detalle incluye el aviso de datos clínicos faltantes (RF-45)', async () => {
+    spyOnPatientService();
+
+    const response = await request(`/patients/${PATIENT_ID}`, { token: tokenFor('nutri-1') });
+
+    expect(response.status).toBe(200);
+    expect(response.json.missingClinicalData).toBe(true);
   });
 });
 

@@ -1,4 +1,9 @@
-const { createPatientSchema } = require('./patient.schema');
+const {
+  createPatientSchema,
+  CLINICAL_TEXT_FIELDS,
+  CLINICAL_BOOLEAN_FIELDS,
+  CLINICAL_TEXT_MAX_LENGTH,
+} = require('./patient.schema');
 
 describe('patient.schema', () => {
   it('acepta alta parcial con solo nombre y apellido', () => {
@@ -118,5 +123,78 @@ describe('patient.schema', () => {
     const result = createPatientSchema.safeParse({ firstName: '  ', lastName: 'Diaz' });
 
     expect(result.success).toBe(false);
+  });
+});
+
+describe('patient.schema — datos clínicos y contextuales (T16)', () => {
+  function issueFor(result, field) {
+    return result.error.issues.find((issue) => issue.path[0] === field);
+  }
+
+  it('acepta una ficha con solo algunos datos clínicos y deja el resto en null', () => {
+    const result = createPatientSchema.safeParse({
+      firstName: 'Ana',
+      lastName: 'Diaz',
+      medicalHistory: 'Hipotiroidismo familiar',
+      cooks: false,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data.medicalHistory).toBe('Hipotiroidismo familiar');
+    expect(result.data.cooks).toBe(false);
+    for (const field of [...CLINICAL_TEXT_FIELDS, ...CLINICAL_BOOLEAN_FIELDS]) {
+      if (field !== 'medicalHistory' && field !== 'cooks') expect(result.data[field]).toBeNull();
+    }
+  });
+
+  it('acepta todos los campos clínicos completos', () => {
+    const body = { firstName: 'Ana', lastName: 'Diaz' };
+    for (const field of CLINICAL_TEXT_FIELDS) body[field] = `Dato de ${field}`;
+    for (const field of CLINICAL_BOOLEAN_FIELDS) body[field] = true;
+
+    const result = createPatientSchema.safeParse(body);
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject(body);
+  });
+
+  it('normaliza vacíos a null y recorta espacios en los textos clínicos', () => {
+    const result = createPatientSchema.safeParse({
+      firstName: 'Ana',
+      lastName: 'Diaz',
+      medication: '   ',
+      occupation: '  Docente  ',
+      likesCooking: '',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data.medication).toBeNull();
+    expect(result.data.occupation).toBe('Docente');
+    expect(result.data.likesCooking).toBeNull();
+  });
+
+  it('rechaza un texto clínico más largo que el máximo, con el error en su campo', () => {
+    const result = createPatientSchema.safeParse({
+      firstName: 'Ana',
+      lastName: 'Diaz',
+      medicalHistory: 'a'.repeat(CLINICAL_TEXT_MAX_LENGTH + 1),
+    });
+
+    expect(result.success).toBe(false);
+    expect(issueFor(result, 'medicalHistory').message).toBe('No puede superar los 2000 caracteres');
+  });
+
+  it('rechaza un texto clínico que no es string', () => {
+    const result = createPatientSchema.safeParse({ firstName: 'Ana', lastName: 'Diaz', smoking: 3 });
+
+    expect(result.success).toBe(false);
+    expect(issueFor(result, 'smoking').message).toBe('Debe ser texto');
+  });
+
+  it.each(CLINICAL_BOOLEAN_FIELDS)('rechaza "%s" si no es booleano', (field) => {
+    const result = createPatientSchema.safeParse({ firstName: 'Ana', lastName: 'Diaz', [field]: 'si' });
+
+    expect(result.success).toBe(false);
+    expect(issueFor(result, field).message).toBe('Debe ser sí o no');
   });
 });

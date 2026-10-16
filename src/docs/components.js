@@ -41,9 +41,9 @@ const sharedPatientFields = {
   attendsAccompanied: { type: 'boolean', nullable: true, example: true },
 };
 
-// Datos clínicos y contextuales (RF-04 a RF-14, T14). Por ahora solo salen en la
-// respuesta: PatientInput los rechaza hasta que se implemente la ficha clínica.
-const nullableText = (example) => ({ type: 'string', nullable: true, example });
+// Datos clínicos y contextuales (RF-04 a RF-14). Columnas de T14; el alta y la
+// edición los aceptan desde T16, todos opcionales.
+const nullableText = (example) => ({ type: 'string', nullable: true, maxLength: 2000, example });
 
 const clinicalPatientFields = {
   medicalHistory: nullableText('Sin antecedentes relevantes.'),
@@ -128,9 +128,13 @@ const schemas = {
       'campos en `details.fields`.\n\n' +
       'Los campos opcionales aceptan el valor, `""`, `null` o su ausencia; las tres últimas ' +
       'formas se guardan como `null`. Eso permite dar de alta un paciente con solo nombre y ' +
-      'apellido y completar el resto después.',
+      'apellido y completar el resto después.\n\n' +
+      'Los datos clínicos y contextuales (`medicalHistory` a `intakePatterns`) son todos ' +
+      'opcionales. Como la edición reemplaza el objeto completo, un campo que no se manda en ' +
+      'el `PUT` queda en `null`.',
     properties: {
       ...sharedPatientFields,
+      ...clinicalPatientFields,
       birthDate: {
         type: 'string',
         pattern: '^\\d{4}-\\d{2}-\\d{2}$',
@@ -155,9 +159,7 @@ const schemas = {
     type: 'object',
     description:
       'Paciente tal como lo devuelve la API. `nutritionistId` no viaja: es siempre el del ' +
-      'nutricionista autenticado.\n\n' +
-      'Los datos clínicos y contextuales (`medicalHistory` a `intakePatterns`) por ahora solo ' +
-      'se leen: el alta y la edición todavía no los aceptan.',
+      'nutricionista autenticado.',
     properties: {
       id: { type: 'string', format: 'uuid' },
       ...sharedPatientFields,
@@ -189,6 +191,26 @@ const schemas = {
       createdAt: { type: 'string', format: 'date-time' },
       updatedAt: { type: 'string', format: 'date-time' },
     },
+  },
+
+  PatientDetail: {
+    description: 'Paciente con los datos que solo se calculan en el detalle (`GET /patients/{id}`).',
+    allOf: [
+      { $ref: '#/components/schemas/Patient' },
+      {
+        type: 'object',
+        properties: {
+          missingClinicalData: {
+            type: 'boolean',
+            description:
+              'Aviso de RF-45: `true` cuando el paciente no tiene registrada ninguna patología, ' +
+              'alergia, intolerancia ni medicación. Rechazos y preferencias no cuentan. No bloquea ' +
+              'nada: la ficha lo muestra como advertencia.',
+            example: false,
+          },
+        },
+      },
+    ],
   },
 
   // Catálogos (T15). Grupos y patologías son comunes y de solo lectura; un
