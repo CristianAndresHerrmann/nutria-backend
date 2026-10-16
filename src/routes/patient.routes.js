@@ -60,7 +60,7 @@ router.get('/patients', requireAuth, validate({ query: emptyQuerySchema }), pati
  *         description: Paciente encontrado
  *         content:
  *           application/json:
- *             schema: { $ref: '#/components/schemas/Patient' }
+ *             schema: { $ref: '#/components/schemas/PatientDetail' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
  *       '404': { $ref: '#/components/responses/PatientNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }

@@ -5,6 +5,45 @@ const { optionalField, pastOrTodayDate } = require('./common.schema');
 // Hoy se acepta (recién nacido).
 const birthDateField = optionalField(pastOrTodayDate('La fecha de nacimiento'));
 
+// Datos clínicos y contextuales (RF-04 a RF-14, T16). Todos opcionales: la
+// ficha se puede guardar con solo algunos y completarse después (RNF-03,
+// RNF-09). El mensaje no nombra el campo porque viaja como clave en
+// details.fields y el frontend lo muestra debajo del input.
+const CLINICAL_TEXT_MAX_LENGTH = 2000;
+
+const CLINICAL_TEXT_FIELDS = [
+  'medicalHistory',
+  'medication',
+  'externalTreatment',
+  'physicalActivity',
+  'smoking',
+  'alcohol',
+  'mealSchedule',
+  'sleepSchedule',
+  'intakePatterns',
+  'cookingTime',
+  'homeEquipment',
+  'usualShoppingPlace',
+  'mealsOutsideHome',
+  'outsideEquipment',
+  'occupation',
+  'workContext',
+];
+
+const CLINICAL_BOOLEAN_FIELDS = ['cooks', 'likesCooking'];
+
+const clinicalTextField = optionalField(
+  z
+    .string('Debe ser texto')
+    .max(CLINICAL_TEXT_MAX_LENGTH, `No puede superar los ${CLINICAL_TEXT_MAX_LENGTH} caracteres`),
+);
+const clinicalBooleanField = optionalField(z.boolean('Debe ser sí o no'));
+
+const clinicalPatientFields = {
+  ...Object.fromEntries(CLINICAL_TEXT_FIELDS.map((field) => [field, clinicalTextField])),
+  ...Object.fromEntries(CLINICAL_BOOLEAN_FIELDS.map((field) => [field, clinicalBooleanField])),
+};
+
 const basePatientFields = {
   firstName: z.string().trim().min(1, 'El nombre es obligatorio'),
   lastName: z.string().trim().min(1, 'El apellido es obligatorio'),
@@ -18,6 +57,7 @@ const basePatientFields = {
   guardianRelationship: optionalField(z.string().max(255)),
   guardianContact: optionalField(z.string().max(255)),
   attendsAccompanied: optionalField(z.boolean()),
+  ...clinicalPatientFields,
   registrationComplete: z.boolean().default(false),
 };
 
@@ -52,4 +92,7 @@ module.exports = {
   updatePatientSchema: patientSchema,
   patientIdParamsSchema,
   GUARDIAN_FIELDS,
+  CLINICAL_TEXT_FIELDS,
+  CLINICAL_BOOLEAN_FIELDS,
+  CLINICAL_TEXT_MAX_LENGTH,
 };

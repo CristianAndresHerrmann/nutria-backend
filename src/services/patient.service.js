@@ -1,5 +1,6 @@
 const patientRepository = require('../repositories/patient.repository');
 const AppError = require('../utils/AppError');
+const { RESTRICTION_CONDITION_TYPES, isMissingClinicalData } = require('../utils/missingClinicalData');
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -25,7 +26,16 @@ function createPatientService({ patientRepository: repository }) {
         throw new AppError(404, PATIENT_NOT_FOUND_MESSAGE);
       }
 
-      return patient;
+      const restrictionConditionCount = await repository.countConditionsForNutritionist(
+        id,
+        nutritionistId,
+        RESTRICTION_CONDITION_TYPES,
+      );
+
+      return {
+        ...patient,
+        missingClinicalData: isMissingClinicalData({ medication: patient.medication, restrictionConditionCount }),
+      };
     },
 
     async createForNutritionist(nutritionistId, data) {

@@ -56,9 +56,26 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
   - Para el Incremento 3, la composición esperada por tipo de comida (RF-26) se recortó de T15. La consume el motor de reglas, y desayuno y merienda dependen de la entrevista de validación.
   - El ítem del plan del Incremento 3 tiene que guardar una copia del alimento (nombre y categorías) además de su id, para que una corrección posterior del catálogo no altere un plan ya emitido.
 
+- Datos clínicos y contextuales del paciente (T16; RF-04 antecedentes y medicación, RF-05, RF-06, RF-08, RF-09, RF-10, RF-14; RNF-03, RNF-09). No hay endpoints nuevos.
+  - `POST /patients` y `PUT /patients/:id` aceptan las 18 columnas de T14, todas opcionales: 16 de texto (hasta 2000 caracteres) y 2 booleanas (`cooks`, `likesCooking`). Vacíos y `null` se guardan como `null`, igual que el resto de la ficha.
+  - Un valor inválido responde `400 VALIDATION_ERROR` con el mensaje en su campo de `details.fields`: "No puede superar los 2000 caracteres", "Debe ser texto" o "Debe ser sí o no".
+  - `GET /patients/:id` agrega `missingClinicalData` (RF-45, la parte que corresponde a la ficha). Es `true` cuando el paciente no tiene registrada ninguna patología, alergia, intolerancia ni medicación. Rechazos y preferencias no cuentan.
+    - La regla vive en `src/utils/missingClinicalData.js`, para reusarla en el editor del plan (Incremento 4).
+    - El conteo de condiciones (`countConditionsForNutritionist` en `patient.repository`) filtra también por el nutricionista del paciente.
+    - Lee las condiciones de `patient_condition`, así que cuando T18 habilite su carga el aviso no cambia.
+  - En OpenAPI, `PatientInput` documenta los campos nuevos, y el detalle responde con el schema nuevo `PatientDetail` (`Patient` + `missingClinicalData`).
+  - Tests:
+    - Guardado parcial: alta con algunos datos clínicos y edición que los completa sin perder lo anterior.
+    - Formato de error por campo en el schema y de punta a punta.
+    - Aislamiento: editar los datos clínicos de un paciente ajeno da `404` y no escribe nada; el conteo de condiciones lleva el nutricionista.
+    - La regla de RF-45.
+  - Seed: Lucía Fernández pasa a tener la ficha completa, con los 18 campos clínicos y una condición de cada tipo, como caso de referencia sin aviso. Jorge Ibarra (sin datos) y Tomás Gómez (solo un rechazo y una preferencia) muestran el aviso.
+  - Decisión: `docs/decisiones/aviso-de-datos-clinicos-faltantes.md` en el repo raíz.
+
 ### Changed
 
-- `GET /patients` y `GET /patients/:id` devuelven también las columnas nuevas del paciente (T14), en `null` cuando no hay dato, porque el serializer expone el registro completo. `POST` y `PUT` todavía no las aceptan (schema `.strict()`): se suman con la tarea del módulo de ficha clínica. El schema `Patient` del spec OpenAPI las documenta; `PatientInput` no cambia.
+- `GET /patients` y `GET /patients/:id` devuelven también las columnas nuevas del paciente (T14), en `null` cuando no hay dato, porque el serializer expone el registro completo. Desde T16, `POST` y `PUT` también las aceptan.
+- `PUT /patients/:id` sigue reemplazando el objeto completo, y ahora eso incluye los datos clínicos: un campo clínico que no se manda queda en `null`. El formulario del frontend manda siempre todos los campos.
 - `optionalField` y el parseo de fechas `AAAA-MM-DD` (`pastOrTodayDate`) pasan de `patient.schema.js` a `common.schema.js`, para reutilizarlos. Los mensajes de `birthDate` no cambian.
 
 ### Fixed

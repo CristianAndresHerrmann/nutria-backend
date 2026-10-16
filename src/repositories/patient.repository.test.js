@@ -12,6 +12,9 @@ function createFakePrisma({ updateCount = 1 } = {}) {
       create: vi.fn(async ({ data }) => ({ id: 'p-1', ...data })),
       updateMany: vi.fn(async () => ({ count: updateCount })),
     },
+    patientCondition: {
+      count: vi.fn(async () => 0),
+    },
   };
 }
 
@@ -59,6 +62,17 @@ describe('patient.repository — filtro por nutricionista en cada consulta', () 
     expect(prisma.patient.findFirst).not.toHaveBeenCalled();
   });
 
+  it('countConditionsForNutritionist filtra por paciente, tipos y nutricionista del paciente', async () => {
+    const prisma = createFakePrisma();
+    const repository = createPatientRepository({ prisma });
+
+    await repository.countConditionsForNutritionist('p-1', 'nutri-1', ['pathology', 'allergy']);
+
+    expect(prisma.patientCondition.count).toHaveBeenCalledWith({
+      where: { patientId: 'p-1', type: { in: ['pathology', 'allergy'] }, patient: { nutritionistId: 'nutri-1' } },
+    });
+  });
+
   // Prisma ignora un filtro undefined: sin esta barrera, un nutritionistId vacío
   // convertiría cada consulta en una búsqueda sobre todos los pacientes.
   describe.each([undefined, null, ''])('con nutritionistId %j', (nutritionistId) => {
@@ -70,11 +84,13 @@ describe('patient.repository — filtro por nutricionista en cada consulta', () 
       expect(() => repository.findByIdForNutritionist('p-1', nutritionistId)).toThrow();
       expect(() => repository.create({ firstName: 'Ana', lastName: 'Diaz', nutritionistId })).toThrow();
       await expect(repository.updateForNutritionist('p-1', nutritionistId, { firstName: 'X' })).rejects.toThrow();
+      expect(() => repository.countConditionsForNutritionist('p-1', nutritionistId, ['pathology'])).toThrow();
 
       expect(prisma.patient.findMany).not.toHaveBeenCalled();
       expect(prisma.patient.findFirst).not.toHaveBeenCalled();
       expect(prisma.patient.create).not.toHaveBeenCalled();
       expect(prisma.patient.updateMany).not.toHaveBeenCalled();
+      expect(prisma.patientCondition.count).not.toHaveBeenCalled();
     });
   });
 

@@ -35,7 +35,22 @@ function createPatientRepository({ prisma: client }) {
     return findByIdForNutritionist(id, nutritionistId);
   }
 
-  return { findAllByNutritionist, findByIdForNutritionist, create, updateForNutritionist };
+  // El filtro por patient.nutritionistId repite el aislamiento en la misma
+  // consulta: con un patientId ajeno el conteo da 0, nunca datos de otro.
+  function countConditionsForNutritionist(patientId, nutritionistId, types) {
+    assertNutritionistId(nutritionistId);
+    return client.patientCondition.count({
+      where: { patientId, type: { in: types }, patient: { nutritionistId } },
+    });
+  }
+
+  return {
+    findAllByNutritionist,
+    findByIdForNutritionist,
+    create,
+    updateForNutritionist,
+    countConditionsForNutritionist,
+  };
 }
 
 module.exports = createPatientRepository({ prisma });
