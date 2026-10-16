@@ -71,6 +71,9 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
     - La regla de RF-45.
   - Seed: Lucía Fernández pasa a tener la ficha completa, con los 18 campos clínicos y una condición de cada tipo, como caso de referencia sin aviso. Jorge Ibarra (sin datos) y Tomás Gómez (solo un rechazo y una preferencia) muestran el aviso.
   - Decisión: `docs/decisiones/aviso-de-datos-clinicos-faltantes.md` en el repo raíz.
+- Tests de fechas (T17). La validación no cambia: `pastOrTodayDate` ya rechazaba las fechas inexistentes.
+  - `src/schemas/common.schema.test.js` prueba el helper que usan todas las fechas de la API: fechas inexistentes (30/02, 29/02 en año no bisiesto, 31/04, mes 13, día 00), bisiestos válidos, formato, futura y hoy, y que el resultado quede en medianoche UTC.
+  - `app.test.js` prueba de punta a punta que `POST /patients` con `birthDate: "2023-02-30"` responde `400 VALIDATION_ERROR` con "La fecha de nacimiento no es válida" en `details.fields.birthDate`.
 
 ### Changed
 
