@@ -107,6 +107,17 @@ describe('formato uniforme de error de punta a punta', () => {
     });
   });
 
+  it('una fecha de nacimiento inexistente (30/02) responde 400 con el error en details.fields.birthDate', async () => {
+    const response = await request('/patients', {
+      method: 'POST',
+      token: validToken(),
+      body: { firstName: 'Ana', lastName: 'Diaz', birthDate: '2023-02-30' },
+    });
+
+    expectUniformError(response, 400, 'VALIDATION_ERROR');
+    expect(response.json.error.details.fields).toEqual({ birthDate: 'La fecha de nacimiento no es válida' });
+  });
+
   it('un dato clínico inválido responde 400 con el error en su campo de details.fields', async () => {
     const response = await request('/patients', {
       method: 'POST',
