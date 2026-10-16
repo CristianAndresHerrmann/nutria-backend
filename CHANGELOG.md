@@ -69,6 +69,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
     - Formato de error por campo en el schema y de punta a punta.
     - Aislamiento: editar los datos clínicos de un paciente ajeno da `404` y no escribe nada; el conteo de condiciones lleva el nutricionista.
     - La regla de RF-45.
+  - Seed: Lucía Fernández pasa a tener la ficha completa, con los 18 campos clínicos y una condición de cada tipo, como caso de referencia sin aviso. Jorge Ibarra (sin datos) y Tomás Gómez (solo un rechazo y una preferencia) muestran el aviso.
   - Decisión: `docs/decisiones/aviso-de-datos-clinicos-faltantes.md` en el repo raíz.
 
 ### Changed

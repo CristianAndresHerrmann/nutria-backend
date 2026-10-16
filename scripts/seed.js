@@ -43,6 +43,8 @@ const SEED_DATA = [
     ],
     patients: [
       {
+        // Ficha completa: todos los campos del paciente cargados y una condición
+        // de cada tipo.
         data: {
           firstName: 'Lucía',
           lastName: 'Fernández',
@@ -52,7 +54,9 @@ const SEED_DATA = [
           livesWith: 'Pareja',
           goal: 'Bajar de peso',
           referenceWeight: 68.5,
-          medicalHistory: 'Sin antecedentes relevantes.',
+          medicalHistory: 'Celiaquía diagnosticada en 2019.\nMadre con hipotiroidismo; padre con hipertensión.',
+          medication: 'Suplemento de hierro, un comprimido diario',
+          externalTreatment: 'Terapia psicológica quincenal',
           physicalActivity: 'Camina 30 minutos, dos veces por semana',
           smoking: 'No fuma',
           alcohol: 'Ocasional, fines de semana',
@@ -75,6 +79,9 @@ const SEED_DATA = [
         conditions: [
           { type: 'pathology', pathology: 'Celiaquía' },
           { type: 'intolerance', food: 'Leche' },
+          { type: 'allergy', food: 'Nueces' },
+          { type: 'rejection', food: 'Zapallo' },
+          { type: 'preference', foodGroup: 'Frutas', observations: 'Prefiere fruta en el desayuno' },
         ],
         consultations: [
           {
