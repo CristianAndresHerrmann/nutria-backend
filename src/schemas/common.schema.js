@@ -40,4 +40,19 @@ function pastOrTodayDate(label) {
     });
 }
 
-module.exports = { emptyQuerySchema, optionalField, pastOrTodayDate };
+// Nombre de un ítem de catálogo (grupo, alimento, patología). Los espacios de más
+// se normalizan antes de guardar: "Pan  francés " y "Pan francés" son el mismo
+// nombre, y la unicidad (citext en la base) no distingue mayúsculas.
+function catalogName(label) {
+  return z
+    .string(`${label} es obligatorio`)
+    .transform((value) => value.trim().replace(/\s+/g, ' '))
+    .pipe(z.string().min(1, `${label} es obligatorio`).max(100, `${label} no puede superar los 100 caracteres`));
+}
+
+// :id de los catálogos. z.guid() y no z.uuid(), por lo mismo que en
+// patientIdParamsSchema: el seed y los tests usan ids que no respetan los bits
+// de versión del RFC.
+const catalogIdParamsSchema = z.strictObject({ id: z.guid() });
+
+module.exports = { emptyQuerySchema, optionalField, pastOrTodayDate, catalogName, catalogIdParamsSchema };

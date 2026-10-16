@@ -1,6 +1,9 @@
 const jwt = require('jsonwebtoken');
 const app = require('./app');
 const patientService = require('./services/patient.service');
+const foodGroupService = require('./services/foodGroup.service');
+const foodService = require('./services/food.service');
+const pathologyService = require('./services/pathology.service');
 
 // Integración liviana: la app real levantada en un puerto efímero, sin base ni
 // servicio de IA. Cada caso corta antes de llegar a Prisma (ruta inexistente,
@@ -196,6 +199,122 @@ describe('rutas de pacientes — autenticación y aislamiento de punta a punta',
 
     expect(response.status).toBe(200);
     expect(response.json).not.toHaveProperty('nutritionistId');
+  });
+});
+
+// Catálogos (T15). Grupos y patologías: solo lectura con token. Alimentos: el
+// nutricionista del token llega al servicio (decide qué privados ve y es el dueño
+// de lo que da de alta), y no hay rutas de edición ni de borrado. El servicio se
+// espía, así que no hace falta base.
+describe('rutas de catálogos — autenticación y alimentos privados de punta a punta', () => {
+  const ITEM_ID = '22222222-2222-2222-2222-222222222222';
+  const GROUP_ID = '33333333-3333-3333-3333-333333333333';
+  const tokenFor = (nutritionistId) => jwt.sign({ sub: nutritionistId }, process.env.JWT_SECRET, { expiresIn: '1h' });
+  const body = { name: 'Caballa', foodGroupId: GROUP_ID, categories: ['protein', 'healthy_fat'] };
+  const fakeFood = (nutritionistId) => ({
+    id: ITEM_ID,
+    name: 'Caballa',
+    active: true,
+    foodGroupId: GROUP_ID,
+    nutritionistId,
+    foodGroup: { id: GROUP_ID, name: 'Pescados', parentId: null },
+    categories: [{ category: 'protein' }, { category: 'healthy_fat' }],
+  });
+
+  function spyOnServices() {
+    return {
+      groupList: vi.spyOn(foodGroupService, 'list').mockResolvedValue([]),
+      groupGet: vi.spyOn(foodGroupService, 'get').mockResolvedValue({ id: ITEM_ID, name: 'Aves', parentId: null }),
+      pathologyList: vi.spyOn(pathologyService, 'list').mockResolvedValue([]),
+      pathologyGet: vi.spyOn(pathologyService, 'get').mockResolvedValue({ id: ITEM_ID, name: 'Gota' }),
+      foodList: vi.spyOn(foodService, 'list').mockImplementation(async (n) => [fakeFood(n)]),
+      foodGet: vi.spyOn(foodService, 'get').mockImplementation(async (_id, n) => fakeFood(n)),
+      foodCreate: vi.spyOn(foodService, 'create').mockImplementation(async (n) => fakeFood(n)),
+    };
+  }
+
+  it.each([
+    ['GET', '/food-groups'],
+    ['GET', `/food-groups/${ITEM_ID}`],
+    ['GET', '/pathologies'],
+    ['GET', `/pathologies/${ITEM_ID}`],
+    ['GET', '/foods'],
+    ['GET', `/foods/${ITEM_ID}`],
+    ['POST', '/foods'],
+  ])('%s %s sin token responde 401 y no llega al servicio', async (method, path) => {
+    const spies = spyOnServices();
+
+    const response = await request(path, { method, body: method === 'POST' ? body : undefined });
+
+    expectUniformError(response, 401, 'UNAUTHORIZED');
+    Object.values(spies).forEach((spy) => expect(spy).not.toHaveBeenCalled());
+  });
+
+  it.each(['nutri-1', 'nutri-2'])('cada ruta de alimentos pasa al servicio el nutricionista del token (%s)', async (nutritionistId) => {
+    const spies = spyOnServices();
+    const token = tokenFor(nutritionistId);
+
+    await request(`/foods?search=caba&groupId=${GROUP_ID}`, { token });
+    await request(`/foods/${ITEM_ID}`, { token });
+    const alta = await request('/foods', { method: 'POST', token, body });
+
+    expect(spies.foodList).toHaveBeenCalledWith(nutritionistId, { search: 'caba', groupId: GROUP_ID });
+    expect(spies.foodGet).toHaveBeenCalledWith(ITEM_ID, nutritionistId);
+    expect(spies.foodCreate).toHaveBeenCalledWith(nutritionistId, body);
+    expect(alta.status).toBe(201);
+  });
+
+  it('un nutritionistId en el body se rechaza con 400 y no llega al servicio', async () => {
+    const spies = spyOnServices();
+
+    const alta = await request('/foods', { method: 'POST', token: tokenFor('nutri-1'), body: { ...body, nutritionistId: 'nutri-2' } });
+
+    expectUniformError(alta, 400, 'VALIDATION_ERROR');
+    expect(spies.foodCreate).not.toHaveBeenCalled();
+  });
+
+  it('la respuesta aplana las categorías y no expone el dueño', async () => {
+    spyOnServices();
+
+    const response = await request(`/foods/${ITEM_ID}`, { token: tokenFor('nutri-1') });
+
+    expect(response.status).toBe(200);
+    expect(response.json.categories).toEqual(['protein', 'healthy_fat']);
+    expect(response.json).not.toHaveProperty('nutritionistId');
+  });
+
+  it('un alimento sin categorías responde 400 en details.fields.categories', async () => {
+    const spies = spyOnServices();
+
+    const response = await request('/foods', { method: 'POST', token: tokenFor('nutri-1'), body: { ...body, categories: [] } });
+
+    expectUniformError(response, 400, 'VALIDATION_ERROR');
+    expect(response.json.error.details.fields.categories).toBe('Indicá al menos una categoría');
+    expect(spies.foodCreate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['GET', '/foods/no-es-un-uuid'],
+    ['GET', '/food-groups/no-es-un-uuid'],
+    ['GET', '/pathologies/no-es-un-uuid'],
+  ])('%s %s responde 404', async (method, path) => {
+    spyOnServices();
+
+    expectUniformError(await request(path, { token: tokenFor('nutri-1') }), 404, 'NOT_FOUND');
+  });
+
+  it.each([
+    ['PUT', `/foods/${ITEM_ID}`],
+    ['DELETE', `/foods/${ITEM_ID}`],
+    ['POST', '/food-groups'],
+    ['PUT', `/food-groups/${ITEM_ID}`],
+    ['POST', '/pathologies'],
+    ['PUT', `/pathologies/${ITEM_ID}`],
+  ])('%s %s no existe: el nutricionista no modifica el catálogo', async (method, path) => {
+    const response = await request(path, { method, token: tokenFor('nutri-1'), body: { name: 'x' } });
+
+    expectUniformError(response, 404, 'NOT_FOUND');
+    expect(response.json.error.message).toBe('Ruta no encontrada');
   });
 });
 

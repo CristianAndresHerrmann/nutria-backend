@@ -15,6 +15,13 @@ const EXPECTED_OPERATIONS = [
   'post /patients',
   'get /patients/{id}',
   'put /patients/{id}',
+  'get /food-groups',
+  'get /food-groups/{id}',
+  'get /foods',
+  'post /foods',
+  'get /foods/{id}',
+  'get /pathologies',
+  'get /pathologies/{id}',
 ];
 
 const PROTECTED_OPERATIONS = [
@@ -22,6 +29,13 @@ const PROTECTED_OPERATIONS = [
   ['/patients', 'post'],
   ['/patients/{id}', 'get'],
   ['/patients/{id}', 'put'],
+  ['/food-groups', 'get'],
+  ['/food-groups/{id}', 'get'],
+  ['/foods', 'get'],
+  ['/foods', 'post'],
+  ['/foods/{id}', 'get'],
+  ['/pathologies', 'get'],
+  ['/pathologies/{id}', 'get'],
 ];
 
 function listOperations(spec) {
@@ -94,6 +108,18 @@ describe('spec OpenAPI del backend', () => {
 
     expect(responses['201']).toBeDefined();
     expect(responses['200']).toBeUndefined();
+  });
+
+  it('documenta el alta de alimento como 201, con el 409 por nombre repetido', () => {
+    const responses = openapiSpec.paths['/foods'].post.responses;
+
+    expect(responses['201']).toBeDefined();
+    expect(responses['409']).toBeDefined();
+  });
+
+  it('no documenta edición ni borrado de alimentos: el nutricionista no los modifica', () => {
+    expect(openapiSpec.paths['/foods/{id}'].put).toBeUndefined();
+    expect(openapiSpec.paths['/foods/{id}'].delete).toBeUndefined();
   });
 
   it('documenta el 503 del diagnóstico de IA', () => {

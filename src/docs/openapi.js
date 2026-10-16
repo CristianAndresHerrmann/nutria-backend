@@ -18,7 +18,8 @@ const openapiSpec = swaggerJsdoc({
       title: 'nutria-backend',
       version,
       description:
-        'API REST de NutrIA: autenticación del nutricionista y gestión de sus pacientes.\n\n' +
+        'API REST de NutrIA: autenticación del nutricionista, gestión de sus pacientes y ' +
+        'catálogos de alimentos y patologías.\n\n' +
         'Todo acceso a datos de paciente se filtra por el nutricionista del token. El ' +
         '`nutritionistId` nunca se lee del cliente ni viaja en las respuestas.\n\n' +
         'Todo error usa el formato uniforme `{ error: { code, message, details? } }`: `code` es ' +
@@ -41,6 +42,13 @@ const openapiSpec = swaggerJsdoc({
       { name: 'Salud', description: 'Verificación de que el backend responde y de que alcanza al servicio de IA.' },
       { name: 'Autenticación', description: 'Login del nutricionista y emisión del JWT.' },
       { name: 'Pacientes', description: 'Alta, edición y consulta de los pacientes del nutricionista autenticado.' },
+      {
+        name: 'Catálogos',
+        description:
+          'Grupos de alimentos, alimentos y patologías. Grupos y patologías son comunes y de solo ' +
+          'lectura. Un nutricionista ve los alimentos comunes y los suyos privados, y lo que da de ' +
+          'alta queda privado. Ningún nutricionista edita ni da de baja ítems del catálogo.',
+      },
     ],
     components,
   },

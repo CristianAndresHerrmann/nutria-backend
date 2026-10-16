@@ -3,7 +3,8 @@
 // Incremento 2 (T14): datos clínicos y contextuales del paciente (RF-04 a RF-14), consultas,
 // mediciones y laboratorio, hábitos pautados, y catálogos de alimentos, recetas y
 // recomendaciones (RF-24, RF-25, RF-27, RF-30). PLAN y lo que depende de él llegan en el
-// Incremento 3.
+// Incremento 3. T15: alimentos privados por nutricionista y nombres de catálogo sin
+// distinguir mayúsculas.
 //
 // Convención de nombres: campos en camelCase (idiomático de Prisma/JS), mapeados con
 // @map a columnas snake_case en Postgres. Los valores de los enums también son
@@ -32,6 +33,9 @@ model Nutritionist {
 
   patients Patient[]
   recipes  Recipe[]
+
+  // Alimentos privados que cargó (T15): solo los ve y los usa él.
+  foods Food[]
 
   @@map("nutritionist")
 }
@@ -110,10 +114,11 @@ model Patient {
 // Pacientes y consultas (Anexo A.1)
 // ---------------------------------------------------------------------------
 
-// Catálogo común a todos los nutricionistas.
+// Catálogo común a todos los nutricionistas. name es citext: el @unique no
+// distingue mayúsculas (ver "Catálogos" más abajo).
 model Pathology {
   id          String  @id @default(uuid()) @db.Uuid
-  name        String  @unique
+  name        String  @unique @db.Citext
   description String?
 
   conditions      PatientCondition[]
@@ -246,13 +251,22 @@ model PrescribedHabit {
 // Catálogos (Anexo A.2). Comunes a todos los nutricionistas, salvo Recipe.
 // ---------------------------------------------------------------------------
 
+// T15: los nombres de FoodGroup, Food y Pathology son citext, así que la unicidad
+// no distingue mayúsculas ("Leche" y "leche" chocan). La extensión se crea a mano
+// en la migración de T15. Grupos y patologías son siempre comunes; un alimento puede
+// ser común o privado de un nutricionista (ver Food). Los nutricionistas no editan
+// el catálogo: lo cura un administrador (tarea aparte) o el seed. Ver
+// docs/decisiones/abm-de-catalogos-comunes.md y
+// docs/decisiones/nombres-de-catalogo-sin-distinguir-mayusculas.md en el repo raíz.
+
 // Grupo de alimentos jerárquico (RF-24). CHECK en la migración: no es su propio padre.
+// Los ciclos más largos los impide el servicio (no se pueden expresar como CHECK).
 model FoodGroup {
   id          String      @id @default(uuid()) @db.Uuid
   parentId    String?     @map("parent_id") @db.Uuid
   parent      FoodGroup?  @relation("FoodGroupHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
   children    FoodGroup[] @relation("FoodGroupHierarchy")
-  name        String      @unique
+  name        String      @unique @db.Citext
   description String?
 
   foods      Food[]
@@ -263,18 +277,28 @@ model FoodGroup {
 }
 
 // Alimento (RF-24). Se desactiva con active = false en vez de borrarse, porque lo
-// referencian condiciones e ingredientes.
+// referencian condiciones e ingredientes: la API no tiene DELETE y las FK con
+// onDelete: Restrict impiden el borrado físico de uno en uso.
+//
+// nutritionistId null = común (seed o administrador); con valor = privado: solo ese
+// nutricionista lo ve y lo usa (T15). El nombre es único dentro de lo que ve cada
+// nutricionista: el @@unique cubre los privados de un mismo nutricionista, y el
+// servicio chequea el cruce con los comunes y la unicidad entre comunes (Postgres
+// trata los null como distintos en un índice único).
 model Food {
-  id          String    @id @default(uuid()) @db.Uuid
-  foodGroupId String    @map("food_group_id") @db.Uuid
-  foodGroup   FoodGroup @relation(fields: [foodGroupId], references: [id], onDelete: Restrict)
-  name        String    @unique
-  active      Boolean   @default(true)
+  id             String        @id @default(uuid()) @db.Uuid
+  foodGroupId    String        @map("food_group_id") @db.Uuid
+  foodGroup      FoodGroup     @relation(fields: [foodGroupId], references: [id], onDelete: Restrict)
+  name           String        @db.Citext
+  active         Boolean       @default(true)
+  nutritionistId String?       @map("nutritionist_id") @db.Uuid
+  nutritionist   Nutritionist? @relation(fields: [nutritionistId], references: [id], onDelete: Restrict)
 
   categories  FoodCategory[]
   conditions  PatientCondition[]
   ingredients RecipeIngredient[]
 
+  @@unique([nutritionistId, name])
   @@index([foodGroupId])
   @@map("food")
 }
