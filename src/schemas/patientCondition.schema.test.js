@@ -1,4 +1,4 @@
-const { patientConditionSchema } = require('./patientCondition.schema');
+const { patientConditionSchema, patientConditionParamsSchema } = require('./patientCondition.schema');
 
 const PATHOLOGY_ID = '11111111-1111-1111-1111-111111111111';
 const FOOD_ID = '22222222-2222-2222-2222-222222222222';
@@ -75,6 +75,13 @@ describe('patientCondition.schema', () => {
     expect(issuesByField(result)).toHaveProperty('foodId');
   });
 
+  it.each(['allergy', 'intolerance', 'rejection', 'preference'])('rechaza %s sin alimento ni grupo', (type) => {
+    const result = patientConditionSchema.safeParse({ type });
+
+    expect(result.success).toBe(false);
+    expect(issuesByField(result)).toHaveProperty('foodId');
+  });
+
   it('trata strings vacíos como ausencia de dato', () => {
     const result = patientConditionSchema.safeParse({
       type: 'allergy',
@@ -91,6 +98,19 @@ describe('patientCondition.schema', () => {
     expect(patientConditionSchema.safeParse({ type: 'otro', foodId: FOOD_ID }).success).toBe(false);
     expect(
       patientConditionSchema.safeParse({ type: 'allergy', foodId: FOOD_ID, patientId: FOOD_ID }).success,
+    ).toBe(false);
+  });
+});
+
+describe('patientConditionParamsSchema', () => {
+  it('acepta el id del paciente y el de la condición', () => {
+    expect(patientConditionParamsSchema.safeParse({ id: PATHOLOGY_ID, conditionId: FOOD_ID }).success).toBe(true);
+  });
+
+  it('rechaza un id que no es UUID y parámetros de más', () => {
+    expect(patientConditionParamsSchema.safeParse({ id: PATHOLOGY_ID, conditionId: 'x' }).success).toBe(false);
+    expect(
+      patientConditionParamsSchema.safeParse({ id: PATHOLOGY_ID, conditionId: FOOD_ID, otro: FOOD_ID }).success,
     ).toBe(false);
   });
 });

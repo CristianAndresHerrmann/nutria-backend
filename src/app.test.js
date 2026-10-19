@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const app = require('./app');
 const patientService = require('./services/patient.service');
+const patientConditionService = require('./services/patientCondition.service');
 const foodGroupService = require('./services/foodGroup.service');
 const foodService = require('./services/food.service');
 const pathologyService = require('./services/pathology.service');
@@ -52,7 +53,7 @@ async function request(path, { method = 'GET', body, rawBody, token } = {}) {
   });
   const text = await response.text();
 
-  return { status: response.status, contentType: response.headers.get('content-type'), text, json: JSON.parse(text) };
+  return { status: response.status, contentType: response.headers.get('content-type'), text, json: text ? JSON.parse(text) : null };
 }
 
 function expectUniformError(response, status, code) {
@@ -384,5 +385,98 @@ describe('GET /health/ia', () => {
 
     const health = await request('/health');
     expect(health.status).toBe(200);
+  });
+});
+
+describe('rutas de condiciones del paciente — autenticación, aislamiento y validación de punta a punta', () => {
+  const PATIENT_ID = '11111111-1111-1111-1111-111111111111';
+  const CONDITION_ID = '44444444-4444-4444-4444-444444444444';
+  const FOOD_ID = '22222222-2222-2222-2222-222222222222';
+  const GROUP_ID = '33333333-3333-3333-3333-333333333333';
+  const tokenFor = (nutritionistId) => jwt.sign({ sub: nutritionistId }, process.env.JWT_SECRET, { expiresIn: '1h' });
+  const body = { type: 'allergy', foodId: FOOD_ID, observations: 'Urticaria' };
+  const fakeCondition = { id: CONDITION_ID, patientId: PATIENT_ID, type: 'allergy', foodId: FOOD_ID };
+
+  function spyOnConditionService() {
+    return {
+      list: vi.spyOn(patientConditionService, 'list').mockResolvedValue([fakeCondition]),
+      create: vi.spyOn(patientConditionService, 'create').mockResolvedValue(fakeCondition),
+      update: vi.spyOn(patientConditionService, 'update').mockResolvedValue(fakeCondition),
+      remove: vi.spyOn(patientConditionService, 'remove').mockResolvedValue(undefined),
+    };
+  }
+
+  const collection = `/patients/${PATIENT_ID}/conditions`;
+  const item = `${collection}/${CONDITION_ID}`;
+
+  it.each([
+    ['GET', collection],
+    ['POST', collection],
+    ['PUT', item],
+    ['DELETE', item],
+  ])('%s %s sin token responde 401 y no llega al servicio', async (method, path) => {
+    const spies = spyOnConditionService();
+
+    const response = await request(path, { method, body: ['POST', 'PUT'].includes(method) ? body : undefined });
+
+    expectUniformError(response, 401, 'UNAUTHORIZED');
+    Object.values(spies).forEach((spy) => expect(spy).not.toHaveBeenCalled());
+  });
+
+  it.each(['nutri-1', 'nutri-2'])('cada ruta pasa al servicio el nutricionista del token (%s)', async (nutritionistId) => {
+    const spies = spyOnConditionService();
+    const token = tokenFor(nutritionistId);
+
+    await request(collection, { token });
+    const alta = await request(collection, { method: 'POST', token, body });
+    await request(item, { method: 'PUT', token, body });
+    const baja = await request(item, { method: 'DELETE', token });
+
+    const parsed = expect.objectContaining({ type: 'allergy', foodId: FOOD_ID, foodGroupId: null, pathologyId: null });
+    expect(spies.list).toHaveBeenCalledWith(PATIENT_ID, nutritionistId);
+    expect(spies.create).toHaveBeenCalledWith(PATIENT_ID, nutritionistId, parsed);
+    expect(spies.update).toHaveBeenCalledWith(CONDITION_ID, PATIENT_ID, nutritionistId, parsed);
+    expect(spies.remove).toHaveBeenCalledWith(CONDITION_ID, PATIENT_ID, nutritionistId);
+    expect(alta.status).toBe(201);
+    expect(baja.status).toBe(204);
+    expect(baja.text).toBe('');
+  });
+
+  it.each([
+    ['alimento y grupo a la vez', { type: 'allergy', foodId: FOOD_ID, foodGroupId: GROUP_ID }, 'foodGroupId'],
+    ['patología sin pathologyId', { type: 'pathology' }, 'pathologyId'],
+    ['rechazo sin alimento ni grupo', { type: 'rejection' }, 'foodId'],
+    ['patología con un alimento', { type: 'pathology', pathologyId: GROUP_ID, foodId: FOOD_ID }, 'foodId'],
+  ])('%s responde 400 VALIDATION_ERROR con el campo en details.fields', async (_caso, invalid, field) => {
+    const spies = spyOnConditionService();
+
+    const response = await request(collection, { method: 'POST', token: tokenFor('nutri-1'), body: invalid });
+
+    expectUniformError(response, 400, 'VALIDATION_ERROR');
+    expect(response.json.error.details.fields).toHaveProperty(field);
+    expect(spies.create).not.toHaveBeenCalled();
+  });
+
+  it.each(['nutritionistId', 'patientId'])('un %s en el body se rechaza con 400 y no llega al servicio', async (key) => {
+    const spies = spyOnConditionService();
+
+    const response = await request(collection, { method: 'POST', token: tokenFor('nutri-1'), body: { ...body, [key]: PATIENT_ID } });
+
+    expectUniformError(response, 400, 'VALIDATION_ERROR');
+    expect(spies.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['GET', '/patients/no-es-un-uuid/conditions', 'Paciente no encontrado'],
+    ['DELETE', `${collection}/no-es-un-uuid`, 'Condición no encontrada'],
+    ['DELETE', `/patients/no-es-un-uuid/conditions/${CONDITION_ID}`, 'Condición no encontrada'],
+  ])('%s %s responde 404', async (method, path, message) => {
+    const spies = spyOnConditionService();
+
+    const response = await request(path, { method, token: tokenFor('nutri-1') });
+
+    expectUniformError(response, 404, 'NOT_FOUND');
+    expect(response.json.error.message).toBe(message);
+    Object.values(spies).forEach((spy) => expect(spy).not.toHaveBeenCalled());
   });
 });

@@ -76,6 +76,17 @@ const foodCategoriesField = {
   example: ['protein', 'healthy_fat'],
 };
 
+// Ítem del catálogo referenciado por una condición del paciente (T18).
+function catalogRef(exampleName) {
+  return {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      name: { type: 'string', example: exampleName },
+    },
+  };
+}
+
 const schemas = {
   Health: {
     type: 'object',
@@ -270,6 +281,54 @@ const schemas = {
     },
   },
 
+  // Condiciones del paciente (T18; RF-04 patologías, RF-07).
+  PatientConditionInput: {
+    type: 'object',
+    required: ['type'],
+    additionalProperties: false,
+    description:
+      'Una `pathology` exige `pathologyId` y no referencia alimentos. Los demás tipos exigen ' +
+      'exactamente uno entre `foodId` y `foodGroupId`, y no llevan `pathologyId`. Cualquier otra ' +
+      'combinación da 400 `VALIDATION_ERROR` con el campo en `details.fields`. Un string vacío ' +
+      'cuenta como ausencia del dato. El paciente sale de la ruta y el nutricionista del token.',
+    properties: {
+      type: { type: 'string', enum: ['pathology', 'allergy', 'intolerance', 'rejection', 'preference'] },
+      pathologyId: { type: 'string', format: 'uuid', nullable: true },
+      foodId: {
+        type: 'string',
+        format: 'uuid',
+        nullable: true,
+        description: 'Alimento común o privado propio, vigente. Uno inexistente o privado de otro da 400.',
+      },
+      foodGroupId: { type: 'string', format: 'uuid', nullable: true },
+      registeredAt: {
+        type: 'string',
+        format: 'date',
+        nullable: true,
+        description: 'AAAA-MM-DD, no futura. Si no viene: en el alta, la fecha del día; en la edición, la que tenía.',
+      },
+      observations: { type: 'string', nullable: true, maxLength: 1000, example: 'Le cae mal en cantidad' },
+    },
+  },
+
+  PatientCondition: {
+    type: 'object',
+    description: 'Condición registrada, con el nombre de lo que referencia. Solo uno de los tres destinos viene con valor.',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      patientId: { type: 'string', format: 'uuid' },
+      type: { type: 'string', enum: ['pathology', 'allergy', 'intolerance', 'rejection', 'preference'] },
+      pathologyId: { type: 'string', format: 'uuid', nullable: true },
+      pathology: { ...catalogRef('Celiaquía'), nullable: true },
+      foodId: { type: 'string', format: 'uuid', nullable: true },
+      food: { ...catalogRef('Leche'), nullable: true },
+      foodGroupId: { type: 'string', format: 'uuid', nullable: true },
+      foodGroup: { ...catalogRef('Lácteos'), nullable: true },
+      registeredAt: { type: 'string', format: 'date-time', example: '2026-10-19T00:00:00.000Z' },
+      observations: { type: 'string', nullable: true, example: null },
+    },
+  },
+
   IaHealth: {
     type: 'object',
     properties: {
@@ -429,6 +488,36 @@ const responses = {
   FoodNotFound: notFoundResponse('Alimento no encontrado'),
   PathologyNotFound: notFoundResponse('Patología no encontrada'),
 
+  PatientConditionNotFound: {
+    description:
+      'El paciente o la condición no existen para el nutricionista autenticado: inexistentes, de ' +
+      'otro nutricionista, una condición de otro paciente o un id que no es UUID. La API no ' +
+      'distingue los casos.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        examples: {
+          condicion: { summary: 'Condición', value: errorExample('NOT_FOUND', 'Condición no encontrada') },
+          paciente: { summary: 'Paciente', value: errorExample('NOT_FOUND', 'Paciente no encontrado') },
+        },
+      },
+    },
+  },
+
+  PatientConditionConflict: {
+    description:
+      'El paciente ya tiene una condición del mismo tipo con el mismo alimento, grupo o patología. ' +
+      'El campo del destino viene en `details.fields`.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        example: errorExample('CONFLICT', 'El paciente ya tiene registrada esta condición', {
+          fields: { foodId: 'El paciente ya tiene registrada esta condición' },
+        }),
+      },
+    },
+  },
+
   InternalError: {
     description:
       'Error inesperado del servidor. El mensaje es siempre el mismo: el detalle queda en el log ' +
@@ -458,6 +547,20 @@ const parameters = {
     in: 'path',
     required: true,
     description: 'Id del ítem del catálogo. Un valor que no sea un UUID devuelve 404, no 400.',
+    schema: { type: 'string', format: 'uuid' },
+  },
+  PatientId: {
+    name: 'id',
+    in: 'path',
+    required: true,
+    description: 'Id del paciente. Un valor que no sea un UUID devuelve 404, no 400.',
+    schema: { type: 'string', format: 'uuid' },
+  },
+  ConditionId: {
+    name: 'conditionId',
+    in: 'path',
+    required: true,
+    description: 'Id de la condición. Un valor que no sea un UUID devuelve 404, no 400.',
     schema: { type: 'string', format: 'uuid' },
   },
 };
