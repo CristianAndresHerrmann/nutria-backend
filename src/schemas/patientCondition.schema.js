@@ -58,4 +58,8 @@ const patientConditionSchema = z
   })
   .superRefine(validateConditionTarget);
 
-module.exports = { patientConditionSchema };
+// /patients/:id/conditions/:conditionId. z.guid() por lo mismo que
+// patientIdParamsSchema: el seed y los tests usan ids sin los bits de versión.
+const patientConditionParamsSchema = z.strictObject({ id: z.guid(), conditionId: z.guid() });
+
+module.exports = { patientConditionSchema, patientConditionParamsSchema };

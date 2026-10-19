@@ -74,6 +74,30 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 - Tests de fechas (T17). La validación no cambia: `pastOrTodayDate` ya rechazaba las fechas inexistentes.
   - `src/schemas/common.schema.test.js` prueba el helper que usan todas las fechas de la API: fechas inexistentes (30/02, 29/02 en año no bisiesto, 31/04, mes 13, día 00), bisiestos válidos, formato, futura y hoy, y que el resultado quede en medianoche UTC.
   - `app.test.js` prueba de punta a punta que `POST /patients` con `birthDate: "2023-02-30"` responde `400 VALIDATION_ERROR` con "La fecha de nacimiento no es válida" en `details.fields.birthDate`.
+- Condiciones alimentarias del paciente (T18; RF-04 patologías, RF-07; RNF-05). Sin migración: la tabla y sus `CHECK` son de T14.
+  - `GET` y `POST /patients/:id/conditions`, `PUT` y `DELETE /patients/:id/conditions/:conditionId`. Todas piden token y filtran por el nutricionista del token.
+  - Tipos: `pathology`, `allergy`, `intolerance`, `rejection` y `preference`. Las reglas las valida `patientConditionSchema` (T14), ahora montado en las rutas:
+    - Una `pathology` exige `pathologyId` y no lleva alimentos.
+    - Los demás tipos exigen exactamente uno entre `foodId` y `foodGroupId`. Una intolerancia no necesita una patología asociada (RF-07).
+    - Cualquier otra combinación responde `400 VALIDATION_ERROR` con el campo en `details.fields`.
+  - El destino tiene que existir en el catálogo. Si no, responde `400 VALIDATION_ERROR` en su campo:
+    - Un alimento privado de otro nutricionista cuenta como inexistente.
+    - Un alimento dado de baja no se puede elegir. Una condición que ya lo tenía se puede seguir editando.
+  - Condición repetida (mismo tipo y mismo alimento, grupo o patología) → `409 CONFLICT`, con el campo del destino en `details.fields`. Alergia e intolerancia al mismo alimento no son repetidas. El chequeo es del servicio, sin índice único: ver la decisión abajo.
+  - Paciente o condición de otro nutricionista, inexistentes o con un id que no es UUID → `404`. Una condición de otro paciente también da `404`.
+  - `PUT` reemplaza la condición completa, como `PUT /patients/:id`. Si no se manda `registeredAt`, se conserva la fecha de registro original; en el alta la pone la base (fecha del día).
+  - `DELETE` responde `204` sin cuerpo.
+  - La respuesta trae `pathology`, `food` y `foodGroup` como `{ id, name }` (o `null`), para mostrar el nombre sin otra consulta. No incluye el dueño de un alimento privado.
+  - El repositorio (`patientCondition.repository`) filtra cada consulta por el paciente y por su nutricionista, y corta cualquier operación sin nutricionista, como `patient.repository`.
+  - No se define ninguna regla clínica derivada de una patología: es del Incremento 3.
+  - Documentado en Swagger bajo "Pacientes", con los schemas `PatientConditionInput` y `PatientCondition`.
+  - Tests:
+    - Combinaciones inválidas → `VALIDATION_ERROR` con detalle por campo, en el schema y de punta a punta.
+    - Destino inexistente, privado ajeno o dado de baja → `400`.
+    - Duplicado → `CONFLICT`, también al editar. La propia condición no cuenta como duplicado.
+    - Aislamiento en servicio, repositorio y rutas: paciente ajeno → `404` sin escribir nada, y el nutricionista del token llega hasta el servicio.
+    - `401` sin token en las 4 rutas.
+  - Decisión: `docs/decisiones/condiciones-repetidas-controladas-en-el-servicio.md` en el repo raíz.
 
 ### Changed
 
