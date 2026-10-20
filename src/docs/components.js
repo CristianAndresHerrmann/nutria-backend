@@ -329,6 +329,92 @@ const schemas = {
     },
   },
 
+  // Consultas y hábitos pautados (T19; RF-13, RF-18, RF-22 registro).
+  ConsultationInput: {
+    type: 'object',
+    required: ['date', 'type'],
+    additionalProperties: false,
+    description:
+      'Campos de la consulta. Fecha y tipo son obligatorios; el resto es opcional y un string vacío ' +
+      'cuenta como ausencia del dato (RNF-09). En el `PUT` es un reemplazo completo: un campo ' +
+      'omitido queda en `null`. El paciente sale de la ruta y el nutricionista del token.',
+    properties: {
+      date: { type: 'string', format: 'date', example: '2026-10-19', description: 'AAAA-MM-DD, no futura.' },
+      type: { type: 'string', enum: ['first', 'follow_up'], description: '`first` = primera, `follow_up` = seguimiento.' },
+      motivation: { ...nullableText('Sentirse con más energía'), description: 'Motivación (RF-13).' },
+      decisionOrigin: { ...nullableText('Propia'), description: 'Origen de la decisión de cambio (RF-13).' },
+      perceivedObstacle: { ...nullableText('Falta de tiempo para cocinar'), description: 'Obstáculo percibido (RF-13).' },
+      mainHabit: { ...nullableText('Picoteo por la tarde'), description: 'Hábito principal a modificar (RF-13).' },
+      observations: {
+        type: 'string',
+        nullable: true,
+        maxLength: 5000,
+        example: 'Buena adherencia a la caminata.',
+        description: 'Observaciones libres (RF-18).',
+      },
+    },
+  },
+
+  ConsultationCreateInput: {
+    description: 'Los campos de `ConsultationInput` más los hábitos pautados al cierre de la consulta.',
+    allOf: [
+      { $ref: '#/components/schemas/ConsultationInput' },
+      {
+        type: 'object',
+        properties: {
+          habits: {
+            type: 'array',
+            maxItems: 20,
+            description:
+              'Hábitos pautados (RF-22), redactados por el profesional, sin catálogo. Opcional: sin ' +
+              'hábitos la consulta se guarda igual. Nacen con `compliance: pending`. No se editan con ' +
+              'el `PUT`. Un error en cualquiera de ellos viene en `details.fields.habits`.',
+            items: {
+              type: 'object',
+              required: ['description'],
+              additionalProperties: false,
+              properties: {
+                description: { type: 'string', minLength: 1, maxLength: 500, example: 'Caminar 30 minutos tres veces por semana' },
+              },
+            },
+          },
+        },
+      },
+    ],
+  },
+
+  PrescribedHabit: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      description: { type: 'string', example: 'Caminar 30 minutos tres veces por semana' },
+      compliance: {
+        type: 'string',
+        enum: ['pending', 'met', 'partial', 'not_met'],
+        example: 'pending',
+        description: 'Al registrarse es siempre `pending`. La evaluación llega en el Incremento 5.',
+      },
+    },
+  },
+
+  Consultation: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      patientId: { type: 'string', format: 'uuid' },
+      date: { type: 'string', format: 'date-time', example: '2026-10-19T00:00:00.000Z' },
+      type: { type: 'string', enum: ['first', 'follow_up'] },
+      motivation: { type: 'string', nullable: true, example: 'Sentirse con más energía' },
+      decisionOrigin: { type: 'string', nullable: true, example: 'Propia' },
+      perceivedObstacle: { type: 'string', nullable: true, example: null },
+      mainHabit: { type: 'string', nullable: true, example: 'Picoteo por la tarde' },
+      observations: { type: 'string', nullable: true, example: null },
+      createdAt: { type: 'string', format: 'date-time' },
+      updatedAt: { type: 'string', format: 'date-time' },
+      habits: { type: 'array', items: { $ref: '#/components/schemas/PrescribedHabit' } },
+    },
+  },
+
   IaHealth: {
     type: 'object',
     properties: {
@@ -518,6 +604,22 @@ const responses = {
     },
   },
 
+  ConsultationNotFound: {
+    description:
+      'El paciente o la consulta no existen para el nutricionista autenticado: inexistentes, de ' +
+      'otro nutricionista, una consulta de otro paciente o un id que no es UUID. La API no ' +
+      'distingue los casos.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        examples: {
+          consulta: { summary: 'Consulta', value: errorExample('NOT_FOUND', 'Consulta no encontrada') },
+          paciente: { summary: 'Paciente', value: errorExample('NOT_FOUND', 'Paciente no encontrado') },
+        },
+      },
+    },
+  },
+
   InternalError: {
     description:
       'Error inesperado del servidor. El mensaje es siempre el mismo: el detalle queda en el log ' +
@@ -561,6 +663,13 @@ const parameters = {
     in: 'path',
     required: true,
     description: 'Id de la condición. Un valor que no sea un UUID devuelve 404, no 400.',
+    schema: { type: 'string', format: 'uuid' },
+  },
+  ConsultationId: {
+    name: 'consultationId',
+    in: 'path',
+    required: true,
+    description: 'Id de la consulta. Un valor que no sea un UUID devuelve 404, no 400.',
     schema: { type: 'string', format: 'uuid' },
   },
 };

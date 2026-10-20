@@ -19,6 +19,10 @@ const EXPECTED_OPERATIONS = [
   'post /patients/{id}/conditions',
   'put /patients/{id}/conditions/{conditionId}',
   'delete /patients/{id}/conditions/{conditionId}',
+  'get /patients/{id}/consultations',
+  'post /patients/{id}/consultations',
+  'get /patients/{id}/consultations/{consultationId}',
+  'put /patients/{id}/consultations/{consultationId}',
   'get /food-groups',
   'get /food-groups/{id}',
   'get /foods',
@@ -37,6 +41,10 @@ const PROTECTED_OPERATIONS = [
   ['/patients/{id}/conditions', 'post'],
   ['/patients/{id}/conditions/{conditionId}', 'put'],
   ['/patients/{id}/conditions/{conditionId}', 'delete'],
+  ['/patients/{id}/consultations', 'get'],
+  ['/patients/{id}/consultations', 'post'],
+  ['/patients/{id}/consultations/{consultationId}', 'get'],
+  ['/patients/{id}/consultations/{consultationId}', 'put'],
   ['/food-groups', 'get'],
   ['/food-groups/{id}', 'get'],
   ['/foods', 'get'],
@@ -132,6 +140,13 @@ describe('spec OpenAPI del backend', () => {
     expect(create['201']).toBeDefined();
     expect(create['409']).toBeDefined();
     expect(remove['204']).toBeDefined();
+  });
+
+  it('documenta el alta de consulta como 201, y no documenta su borrado', () => {
+    const create = openapiSpec.paths['/patients/{id}/consultations'].post.responses;
+
+    expect(create['201']).toBeDefined();
+    expect(openapiSpec.paths['/patients/{id}/consultations/{consultationId}'].delete).toBeUndefined();
   });
 
   it('no documenta edición ni borrado de alimentos: el nutricionista no los modifica', () => {

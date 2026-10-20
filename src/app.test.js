@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const app = require('./app');
 const patientService = require('./services/patient.service');
 const patientConditionService = require('./services/patientCondition.service');
+const consultationService = require('./services/consultation.service');
 const foodGroupService = require('./services/foodGroup.service');
 const foodService = require('./services/food.service');
 const pathologyService = require('./services/pathology.service');
@@ -474,6 +475,130 @@ describe('rutas de condiciones del paciente — autenticación, aislamiento y va
     const spies = spyOnConditionService();
 
     const response = await request(path, { method, token: tokenFor('nutri-1') });
+
+    expectUniformError(response, 404, 'NOT_FOUND');
+    expect(response.json.error.message).toBe(message);
+    Object.values(spies).forEach((spy) => expect(spy).not.toHaveBeenCalled());
+  });
+});
+
+describe('rutas de consultas del paciente — autenticación, aislamiento y validación de punta a punta', () => {
+  const PATIENT_ID = '11111111-1111-1111-1111-111111111111';
+  const CONSULTATION_ID = '55555555-5555-5555-5555-555555555555';
+  const tokenFor = (nutritionistId) => jwt.sign({ sub: nutritionistId }, process.env.JWT_SECRET, { expiresIn: '1h' });
+  const body = { date: '2026-10-01', type: 'first', motivation: 'Más energía' };
+  const fakeConsultation = { id: CONSULTATION_ID, patientId: PATIENT_ID, type: 'first', habits: [] };
+
+  function spyOnConsultationService() {
+    return {
+      list: vi.spyOn(consultationService, 'list').mockResolvedValue([fakeConsultation]),
+      get: vi.spyOn(consultationService, 'get').mockResolvedValue(fakeConsultation),
+      create: vi.spyOn(consultationService, 'create').mockResolvedValue(fakeConsultation),
+      update: vi.spyOn(consultationService, 'update').mockResolvedValue(fakeConsultation),
+    };
+  }
+
+  const collection = `/patients/${PATIENT_ID}/consultations`;
+  const item = `${collection}/${CONSULTATION_ID}`;
+
+  it.each([
+    ['GET', collection],
+    ['POST', collection],
+    ['GET', item],
+    ['PUT', item],
+  ])('%s %s sin token responde 401 y no llega al servicio', async (method, path) => {
+    const spies = spyOnConsultationService();
+
+    const response = await request(path, { method, body: ['POST', 'PUT'].includes(method) ? body : undefined });
+
+    expectUniformError(response, 401, 'UNAUTHORIZED');
+    Object.values(spies).forEach((spy) => expect(spy).not.toHaveBeenCalled());
+  });
+
+  it.each(['nutri-1', 'nutri-2'])('cada ruta pasa al servicio el nutricionista del token (%s)', async (nutritionistId) => {
+    const spies = spyOnConsultationService();
+    const token = tokenFor(nutritionistId);
+    const habits = [{ description: 'Caminar 30 minutos' }];
+
+    await request(collection, { token });
+    const alta = await request(collection, { method: 'POST', token, body: { ...body, habits } });
+    await request(item, { token });
+    const edicion = await request(item, { method: 'PUT', token, body });
+
+    const parsed = expect.objectContaining({
+      date: new Date('2026-10-01T00:00:00.000Z'),
+      type: 'first',
+      motivation: 'Más energía',
+      observations: null,
+    });
+    expect(spies.list).toHaveBeenCalledWith(PATIENT_ID, nutritionistId);
+    expect(spies.create).toHaveBeenCalledWith(PATIENT_ID, nutritionistId, parsed);
+    expect(spies.create.mock.calls[0][2].habits).toEqual(habits);
+    expect(spies.get).toHaveBeenCalledWith(CONSULTATION_ID, PATIENT_ID, nutritionistId);
+    expect(spies.update).toHaveBeenCalledWith(CONSULTATION_ID, PATIENT_ID, nutritionistId, parsed);
+    expect(alta.status).toBe(201);
+    expect(edicion.status).toBe(200);
+  });
+
+  it('una consulta sin mediciones ni hábitos se acepta con 201 (RNF-09)', async () => {
+    const spies = spyOnConsultationService();
+
+    const response = await request(collection, {
+      method: 'POST',
+      token: tokenFor('nutri-1'),
+      body: { date: '2026-10-01', type: 'follow_up' },
+    });
+
+    expect(response.status).toBe(201);
+    expect(spies.create.mock.calls[0][2]).toMatchObject({ type: 'follow_up', habits: [] });
+  });
+
+  it.each([
+    ['sin fecha', { type: 'first' }, 'date'],
+    ['con fecha inexistente', { date: '2026-02-30', type: 'first' }, 'date'],
+    ['sin tipo', { date: '2026-10-01' }, 'type'],
+    ['con tipo inválido', { date: '2026-10-01', type: 'control' }, 'type'],
+    ['con un hábito sin descripción', { ...body, habits: [{ description: '' }] }, 'habits'],
+  ])('un alta %s responde 400 VALIDATION_ERROR con el campo en details.fields', async (_caso, invalid, field) => {
+    const spies = spyOnConsultationService();
+
+    const response = await request(collection, { method: 'POST', token: tokenFor('nutri-1'), body: invalid });
+
+    expectUniformError(response, 400, 'VALIDATION_ERROR');
+    expect(response.json.error.details.fields).toHaveProperty(field);
+    expect(spies.create).not.toHaveBeenCalled();
+  });
+
+  it('el PUT con hábitos responde 400: se cargan solo al crear la consulta', async () => {
+    const spies = spyOnConsultationService();
+
+    const response = await request(item, {
+      method: 'PUT',
+      token: tokenFor('nutri-1'),
+      body: { ...body, habits: [{ description: 'Caminar' }] },
+    });
+
+    expectUniformError(response, 400, 'VALIDATION_ERROR');
+    expect(spies.update).not.toHaveBeenCalled();
+  });
+
+  it.each(['nutritionistId', 'patientId'])('un %s en el body se rechaza con 400 y no llega al servicio', async (key) => {
+    const spies = spyOnConsultationService();
+
+    const response = await request(collection, { method: 'POST', token: tokenFor('nutri-1'), body: { ...body, [key]: PATIENT_ID } });
+
+    expectUniformError(response, 400, 'VALIDATION_ERROR');
+    expect(spies.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['GET', '/patients/no-es-un-uuid/consultations', 'Paciente no encontrado'],
+    ['GET', `${collection}/no-es-un-uuid`, 'Consulta no encontrada'],
+    ['PUT', `/patients/no-es-un-uuid/consultations/${CONSULTATION_ID}`, 'Consulta no encontrada'],
+  ])('%s %s responde 404', async (method, path, message) => {
+    const spies = spyOnConsultationService();
+
+    const response = await request(path, { method, token: tokenFor('nutri-1'), body: method === 'PUT' ? body : undefined });
 
     expectUniformError(response, 404, 'NOT_FOUND');
     expect(response.json.error.message).toBe(message);

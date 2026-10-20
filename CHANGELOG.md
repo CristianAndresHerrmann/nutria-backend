@@ -98,6 +98,29 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
     - Aislamiento en servicio, repositorio y rutas: paciente ajeno → `404` sin escribir nada, y el nutricionista del token llega hasta el servicio.
     - `401` sin token en las 4 rutas.
   - Decisión: `docs/decisiones/condiciones-repetidas-controladas-en-el-servicio.md` en el repo raíz.
+- Consultas del paciente y hábitos pautados (T19; RF-13, RF-18, RF-22 registro; RNF-05, RNF-09). Sin migración: las tablas son de T14.
+  - `GET` y `POST /patients/:id/consultations`, `GET` y `PUT /patients/:id/consultations/:consultationId`. Todas piden token y filtran por el nutricionista del token.
+  - El listado va de la consulta más reciente a la más antigua (por fecha y, en el mismo día, por alta).
+  - Campos:
+    - `date` (`AAAA-MM-DD`, no futura) y `type` (`first` | `follow_up`) son obligatorios.
+    - `observations` (RF-18), `motivation`, `decisionOrigin`, `perceivedObstacle` y `mainHabit` (RF-13) son opcionales. Un texto vacío se guarda como `null`.
+    - Una consulta sin mediciones ni hábitos se guarda sin errores (RNF-09).
+  - Hábitos pautados (RF-22): el `POST` acepta `habits: [{ description }]`, de 0 a 20. Los redacta el profesional, sin catálogo, y nacen `pending`. La consulta y sus hábitos se crean en una sola transacción.
+    - Un error en cualquier hábito viene en `details.fields.habits`, porque el detalle por campo usa solo el primer nivel de la ruta del error.
+  - `PUT` reemplaza los campos de la consulta, como `PUT /patients/:id`: un opcional omitido queda en `null`. No toca los hábitos: mandar `habits` responde `400`. Se editan con la evaluación del Incremento 5.
+  - Guardar o editar una consulta mueve `updatedAt` del paciente en la misma transacción. Así la "última actualización" de la ficha y el orden del listado reflejan la consulta. Ver la decisión abajo.
+  - Paciente o consulta de otro nutricionista, inexistentes o con un id que no es UUID → `404`. Una consulta de otro paciente también da `404`.
+  - La respuesta trae los hábitos como `habits: [{ id, description, compliance }]`. No trae mediciones (T20) ni la evaluación de hábitos (Incremento 5).
+  - No se valida nada entre consultas (cuántas `first` puede haber, orden de las fechas): la tarea no lo define.
+  - El repositorio (`consultation.repository`) filtra cada consulta por el paciente y por su nutricionista, y corta cualquier operación sin nutricionista.
+  - Documentado en Swagger bajo "Pacientes", con los schemas `ConsultationInput`, `ConsultationCreateInput`, `Consultation` y `PrescribedHabit`.
+  - Tests:
+    - Fecha faltante, con otro formato, inexistente o futura, y tipo faltante o inválido → `VALIDATION_ERROR` en su campo, en el schema y de punta a punta.
+    - Hábito sin descripción → `details.fields.habits`. `habits` en el `PUT` → `400`.
+    - Alta de una primera y un seguimiento con hábitos, que el historial devuelve en orden y pendientes.
+    - Aislamiento en servicio, repositorio y rutas: paciente ajeno → `404` sin escribir ni tocar al paciente, consulta de otro paciente → `404`, y el nutricionista del token llega hasta el servicio.
+    - `401` sin token en las 4 rutas.
+  - Decisión: `docs/decisiones/ultima-actualizacion-del-paciente-incluye-consultas.md` en el repo raíz.
 
 ### Changed
 
