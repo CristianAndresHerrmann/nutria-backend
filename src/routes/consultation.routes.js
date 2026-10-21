@@ -59,9 +59,9 @@ router.get(
  *     tags: [Pacientes]
  *     summary: Registra una consulta del paciente
  *     description: >
- *       Registra la consulta junto con los hábitos pautados al cierre, en una sola operación.
- *       No hace falta cargar mediciones. Guardarla actualiza la "última actualización" del
- *       paciente (`updatedAt`).
+ *       Registra la consulta junto con los hábitos pautados al cierre y las mediciones tomadas
+ *       en ella, en una sola operación. Hábitos y mediciones son opcionales. Guardarla actualiza
+ *       la "última actualización" del paciente (`updatedAt`).
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -73,7 +73,7 @@ router.get(
  *           schema: { $ref: '#/components/schemas/ConsultationCreateInput' }
  *           examples:
  *             primera:
- *               summary: Primera consulta con hábitos pautados
+ *               summary: Primera consulta con hábitos pautados y mediciones
  *               value:
  *                 date: '2026-10-19'
  *                 type: 'first'
@@ -82,6 +82,10 @@ router.get(
  *                 habits:
  *                   - { description: 'Caminar 30 minutos tres veces por semana' }
  *                   - { description: 'Incorporar una fruta en la merienda' }
+ *                 measurements:
+ *                   - { type: 'weight', value: 68.4 }
+ *                   - { type: 'height', value: 165 }
+ *                   - { type: 'glucose', value: 98, unit: 'mg/dL' }
  *             seguimiento:
  *               summary: Seguimiento con solo los datos obligatorios
  *               value: { date: '2026-10-19', type: 'follow_up' }
@@ -139,8 +143,8 @@ router.get(
  *     summary: Edita una consulta del paciente
  *     description: >
  *       Reemplazo completo de los campos de la consulta: un campo opcional omitido se guarda como
- *       `null`. Los hábitos pautados no se editan acá (mandar `habits` da 400). Actualiza la
- *       "última actualización" del paciente.
+ *       `null`. Los hábitos pautados y las mediciones no se editan acá (mandar `habits` o
+ *       `measurements` da 400). Actualiza la "última actualización" del paciente.
  *     security:
  *       - bearerAuth: []
  *     parameters:

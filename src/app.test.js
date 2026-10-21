@@ -3,6 +3,7 @@ const app = require('./app');
 const patientService = require('./services/patient.service');
 const patientConditionService = require('./services/patientCondition.service');
 const consultationService = require('./services/consultation.service');
+const measurementService = require('./services/measurement.service');
 const foodGroupService = require('./services/foodGroup.service');
 const foodService = require('./services/food.service');
 const pathologyService = require('./services/pathology.service');
@@ -569,6 +570,49 @@ describe('rutas de consultas del paciente — autenticación, aislamiento y vali
     expect(spies.create).not.toHaveBeenCalled();
   });
 
+  it('el alta pasa al servicio las mediciones de la consulta, con la unidad fija completada (T20)', async () => {
+    const spies = spyOnConsultationService();
+
+    const response = await request(collection, {
+      method: 'POST',
+      token: tokenFor('nutri-1'),
+      body: { ...body, measurements: [{ type: 'weight', value: 70.2 }, { type: 'glucose', value: 98, unit: 'mg/dL' }] },
+    });
+
+    expect(response.status).toBe(201);
+    expect(spies.create.mock.calls[0][2].measurements).toEqual([
+      { type: 'weight', value: 70.2, unit: 'kg', detail: null },
+      { type: 'glucose', value: 98, unit: 'mg/dL', detail: null },
+    ]);
+  });
+
+  it('una medición inválida en el alta responde 400 en details.fields.measurements', async () => {
+    const spies = spyOnConsultationService();
+
+    const response = await request(collection, {
+      method: 'POST',
+      token: tokenFor('nutri-1'),
+      body: { ...body, measurements: [{ type: 'circumference', value: 82 }] },
+    });
+
+    expectUniformError(response, 400, 'VALIDATION_ERROR');
+    expect(response.json.error.details.fields).toHaveProperty('measurements');
+    expect(spies.create).not.toHaveBeenCalled();
+  });
+
+  it('el PUT con mediciones responde 400: se editan por /measurements', async () => {
+    const spies = spyOnConsultationService();
+
+    const response = await request(item, {
+      method: 'PUT',
+      token: tokenFor('nutri-1'),
+      body: { ...body, measurements: [{ type: 'weight', value: 70 }] },
+    });
+
+    expectUniformError(response, 400, 'VALIDATION_ERROR');
+    expect(spies.update).not.toHaveBeenCalled();
+  });
+
   it('el PUT con hábitos responde 400: se cargan solo al crear la consulta', async () => {
     const spies = spyOnConsultationService();
 
@@ -597,6 +641,124 @@ describe('rutas de consultas del paciente — autenticación, aislamiento y vali
     ['PUT', `/patients/no-es-un-uuid/consultations/${CONSULTATION_ID}`, 'Consulta no encontrada'],
   ])('%s %s responde 404', async (method, path, message) => {
     const spies = spyOnConsultationService();
+
+    const response = await request(path, { method, token: tokenFor('nutri-1'), body: method === 'PUT' ? body : undefined });
+
+    expectUniformError(response, 404, 'NOT_FOUND');
+    expect(response.json.error.message).toBe(message);
+    Object.values(spies).forEach((spy) => expect(spy).not.toHaveBeenCalled());
+  });
+});
+
+describe('rutas de mediciones del paciente — autenticación, aislamiento y validación de punta a punta', () => {
+  const PATIENT_ID = '11111111-1111-1111-1111-111111111111';
+  const MEASUREMENT_ID = '66666666-6666-6666-6666-666666666666';
+  const tokenFor = (nutritionistId) => jwt.sign({ sub: nutritionistId }, process.env.JWT_SECRET, { expiresIn: '1h' });
+  const body = { type: 'weight', value: 70.2, date: '2026-10-01' };
+  const fakeMeasurement = { id: MEASUREMENT_ID, patientId: PATIENT_ID, type: 'weight', value: 70.2, unit: 'kg', bmi: 25.8 };
+
+  function spyOnMeasurementService() {
+    return {
+      list: vi.spyOn(measurementService, 'list').mockResolvedValue([fakeMeasurement]),
+      create: vi.spyOn(measurementService, 'create').mockResolvedValue(fakeMeasurement),
+      update: vi.spyOn(measurementService, 'update').mockResolvedValue(fakeMeasurement),
+      remove: vi.spyOn(measurementService, 'remove').mockResolvedValue(undefined),
+    };
+  }
+
+  const collection = `/patients/${PATIENT_ID}/measurements`;
+  const item = `${collection}/${MEASUREMENT_ID}`;
+
+  it.each([
+    ['GET', collection],
+    ['POST', collection],
+    ['PUT', item],
+    ['DELETE', item],
+  ])('%s %s sin token responde 401 y no llega al servicio', async (method, path) => {
+    const spies = spyOnMeasurementService();
+
+    const response = await request(path, { method, body: ['POST', 'PUT'].includes(method) ? body : undefined });
+
+    expectUniformError(response, 401, 'UNAUTHORIZED');
+    Object.values(spies).forEach((spy) => expect(spy).not.toHaveBeenCalled());
+  });
+
+  it.each(['nutri-1', 'nutri-2'])('cada ruta pasa al servicio el nutricionista del token (%s)', async (nutritionistId) => {
+    const spies = spyOnMeasurementService();
+    const token = tokenFor(nutritionistId);
+
+    const listado = await request(collection, { token });
+    const alta = await request(collection, { method: 'POST', token, body });
+    const edicion = await request(item, { method: 'PUT', token, body });
+    const baja = await request(item, { method: 'DELETE', token });
+
+    const parsed = {
+      type: 'weight',
+      value: 70.2,
+      unit: 'kg',
+      detail: null,
+      date: new Date('2026-10-01T00:00:00.000Z'),
+      consultationId: null,
+    };
+    expect(spies.list).toHaveBeenCalledWith(PATIENT_ID, nutritionistId);
+    expect(spies.create).toHaveBeenCalledWith(PATIENT_ID, nutritionistId, parsed);
+    expect(spies.update).toHaveBeenCalledWith(MEASUREMENT_ID, PATIENT_ID, nutritionistId, parsed);
+    expect(spies.remove).toHaveBeenCalledWith(MEASUREMENT_ID, PATIENT_ID, nutritionistId);
+    expect(listado.json).toEqual([fakeMeasurement]);
+    expect(alta.status).toBe(201);
+    expect(edicion.status).toBe(200);
+    expect(baja.status).toBe(204);
+    expect(baja.text).toBe('');
+  });
+
+  it.each([
+    ['un pliegue sin detalle', { type: 'skinfold', value: 12, unit: 'mm', date: '2026-10-01' }, 'detail'],
+    ['una circunferencia sin detalle', { type: 'circumference', value: 82, date: '2026-10-01' }, 'detail'],
+    ['otro parámetro sin detalle', { type: 'other', value: 6.1, unit: '%', date: '2026-10-01' }, 'detail'],
+    ['un valor en cero', { ...body, value: 0 }, 'value'],
+    ['un peso en libras', { ...body, unit: 'lb' }, 'unit'],
+    ['una glucemia en mmol/L', { type: 'glucose', value: 5.5, unit: 'mmol/L', date: '2026-10-01' }, 'unit'],
+    ['otro con una unidad fuera de la lista', { type: 'other', detail: 'HbA1c', value: 6.1, unit: 'porciento', date: '2026-10-01' }, 'unit'],
+    ['un tipo inválido', { ...body, type: 'bmi' }, 'type'],
+    ['sin fecha', { type: 'weight', value: 70 }, 'date'],
+  ])('un alta con %s responde 400 VALIDATION_ERROR con el campo en details.fields', async (_caso, invalid, field) => {
+    const spies = spyOnMeasurementService();
+
+    const response = await request(collection, { method: 'POST', token: tokenFor('nutri-1'), body: invalid });
+
+    expectUniformError(response, 400, 'VALIDATION_ERROR');
+    expect(response.json.error.details.fields).toHaveProperty(field);
+    expect(spies.create).not.toHaveBeenCalled();
+  });
+
+  it('un pliegue con detalle se acepta', async () => {
+    const spies = spyOnMeasurementService();
+
+    const response = await request(collection, {
+      method: 'POST',
+      token: tokenFor('nutri-1'),
+      body: { type: 'skinfold', detail: 'Tricipital', value: 12, unit: 'mm', date: '2026-10-01' },
+    });
+
+    expect(response.status).toBe(201);
+    expect(spies.create.mock.calls[0][2]).toMatchObject({ type: 'skinfold', detail: 'Tricipital' });
+  });
+
+  it.each(['nutritionistId', 'patientId', 'bmi'])('un %s en el body se rechaza con 400 y no llega al servicio', async (key) => {
+    const spies = spyOnMeasurementService();
+
+    const response = await request(collection, { method: 'POST', token: tokenFor('nutri-1'), body: { ...body, [key]: PATIENT_ID } });
+
+    expectUniformError(response, 400, 'VALIDATION_ERROR');
+    expect(spies.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['GET', '/patients/no-es-un-uuid/measurements', 'Paciente no encontrado'],
+    ['PUT', `${collection}/no-es-un-uuid`, 'Medición no encontrada'],
+    ['DELETE', `/patients/no-es-un-uuid/measurements/${MEASUREMENT_ID}`, 'Medición no encontrada'],
+  ])('%s %s responde 404', async (method, path, message) => {
+    const spies = spyOnMeasurementService();
 
     const response = await request(path, { method, token: tokenFor('nutri-1'), body: method === 'PUT' ? body : undefined });
 

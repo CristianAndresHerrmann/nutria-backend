@@ -20,6 +20,7 @@ function createFakePrisma({ count = 1 } = {}) {
       create: vi.fn(async ({ data }) => ({ id: 'q-1', ...data })),
       updateMany: vi.fn(async () => ({ count })),
     },
+    measurement: { createMany: vi.fn(async ({ data }) => ({ count: data.length })) },
     patient: { updateMany: vi.fn(async () => ({ count: 1 })) },
   };
   prisma.$transaction = vi.fn(async (callback) => callback(prisma));
@@ -57,6 +58,24 @@ describe('consultation.repository — filtro por paciente y nutricionista en cad
     expect(prisma.consultation.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: { type: 'first', patientId: PATIENT_ID, habitsSet: { create: habits } } }),
     );
+    expect(prisma.measurement.createMany).not.toHaveBeenCalled();
+    expect(prisma.patient.updateMany).toHaveBeenCalledWith(TOUCH_PATIENT);
+  });
+
+  it('create guarda las mediciones en la misma transacción, con el paciente, la consulta y su fecha', async () => {
+    const prisma = createFakePrisma();
+    const date = new Date('2026-10-01T00:00:00.000Z');
+    const measurements = [
+      { type: 'weight', value: 70.2, unit: 'kg', detail: null },
+      { type: 'height', value: 165, unit: 'cm', detail: null },
+    ];
+
+    await createConsultationRepository({ prisma }).create(PATIENT_ID, 'nutri-1', { type: 'first', date }, [], measurements);
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.measurement.createMany).toHaveBeenCalledWith({
+      data: measurements.map((measurement) => ({ ...measurement, patientId: PATIENT_ID, consultationId: 'q-1', date })),
+    });
     expect(prisma.patient.updateMany).toHaveBeenCalledWith(TOUCH_PATIENT);
   });
 

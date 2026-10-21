@@ -149,6 +149,7 @@ describe('consultation.service — registro de consultas y hábitos pautados', (
       'nutri-1',
       firstVisit,
       [{ description: 'Caminar 30 minutos' }, { description: 'Fruta en la merienda' }],
+      [],
     );
     expect(history.map(({ type, habits }) => ({ type, habits: habits.map((habit) => habit.description) }))).toEqual([
       { type: 'follow_up', habits: ['Tomar agua en el trabajo'] },
@@ -174,8 +175,20 @@ describe('consultation.service — registro de consultas y hábitos pautados', (
 
     const created = await service.create(OWN_PATIENT, 'nutri-1', { ...minimal, habits: [] });
 
-    expect(repository.create).toHaveBeenCalledWith(OWN_PATIENT, 'nutri-1', minimal, []);
+    expect(repository.create).toHaveBeenCalledWith(OWN_PATIENT, 'nutri-1', minimal, [], []);
     expect(created).toMatchObject({ type: 'follow_up', observations: null, habits: [] });
+  });
+
+  it('pasa al repositorio las mediciones tomadas en la consulta, separadas de sus campos (T20)', async () => {
+    const { service, repository } = buildService();
+    const measurements = [
+      { type: 'weight', value: 70.2, unit: 'kg', detail: null },
+      { type: 'glucose', value: 98, unit: 'mg/dL', detail: null },
+    ];
+
+    await service.create(OWN_PATIENT, 'nutri-1', { ...firstVisit, habits: [], measurements });
+
+    expect(repository.create).toHaveBeenCalledWith(OWN_PATIENT, 'nutri-1', firstVisit, [], measurements);
   });
 
   it('guardar o editar una consulta actualiza al paciente (última actualización)', async () => {

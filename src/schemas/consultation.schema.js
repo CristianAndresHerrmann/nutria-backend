@@ -1,6 +1,7 @@
 const { z } = require('zod');
 const { ConsultationType } = require('@prisma/client');
 const { optionalField, pastOrTodayDate } = require('./common.schema');
+const { consultationMeasurementSchema } = require('./measurement.schema');
 
 // Como en los datos clínicos del paciente: el mensaje no nombra el campo porque
 // viaja como clave en details.fields y el frontend lo muestra debajo del input.
@@ -12,6 +13,7 @@ function textField(maxLength) {
 
 const HABIT_DESCRIPTION_MAX_LENGTH = 500;
 const MAX_HABITS_PER_CONSULTATION = 20;
+const MAX_MEASUREMENTS_PER_CONSULTATION = 30;
 
 // Fecha y tipo obligatorios; el resto es opcional, así una consulta se guarda
 // aunque falten datos (RNF-09). Motivación, origen de la decisión, obstáculo y
@@ -28,7 +30,8 @@ const consultationFields = {
 
 // PUT: solo los campos de la consulta. Los hábitos pautados se cargan al crearla
 // y no se editan hasta su evaluación (Incremento 5), así que `habits` acá da 400
-// como cualquier clave desconocida.
+// como cualquier clave desconocida. Lo mismo `measurements`: después del alta,
+// cada medición se edita por /patients/:id/measurements/:measurementId.
 const consultationSchema = z.strictObject(consultationFields);
 
 // Hábito pautado al cierre de la consulta (RF-22): lo redacta el profesional, sin
@@ -45,12 +48,20 @@ const prescribedHabitSchema = z.strictObject({
     ),
 });
 
-// POST: los campos de la consulta más los hábitos, que son opcionales (0 o más).
+// POST: los campos de la consulta más los hábitos y las mediciones, ambos
+// opcionales (0 o más). Las mediciones toman la fecha de la consulta (T20).
 const createConsultationSchema = z.strictObject({
   ...consultationFields,
   habits: z
     .array(prescribedHabitSchema, 'Los hábitos pautados deben ser una lista')
     .max(MAX_HABITS_PER_CONSULTATION, `No se pueden pautar más de ${MAX_HABITS_PER_CONSULTATION} hábitos por consulta`)
+    .default([]),
+  measurements: z
+    .array(consultationMeasurementSchema, 'Las mediciones deben ser una lista')
+    .max(
+      MAX_MEASUREMENTS_PER_CONSULTATION,
+      `No se pueden cargar más de ${MAX_MEASUREMENTS_PER_CONSULTATION} mediciones por consulta`,
+    )
     .default([]),
 });
 

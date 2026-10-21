@@ -121,12 +121,54 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
     - Aislamiento en servicio, repositorio y rutas: paciente ajeno → `404` sin escribir ni tocar al paciente, consulta de otro paciente → `404`, y el nutricionista del token llega hasta el servicio.
     - `401` sin token en las 4 rutas.
   - Decisión: `docs/decisiones/ultima-actualizacion-del-paciente-incluye-consultas.md` en el repo raíz.
+- Mediciones antropométricas y valores de laboratorio (T20; RF-11, RF-12; RNF-05, RNF-09). Sin migración: la tabla y sus `CHECK` son de T14.
+  - `GET` y `POST /patients/:id/measurements`, `PUT` y `DELETE /patients/:id/measurements/:measurementId`. Todas piden token y filtran por el nutricionista del token.
+  - Campos: `type`, `value` (decimal, mayor a cero), `date` (`AAAA-MM-DD`, no futura), y opcionales `detail`, `unit` y `consultationId`. Una medición puede cargarse fuera de una consulta.
+  - Validaciones, todas técnicas y sin umbrales clínicos. `measurementSchema` (T14) queda montado en las rutas:
+    - `detail` es obligatorio para `skinfold`, `circumference` y `other`.
+    - `value` mayor a cero y tipo válido.
+    - Unidad fija por tipo: peso en `kg`, talla en `cm`, pliegue en `mm`, circunferencia en `cm`, y colesterol, triglicéridos y glucemia en `mg/dL`. Si no se manda, se completa. Otra unidad responde `400` en `details.fields.unit` ("La unidad de la glucemia es mg/dL").
+    - En `other` la unidad es opcional y se elige de una lista: `%`, `g/dL`, `mg/dL`, `mg/L`, `µg/dL`, `ng/mL`, `pg/mL`, `mmol/L`, `mEq/L`, `UI/L`, `µUI/mL`. Una que no esté responde `400` ("Elegí una unidad de la lista"). Para agregar una, se suma a `OTHER_UNITS` del schema y del frontend.
+    - Las unidades no distinguen mayúsculas y se guardan escritas como en la lista.
+    - Ningún tipo es obligatorio, así que un paciente sin laboratorio es válido (RF-12).
+  - Un `consultationId` inexistente, de otro paciente o de otro nutricionista responde `400` en `details.fields.consultationId`.
+  - **IMC** (RF-11): se calcula al leer y no se guarda (`src/utils/bmi.js`).
+    - Cada medición trae `bmi`. En un peso es un número con un decimal; en un peso sin talla, o en cualquier otro tipo, es `null`.
+    - Se usa la talla más reciente con fecha igual o anterior a la del peso. Si hay dos tallas del mismo día, se desempata por id.
+    - No se clasifica. Ver la decisión abajo.
+  - El listado va de la más reciente a la más antigua. En el mismo día se ordena por tipo y por id, porque la tabla no tiene fecha de alta.
+  - `value` viaja como número, no como el string del `Decimal`.
+  - `PUT` reemplaza la medición completa. `DELETE` responde `204`.
+  - Paciente o medición de otro nutricionista, inexistentes o con un id que no es UUID → `404`. Una medición de otro paciente también da `404`.
+  - Dar de alta, editar o borrar una medición mueve `updatedAt` del paciente en la misma transacción, como las consultas.
+  - **Mediciones de la consulta:** `POST /patients/:id/consultations` acepta `measurements: [{ type, value, detail?, unit? }]`, de 0 a 30.
+    - Se crean en la misma transacción que la consulta, con su fecha y su id.
+    - Mandar `date` o `consultationId` en una de ellas da `400`.
+    - Un error en cualquiera viene en `details.fields.measurements`.
+    - El `PUT` de la consulta no las acepta: después del alta se editan por `/measurements`.
+  - El repositorio (`measurement.repository`) filtra cada consulta por el paciente y por su nutricionista, y corta cualquier operación sin nutricionista.
+  - Documentado en Swagger bajo "Pacientes":
+    - Schemas nuevos `MeasurementInput`, `ConsultationMeasurementInput` y `Measurement`.
+    - `measurements` en `ConsultationCreateInput`.
+  - Tests:
+    - IMC con peso y talla, sin talla, con una talla de una fecha anterior, con una talla posterior que no cuenta, la más reciente de varias y el desempate.
+    - Detalle obligatorio, valor en cero, unidad que no corresponde al tipo (fija o fuera de la lista de `other`) y tipo inválido → `VALIDATION_ERROR` en su campo, en el schema y de punta a punta.
+    - Mediciones dentro de la consulta: se crean en la misma transacción y rechazan `date`. El `PUT` con `measurements` da `400`.
+    - Aislamiento en servicio, repositorio y rutas:
+      - Paciente ajeno → `404`, sin escribir ni tocar al paciente.
+      - Medición de otro paciente → `404`.
+      - Consulta de otro paciente → `400`.
+      - El nutricionista del token llega hasta el servicio.
+    - `401` sin token en las 4 rutas.
+  - Decisión: `docs/decisiones/imc-calculado-con-la-talla-mas-reciente.md` en el repo raíz.
 
 ### Changed
 
 - `GET /patients` y `GET /patients/:id` devuelven también las columnas nuevas del paciente (T14), en `null` cuando no hay dato, porque el serializer expone el registro completo. Desde T16, `POST` y `PUT` también las aceptan.
 - `PUT /patients/:id` sigue reemplazando el objeto completo, y ahora eso incluye los datos clínicos: un campo clínico que no se manda queda en `null`. El formulario del frontend manda siempre todos los campos.
 - `optionalField` y el parseo de fechas `AAAA-MM-DD` (`pastOrTodayDate`) pasan de `patient.schema.js` a `common.schema.js`, para reutilizarlos. Los mensajes de `birthDate` no cambian.
+- `touchPatient` (mover `updatedAt` del paciente) pasa de `consultation.repository` a `src/repositories/touchPatient.js`, para reusarlo en `measurement.repository` (T20).
+- `measurement.schema.js` (T14) se separa en `measurementSchema` (con fecha y consulta) y `consultationMeasurementSchema` (sin ellas), y suma la unidad por tipo: fija en todos salvo `other`, que la elige de una lista (T20).
 
 ### Fixed
 

@@ -8,8 +8,9 @@ const CONSULTATION_NOT_FOUND_MESSAGE = 'Consulta no encontrada';
 
 // Consultas del paciente (RF-13, RF-18) y hábitos pautados al cierre (RF-22,
 // solo registro). No hay reglas entre consultas (cuántas "primera" puede haber,
-// orden de las fechas): la tarea no las define. Las mediciones de la consulta
-// son de T20 y la evaluación de los hábitos, del Incremento 5.
+// orden de las fechas): la tarea no las define. Las mediciones cargadas con la
+// consulta (T20) se crean en la misma transacción; después se leen y editan por
+// measurement.service. La evaluación de los hábitos es del Incremento 5.
 function createConsultationService({ patientRepository: patients, consultationRepository: repository }) {
   // Un paciente de otro nutricionista da el mismo 404 que uno inexistente.
   async function assertPatient(patientId, nutritionistId) {
@@ -32,9 +33,9 @@ function createConsultationService({ patientRepository: patients, consultationRe
     },
 
     // Los hábitos nacen pendientes: compliance tiene default pending en la base.
-    async create(patientId, nutritionistId, { habits = [], ...data }) {
+    async create(patientId, nutritionistId, { habits = [], measurements = [], ...data }) {
       await assertPatient(patientId, nutritionistId);
-      return serializeConsultation(await repository.create(patientId, nutritionistId, data, habits));
+      return serializeConsultation(await repository.create(patientId, nutritionistId, data, habits, measurements));
     },
 
     // Reemplazo completo de los campos de la consulta, como PUT /patients/:id:

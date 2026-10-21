@@ -1,4 +1,5 @@
 const prisma = require('../lib/prisma');
+const touchPatient = require('./touchPatient');
 
 // Lo que acompaña a una consulta en toda lectura: los hábitos pautados en ella.
 // Sin la evaluación (consulta que evalúa, observaciones): eso es del
@@ -42,23 +43,27 @@ function createConsultationRepository({ prisma: client }) {
     });
   }
 
-  // Guardar una consulta cuenta como actualización del paciente: su
-  // "última actualización" (y el orden del listado) sale de patient.updated_at,
-  // que Prisma solo mueve al escribir la fila del paciente. Se toca en la misma
-  // transacción que la consulta, filtrando también por el nutricionista.
-  function touchPatient(db, patientId, nutritionistId) {
-    return db.patient.updateMany({ where: { id: patientId, nutritionistId }, data: { updatedAt: new Date() } });
-  }
-
-  // La consulta y sus hábitos pautados se crean juntos: si falla uno, no queda
-  // ninguno.
-  function create(patientId, nutritionistId, data, habits) {
+  // La consulta, sus hábitos pautados y sus mediciones se crean juntos: si
+  // falla uno, no queda ninguno. Las mediciones van con createMany aparte y no
+  // anidadas, porque también llevan el paciente; toman la fecha de la consulta.
+  // Guardarla toca al paciente (ver touchPatient).
+  function create(patientId, nutritionistId, data, habits, measurements = []) {
     assertNutritionistId(nutritionistId);
     return client.$transaction(async (tx) => {
       const consultation = await tx.consultation.create({
         data: { ...data, patientId, habitsSet: { create: habits } },
         include: CONSULTATION_INCLUDE,
       });
+      if (measurements.length > 0) {
+        await tx.measurement.createMany({
+          data: measurements.map((measurement) => ({
+            ...measurement,
+            patientId,
+            consultationId: consultation.id,
+            date: data.date,
+          })),
+        });
+      }
       await touchPatient(tx, patientId, nutritionistId);
       return consultation;
     });
