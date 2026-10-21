@@ -5,6 +5,7 @@ const authRoutes = require('./auth.routes');
 const patientRoutes = require('./patient.routes');
 const patientConditionRoutes = require('./patientCondition.routes');
 const consultationRoutes = require('./consultation.routes');
+const measurementRoutes = require('./measurement.routes');
 const foodGroupRoutes = require('./foodGroup.routes');
 const foodRoutes = require('./food.routes');
 const pathologyRoutes = require('./pathology.routes');
@@ -17,6 +18,7 @@ function createRouter(nodeEnv) {
   router.use(patientRoutes);
   router.use(patientConditionRoutes);
   router.use(consultationRoutes);
+  router.use(measurementRoutes);
   router.use(foodGroupRoutes);
   router.use(foodRoutes);
   router.use(pathologyRoutes);

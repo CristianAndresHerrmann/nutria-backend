@@ -356,7 +356,9 @@ const schemas = {
   },
 
   ConsultationCreateInput: {
-    description: 'Los campos de `ConsultationInput` más los hábitos pautados al cierre de la consulta.',
+    description:
+      'Los campos de `ConsultationInput` más los hábitos pautados al cierre de la consulta y las ' +
+      'mediciones tomadas en ella.',
     allOf: [
       { $ref: '#/components/schemas/ConsultationInput' },
       {
@@ -377,6 +379,16 @@ const schemas = {
                 description: { type: 'string', minLength: 1, maxLength: 500, example: 'Caminar 30 minutos tres veces por semana' },
               },
             },
+          },
+          measurements: {
+            type: 'array',
+            maxItems: 30,
+            description:
+              'Mediciones y laboratorio tomados en la consulta (RF-11, RF-12). Opcional. Se crean en la ' +
+              'misma operación, con la fecha de la consulta, y después se leen y editan por ' +
+              '`/patients/{id}/measurements`. No se aceptan en el `PUT`. Un error en cualquiera de ' +
+              'ellas viene en `details.fields.measurements`.',
+            items: { $ref: '#/components/schemas/ConsultationMeasurementInput' },
           },
         },
       },
@@ -412,6 +424,95 @@ const schemas = {
       createdAt: { type: 'string', format: 'date-time' },
       updatedAt: { type: 'string', format: 'date-time' },
       habits: { type: 'array', items: { $ref: '#/components/schemas/PrescribedHabit' } },
+    },
+  },
+
+  // Mediciones y laboratorio (T20; RF-11, RF-12).
+  ConsultationMeasurementInput: {
+    type: 'object',
+    required: ['type', 'value'],
+    additionalProperties: false,
+    description:
+      'Una medición antropométrica o de laboratorio. Solo validaciones técnicas: valor mayor a cero, ' +
+      'tipo válido y `detail` obligatorio para `skinfold`, `circumference` y `other`. Sin umbrales ' +
+      'clínicos. Ningún tipo es obligatorio.',
+    properties: {
+      type: {
+        type: 'string',
+        enum: ['weight', 'height', 'skinfold', 'circumference', 'cholesterol', 'triglycerides', 'glucose', 'other'],
+        example: 'weight',
+        description:
+          'Antropometría: `weight`, `height`, `skinfold`, `circumference`. Laboratorio: `cholesterol`, ' +
+          '`triglycerides`, `glucose`, `other`.',
+      },
+      detail: {
+        type: 'string',
+        nullable: true,
+        maxLength: 255,
+        example: null,
+        description:
+          'Qué se midió (qué pliegue, qué circunferencia, qué parámetro). Obligatorio para `skinfold`, ' +
+          '`circumference` y `other`.',
+      },
+      value: { type: 'number', exclusiveMinimum: 0, maximum: 999999.99, example: 68.4 },
+      unit: {
+        type: 'string',
+        nullable: true,
+        maxLength: 50,
+        example: 'kg',
+        description:
+          'Fija según el tipo: `weight` kg, `height` cm, `skinfold` mm, `circumference` cm, ' +
+          '`cholesterol`, `triglycerides` y `glucose` mg/dL. Si no viene se completa, y otra distinta ' +
+          'da 400. En `other` es opcional y se elige de una lista: %, g/dL, mg/dL, mg/L, µg/dL, ' +
+          'ng/mL, pg/mL, mmol/L, mEq/L, UI/L, µUI/mL; otra da 400.',
+      },
+    },
+  },
+
+  MeasurementInput: {
+    description:
+      'Los campos de `ConsultationMeasurementInput` más la fecha y, opcionalmente, la consulta. En el ' +
+      '`PUT` es un reemplazo completo: un opcional omitido queda en `null`.',
+    allOf: [
+      { $ref: '#/components/schemas/ConsultationMeasurementInput' },
+      {
+        type: 'object',
+        required: ['date'],
+        properties: {
+          date: { type: 'string', format: 'date', example: '2026-10-19', description: 'AAAA-MM-DD, no futura.' },
+          consultationId: {
+            type: 'string',
+            format: 'uuid',
+            nullable: true,
+            description:
+              'Consulta en la que se tomó. Opcional: una medición puede cargarse fuera de una consulta. ' +
+              'Tiene que ser del mismo paciente; si no, `400` en `details.fields.consultationId`.',
+          },
+        },
+      },
+    ],
+  },
+
+  Measurement: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      patientId: { type: 'string', format: 'uuid' },
+      consultationId: { type: 'string', format: 'uuid', nullable: true },
+      type: { type: 'string', example: 'weight' },
+      detail: { type: 'string', nullable: true, example: null },
+      value: { type: 'number', example: 68.4 },
+      unit: { type: 'string', nullable: true, example: 'kg' },
+      date: { type: 'string', format: 'date-time', example: '2026-10-19T00:00:00.000Z' },
+      bmi: {
+        type: 'number',
+        nullable: true,
+        example: 25.1,
+        description:
+          'IMC (RF-11), calculado y no guardado, con un decimal. Solo en un `weight`, con la talla más ' +
+          'reciente de fecha igual o anterior a la del peso; sin esa talla, o en otro tipo, `null`. No ' +
+          'se clasifica.',
+      },
     },
   },
 
@@ -620,6 +721,22 @@ const responses = {
     },
   },
 
+  MeasurementNotFound: {
+    description:
+      'El paciente o la medición no existen para el nutricionista autenticado: inexistentes, de ' +
+      'otro nutricionista, una medición de otro paciente o un id que no es UUID. La API no ' +
+      'distingue los casos.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        examples: {
+          medicion: { summary: 'Medición', value: errorExample('NOT_FOUND', 'Medición no encontrada') },
+          paciente: { summary: 'Paciente', value: errorExample('NOT_FOUND', 'Paciente no encontrado') },
+        },
+      },
+    },
+  },
+
   InternalError: {
     description:
       'Error inesperado del servidor. El mensaje es siempre el mismo: el detalle queda en el log ' +
@@ -670,6 +787,13 @@ const parameters = {
     in: 'path',
     required: true,
     description: 'Id de la consulta. Un valor que no sea un UUID devuelve 404, no 400.',
+    schema: { type: 'string', format: 'uuid' },
+  },
+  MeasurementId: {
+    name: 'measurementId',
+    in: 'path',
+    required: true,
+    description: 'Id de la medición. Un valor que no sea un UUID devuelve 404, no 400.',
     schema: { type: 'string', format: 'uuid' },
   },
 };

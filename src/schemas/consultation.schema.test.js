@@ -28,6 +28,7 @@ describe('consultation.schema — fecha y tipo', () => {
       mainHabit: null,
       observations: null,
       habits: [],
+      measurements: [],
     });
   });
 
@@ -147,6 +148,44 @@ describe('consultation.schema — hábitos pautados', () => {
     const result = consultationSchema.safeParse({ date: '2026-10-01', type: 'first', habits: [] });
 
     expect(result.success).toBe(false);
+  });
+});
+
+describe('consultation.schema — mediciones tomadas en la consulta (T20)', () => {
+  const base = { date: '2026-10-01', type: 'first' };
+
+  it('acepta peso, talla y un valor de laboratorio, con la unidad fija completada', () => {
+    const result = createConsultationSchema.safeParse({
+      ...base,
+      measurements: [
+        { type: 'weight', value: 70.2 },
+        { type: 'height', value: '165' },
+        { type: 'glucose', value: 98, unit: 'mg/dL' },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data.measurements).toEqual([
+      { type: 'weight', value: 70.2, unit: 'kg', detail: null },
+      { type: 'height', value: 165, unit: 'cm', detail: null },
+      { type: 'glucose', value: 98, unit: 'mg/dL', detail: null },
+    ]);
+  });
+
+  it.each([
+    ['un pliegue sin detalle', { type: 'skinfold', value: 12 }],
+    ['un valor en cero', { type: 'weight', value: 0 }],
+    ['un peso en libras', { type: 'weight', value: 150, unit: 'lb' }],
+    ['una fecha propia', { type: 'weight', value: 70, date: '2026-09-01' }],
+  ])('rechaza %s, señalado en el campo measurements', (_case, measurement) => {
+    const result = createConsultationSchema.safeParse({ ...base, measurements: [measurement] });
+
+    expect(result.success).toBe(false);
+    expect(issuesByField(result)).toHaveProperty('measurements');
+  });
+
+  it('el PUT no acepta mediciones', () => {
+    expect(consultationSchema.safeParse({ ...base, measurements: [] }).success).toBe(false);
   });
 });
 
