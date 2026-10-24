@@ -87,6 +87,45 @@ function catalogRef(exampleName) {
   };
 }
 
+// Campos de una receta compartidos por el alta, la edición y la respuesta (T21).
+const recipeInputProperties = {
+  name: { type: 'string', minLength: 1, maxLength: 100, example: 'Ensalada de arroz y atún' },
+  preparation: { type: 'string', nullable: true, maxLength: 5000, example: '1. Hervir el arroz.\n2. Mezclar con el atún.' },
+  finalNote: { type: 'string', nullable: true, maxLength: 2000, example: 'Se conserva en heladera hasta el día siguiente.' },
+  cookingMethod: { type: 'string', nullable: true, enum: ['oven', 'stovetop', 'microwave', 'no_cooking'] },
+  timeMinutes: { type: 'integer', nullable: true, minimum: 1, maximum: 1440, example: 25 },
+  purchasePlace: { type: 'string', nullable: true, maxLength: 200, example: 'Supermercado' },
+  mealTypes: {
+    type: 'array',
+    minItems: 1,
+    uniqueItems: true,
+    description: 'Uno o más tipos de comida, sin repetir.',
+    items: { type: 'string', enum: ['breakfast', 'lunch', 'afternoon_snack', 'dinner'] },
+    example: ['lunch', 'dinner'],
+  },
+  ingredients: {
+    type: 'array',
+    minItems: 1,
+    maxItems: 50,
+    description:
+      'Uno o más alimentos del catálogo, nunca texto libre, sin repetir un alimento. El orden es la ' +
+      'posición en la lista. Un error en cualquier ingrediente se informa en `details.fields.ingredients`.',
+    items: {
+      type: 'object',
+      required: ['foodId'],
+      additionalProperties: false,
+      properties: {
+        foodId: {
+          type: 'string',
+          format: 'uuid',
+          description: 'Alimento común o privado propio, vigente. Uno inexistente o privado de otro da 400.',
+        },
+        quantityDescription: { type: 'string', nullable: true, maxLength: 200, example: '1 taza cocida' },
+      },
+    },
+  },
+};
+
 const schemas = {
   Health: {
     type: 'object',
@@ -278,6 +317,74 @@ const schemas = {
       id: { type: 'string', format: 'uuid' },
       name: { type: 'string', example: 'Celiaquía' },
       description: { type: 'string', nullable: true },
+    },
+  },
+
+  // Recetas (T21; RF-27). Propias de cada nutricionista.
+  RecipeInput: {
+    type: 'object',
+    required: ['name', 'mealTypes', 'ingredients'],
+    additionalProperties: false,
+    description:
+      'Alta de una receta. El dueño y el origen no se mandan: salen del token y del servidor. Un ' +
+      'string vacío en un campo opcional cuenta como ausencia del dato.',
+    properties: recipeInputProperties,
+  },
+
+  RecipeUpdateInput: {
+    type: 'object',
+    required: ['name', 'mealTypes', 'ingredients'],
+    additionalProperties: false,
+    description: 'Reemplazo completo de la receta, más la baja lógica.',
+    properties: {
+      ...recipeInputProperties,
+      availableInCatalog: {
+        type: 'boolean',
+        description: '`false` da de baja la receta y `true` la reactiva. Omitido, conserva el valor que tenía.',
+      },
+    },
+  },
+
+  Recipe: {
+    type: 'object',
+    description: 'Receta del nutricionista autenticado. El dueño no viaja.',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      name: recipeInputProperties.name,
+      preparation: recipeInputProperties.preparation,
+      finalNote: recipeInputProperties.finalNote,
+      cookingMethod: recipeInputProperties.cookingMethod,
+      timeMinutes: recipeInputProperties.timeMinutes,
+      purchasePlace: recipeInputProperties.purchasePlace,
+      origin: {
+        type: 'string',
+        enum: ['professional', 'ai_generated'],
+        description: 'Siempre `professional` por ahora: `ai_generated` llega con RF-39 (Incremento 3).',
+      },
+      availableInCatalog: { type: 'boolean', description: 'Disponible en el catálogo (baja lógica).' },
+      mealTypes: recipeInputProperties.mealTypes,
+      ingredients: {
+        type: 'array',
+        description: 'En el orden de la receta.',
+        items: {
+          type: 'object',
+          properties: {
+            order: { type: 'integer', minimum: 1, example: 1 },
+            quantityDescription: { type: 'string', nullable: true, example: '1 taza cocida' },
+            food: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                name: { type: 'string', example: 'Arroz blanco' },
+                active: { type: 'boolean', description: 'false si el alimento se dio de baja después.' },
+                foodGroupId: { type: 'string', format: 'uuid' },
+              },
+            },
+          },
+        },
+      },
+      createdAt: { type: 'string', format: 'date-time' },
+      updatedAt: { type: 'string', format: 'date-time' },
     },
   },
 
@@ -674,6 +781,7 @@ const responses = {
   FoodGroupNotFound: notFoundResponse('Grupo de alimentos no encontrado'),
   FoodNotFound: notFoundResponse('Alimento no encontrado'),
   PathologyNotFound: notFoundResponse('Patología no encontrada'),
+  RecipeNotFound: notFoundResponse('Receta no encontrada'),
 
   PatientConditionNotFound: {
     description:
@@ -794,6 +902,13 @@ const parameters = {
     in: 'path',
     required: true,
     description: 'Id de la medición. Un valor que no sea un UUID devuelve 404, no 400.',
+    schema: { type: 'string', format: 'uuid' },
+  },
+  RecipeId: {
+    name: 'id',
+    in: 'path',
+    required: true,
+    description: 'Id de la receta. Un valor que no sea un UUID devuelve 404, no 400.',
     schema: { type: 'string', format: 'uuid' },
   },
 };

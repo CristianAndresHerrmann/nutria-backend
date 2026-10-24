@@ -19,7 +19,7 @@ const openapiSpec = swaggerJsdoc({
       version,
       description:
         'API REST de NutrIA: autenticación del nutricionista, gestión de sus pacientes y ' +
-        'catálogos de alimentos y patologías.\n\n' +
+        'catálogos de alimentos y patologías, y sus recetas.\n\n' +
         'Todo acceso a datos de paciente se filtra por el nutricionista del token. El ' +
         '`nutritionistId` nunca se lee del cliente ni viaja en las respuestas.\n\n' +
         'Todo error usa el formato uniforme `{ error: { code, message, details? } }`: `code` es ' +
@@ -48,6 +48,12 @@ const openapiSpec = swaggerJsdoc({
           'Grupos de alimentos, alimentos y patologías. Grupos y patologías son comunes y de solo ' +
           'lectura. Un nutricionista ve los alimentos comunes y los suyos privados, y lo que da de ' +
           'alta queda privado. Ningún nutricionista edita ni da de baja ítems del catálogo.',
+      },
+      {
+        name: 'Recetas',
+        description:
+          'Recetas propias del nutricionista autenticado, con ingredientes tomados del catálogo de ' +
+          'alimentos. Se editan y se dan de baja lógicamente; no se borran.',
       },
     ],
     components,

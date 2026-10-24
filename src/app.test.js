@@ -7,6 +7,7 @@ const measurementService = require('./services/measurement.service');
 const foodGroupService = require('./services/foodGroup.service');
 const foodService = require('./services/food.service');
 const pathologyService = require('./services/pathology.service');
+const recipeService = require('./services/recipe.service');
 
 // Integración liviana: la app real levantada en un puerto efímero, sin base ni
 // servicio de IA. Cada caso corta antes de llegar a Prisma (ruta inexistente,
@@ -353,6 +354,143 @@ describe('rutas de catálogos — autenticación y alimentos privados de punta a
     ['PUT', `/pathologies/${ITEM_ID}`],
   ])('%s %s no existe: el nutricionista no modifica el catálogo', async (method, path) => {
     const response = await request(path, { method, token: tokenFor('nutri-1'), body: { name: 'x' } });
+
+    expectUniformError(response, 404, 'NOT_FOUND');
+    expect(response.json.error.message).toBe('Ruta no encontrada');
+  });
+});
+
+describe('rutas de recetas — autenticación, aislamiento y validación de punta a punta', () => {
+  const RECIPE_ID = '44444444-4444-4444-4444-444444444444';
+  const FOOD_ID = '55555555-5555-5555-5555-555555555555';
+  const PATIENT_ID = '66666666-6666-6666-6666-666666666666';
+  const tokenFor = (nutritionistId) => jwt.sign({ sub: nutritionistId }, process.env.JWT_SECRET, { expiresIn: '1h' });
+  const body = {
+    name: 'Ensalada de arroz y atún',
+    mealTypes: ['lunch', 'dinner'],
+    ingredients: [{ foodId: FOOD_ID, quantityDescription: '1 taza' }],
+  };
+  // Lo que el servicio recibe una vez parseado: los opcionales omitidos en null.
+  const parsedBody = {
+    ...body,
+    preparation: null,
+    finalNote: null,
+    cookingMethod: null,
+    timeMinutes: null,
+    purchasePlace: null,
+    ingredients: [{ foodId: FOOD_ID, quantityDescription: '1 taza' }],
+  };
+  const fakeRecipe = (nutritionistId) => ({
+    id: RECIPE_ID,
+    name: body.name,
+    nutritionistId,
+    origin: 'professional',
+    availableInCatalog: true,
+    ingredients: [{ order: 1, quantityDescription: '1 taza', food: { id: FOOD_ID, name: 'Arroz', active: true, foodGroupId: FOOD_ID } }],
+    mealTypes: [{ mealType: 'lunch' }, { mealType: 'dinner' }],
+  });
+
+  function spyOnRecipeService() {
+    return {
+      list: vi.spyOn(recipeService, 'list').mockImplementation(async (n) => [fakeRecipe(n)]),
+      get: vi.spyOn(recipeService, 'get').mockImplementation(async (_id, n) => fakeRecipe(n)),
+      create: vi.spyOn(recipeService, 'create').mockImplementation(async (n) => fakeRecipe(n)),
+      update: vi.spyOn(recipeService, 'update').mockImplementation(async (_id, n) => fakeRecipe(n)),
+    };
+  }
+
+  it.each([
+    ['GET', '/recipes'],
+    ['GET', `/recipes/${RECIPE_ID}`],
+    ['POST', '/recipes'],
+    ['PUT', `/recipes/${RECIPE_ID}`],
+  ])('%s %s sin token responde 401 y no llega al servicio', async (method, path) => {
+    const spies = spyOnRecipeService();
+
+    const response = await request(path, { method, body: method === 'GET' ? undefined : body });
+
+    expectUniformError(response, 401, 'UNAUTHORIZED');
+    Object.values(spies).forEach((spy) => expect(spy).not.toHaveBeenCalled());
+  });
+
+  it.each(['nutri-1', 'nutri-2'])('cada ruta pasa al servicio el nutricionista del token (%s)', async (nutritionistId) => {
+    const spies = spyOnRecipeService();
+    const token = tokenFor(nutritionistId);
+
+    await request(`/recipes?mealType=lunch&includeUnavailable=true&patientId=${PATIENT_ID}`, { token });
+    await request(`/recipes/${RECIPE_ID}`, { token });
+    const alta = await request('/recipes', { method: 'POST', token, body });
+    await request(`/recipes/${RECIPE_ID}`, { method: 'PUT', token, body: { ...body, availableInCatalog: false } });
+
+    expect(spies.list).toHaveBeenCalledWith(nutritionistId, { mealType: 'lunch', includeUnavailable: true, patientId: PATIENT_ID });
+    expect(spies.get).toHaveBeenCalledWith(RECIPE_ID, nutritionistId);
+    expect(spies.create).toHaveBeenCalledWith(nutritionistId, parsedBody);
+    expect(spies.update).toHaveBeenCalledWith(RECIPE_ID, nutritionistId, { ...parsedBody, availableInCatalog: false });
+    expect(alta.status).toBe(201);
+  });
+
+  it('la respuesta aplana los tipos de comida y no expone el dueño', async () => {
+    spyOnRecipeService();
+
+    const response = await request(`/recipes/${RECIPE_ID}`, { token: tokenFor('nutri-1') });
+
+    expect(response.status).toBe(200);
+    expect(response.json.mealTypes).toEqual(['lunch', 'dinner']);
+    expect(response.json).not.toHaveProperty('nutritionistId');
+  });
+
+  it.each([
+    ['nutritionistId', 'nutri-2'],
+    ['origin', 'ai_generated'],
+  ])('un %s en el body se rechaza con 400 y no llega al servicio', async (key, value) => {
+    const spies = spyOnRecipeService();
+
+    const alta = await request('/recipes', { method: 'POST', token: tokenFor('nutri-1'), body: { ...body, [key]: value } });
+
+    expectUniformError(alta, 400, 'VALIDATION_ERROR');
+    expect(spies.create).not.toHaveBeenCalled();
+  });
+
+  it('un ingrediente en texto libre responde 400 en details.fields.ingredients', async () => {
+    const spies = spyOnRecipeService();
+
+    const response = await request('/recipes', {
+      method: 'POST',
+      token: tokenFor('nutri-1'),
+      body: { ...body, ingredients: [{ name: 'harina', quantityDescription: '200 g' }] },
+    });
+
+    expectUniformError(response, 400, 'VALIDATION_ERROR');
+    expect(response.json.error.details.fields).toHaveProperty('ingredients');
+    expect(spies.create).not.toHaveBeenCalled();
+  });
+
+  it('una receta sin tipos de comida responde 400 en details.fields.mealTypes', async () => {
+    const spies = spyOnRecipeService();
+
+    const response = await request('/recipes', { method: 'POST', token: tokenFor('nutri-1'), body: { ...body, mealTypes: [] } });
+
+    expectUniformError(response, 400, 'VALIDATION_ERROR');
+    expect(response.json.error.details.fields.mealTypes).toBe('Indicá al menos un tipo de comida');
+    expect(spies.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['GET', '/recipes/no-es-un-uuid'],
+    ['PUT', '/recipes/no-es-un-uuid'],
+  ])('%s %s responde 404, igual que una receta ajena', async (method, path) => {
+    const spies = spyOnRecipeService();
+
+    const response = await request(path, { method, token: tokenFor('nutri-1'), body: method === 'PUT' ? body : undefined });
+
+    expectUniformError(response, 404, 'NOT_FOUND');
+    expect(response.json.error.message).toBe('Receta no encontrada');
+    expect(spies.get).not.toHaveBeenCalled();
+    expect(spies.update).not.toHaveBeenCalled();
+  });
+
+  it('DELETE /recipes/:id no existe: la baja es lógica', async () => {
+    const response = await request(`/recipes/${RECIPE_ID}`, { method: 'DELETE', token: tokenFor('nutri-1') });
 
     expectUniformError(response, 404, 'NOT_FOUND');
     expect(response.json.error.message).toBe('Ruta no encontrada');

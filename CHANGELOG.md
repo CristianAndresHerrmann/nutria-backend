@@ -162,6 +162,36 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
     - `401` sin token en las 4 rutas.
   - Decisión: `docs/decisiones/imc-calculado-con-la-talla-mas-reciente.md` en el repo raíz.
 
+- Catálogo de recetas (T21; RF-27, RF-28; RNF-05). Sin migración: las tablas son de T14.
+  - `GET` y `POST /recipes`, `GET` y `PUT /recipes/:id`. Todas piden token y filtran por el nutricionista del token.
+  - Campos: `name`, `mealTypes` (uno o más de `breakfast`, `lunch`, `afternoon_snack`, `dinner`, sin repetir) e `ingredients` (uno o más, hasta 50) son obligatorios. Opcionales: `preparation`, `finalNote`, `cookingMethod`, `timeMinutes` (entero, de 1 a 1440) y `purchasePlace`.
+  - **Ingredientes:** cada uno es `{ foodId, quantityDescription? }`, nunca texto libre, porque el Incremento 3 valida sobre datos estructurados.
+    - El orden es la posición en la lista. El cliente no manda `order`.
+    - Un alimento no se repite en la misma receta. Si se incorpora en tandas, se indica en la preparación.
+    - El alimento tiene que ser común o privado propio, y vigente. Uno inexistente o privado de otro nutricionista responde `400` en `details.fields.ingredients`, igual que uno dado de baja. Un alimento dado de baja que ya estaba en la receta se puede conservar al editarla.
+  - `origin` es siempre `professional`; `ai_generated` llega con RF-39 (Incremento 3). Mandar `origin` o `nutritionistId` en el body da `400`.
+  - **Baja lógica:** no hay `DELETE`.
+    - `PUT` con `availableInCatalog: false` da de baja la receta, y con `true` la reactiva. Si no se manda, se conserva el valor que tenía.
+    - `GET /recipes` devuelve solo las disponibles. Con `includeUnavailable=true` trae también las dadas de baja. `GET /recipes/:id` las devuelve siempre.
+  - `PUT` reemplaza la receta completa: los opcionales omitidos quedan en `null`, y los ingredientes y tipos de comida se reemplazan en la misma transacción.
+  - `GET /recipes?mealType=` filtra por tipo de comida. Una receta con varios tipos aparece en cada uno.
+  - **Filtro por condiciones del paciente (RF-28):** `GET /recipes?patientId=` deja afuera las recetas con algún ingrediente comprendido en una alergia, intolerancia o rechazo del paciente.
+    - Cuenta tanto el alimento como su grupo, incluidos los subgrupos: rechazar "Carnes, pescados y huevos" excluye lo de "Pescados".
+    - Las preferencias no excluyen. Lo que se deriva de una patología son reglas clínicas del Incremento 3 (REGLA_CLINICA).
+    - Función pura en `src/utils/recipeConditionFilter.js`, que usa `descendantIds` de `foodGroupTree`.
+    - Un paciente de otro nutricionista o inexistente responde `404`.
+  - Receta de otro nutricionista, inexistente o con un id que no es UUID → `404`.
+  - El repositorio (`recipe.repository`) lleva el nutricionista en el where de cada consulta y corta cualquier operación sin él. Una edición de una receta ajena afecta 0 filas y no toca sus ingredientes.
+  - La respuesta aplana `mealTypes` a la lista de valores, trae los ingredientes en orden con su alimento (`{ id, name, active, foodGroupId }`), y no expone `nutritionistId`.
+  - Documentado en Swagger, con el tag nuevo "Recetas" y los schemas `RecipeInput`, `RecipeUpdateInput` y `Recipe`.
+  - Tests:
+    - Receta con tres ingredientes y dos tipos de comida creada y editada (reorden, cantidades, tipos).
+    - Receta de otro nutricionista → `404` al leerla y al editarla, en servicio y de punta a punta. Aislamiento en el repositorio.
+    - Baja lógica y reactivación, filtro por tipo de comida, alimento ajeno o dado de baja.
+    - Validaciones del schema: sin tipos, sin ingredientes, alimento repetido, ingrediente en texto libre, `order` u `origin` en el body, tiempo inválido.
+    - RF-28: alimento directo, grupo, subgrupo, condición sobre un subgrupo que no alcanza al padre, varias condiciones combinadas, paciente sin condiciones, preferencias y patologías que no excluyen, paciente ajeno.
+    - `401` sin token en las 4 rutas, y `DELETE` inexistente.
+
 ### Changed
 
 - `GET /patients` y `GET /patients/:id` devuelven también las columnas nuevas del paciente (T14), en `null` cuando no hay dato, porque el serializer expone el registro completo. Desde T16, `POST` y `PUT` también las aceptan.
