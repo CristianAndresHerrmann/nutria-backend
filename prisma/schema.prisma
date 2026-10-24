@@ -37,6 +37,9 @@ model Nutritionist {
   // Alimentos privados que cargó (T15): solo los ve y los usa él.
   foods Food[]
 
+  // Recomendaciones clínicas privadas que cargó (T22): solo las ve y las edita él.
+  clinicalRecommendations ClinicalRecommendation[]
+
   @@map("nutritionist")
 }
 
@@ -399,15 +402,23 @@ model RecipeMealType {
   @@map("recipe_meal_type")
 }
 
-// Recomendación clínica estándar por patología (RF-30). Catálogo común.
+// Recomendación clínica estándar por patología (RF-30), reutilizable entre
+// pacientes. Como los alimentos (T15): nutritionistId null es común (la carga el
+// seed y nadie la edita desde la API); con valor es privada de ese
+// nutricionista, que la crea, la edita y la da de baja (T22). Las
+// recomendaciones de hábitos de cada paciente no van acá (RF-31): son los
+// hábitos pautados.
 model ClinicalRecommendation {
-  id          String    @id @default(uuid()) @db.Uuid
-  pathologyId String    @map("pathology_id") @db.Uuid
-  pathology   Pathology @relation(fields: [pathologyId], references: [id], onDelete: Restrict)
-  title       String
-  text        String
-  active      Boolean   @default(true)
+  id             String        @id @default(uuid()) @db.Uuid
+  pathologyId    String        @map("pathology_id") @db.Uuid
+  pathology      Pathology     @relation(fields: [pathologyId], references: [id], onDelete: Restrict)
+  nutritionistId String?       @map("nutritionist_id") @db.Uuid
+  nutritionist   Nutritionist? @relation(fields: [nutritionistId], references: [id], onDelete: Restrict)
+  title          String
+  text           String
+  active         Boolean       @default(true)
 
   @@index([pathologyId])
+  @@index([nutritionistId])
   @@map("clinical_recommendation")
 }

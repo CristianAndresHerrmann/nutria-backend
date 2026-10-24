@@ -8,6 +8,7 @@ const foodGroupService = require('./services/foodGroup.service');
 const foodService = require('./services/food.service');
 const pathologyService = require('./services/pathology.service');
 const recipeService = require('./services/recipe.service');
+const recommendationService = require('./services/recommendation.service');
 
 // Integración liviana: la app real levantada en un puerto efímero, sin base ni
 // servicio de IA. Cada caso corta antes de llegar a Prisma (ruta inexistente,
@@ -491,6 +492,122 @@ describe('rutas de recetas — autenticación, aislamiento y validación de punt
 
   it('DELETE /recipes/:id no existe: la baja es lógica', async () => {
     const response = await request(`/recipes/${RECIPE_ID}`, { method: 'DELETE', token: tokenFor('nutri-1') });
+
+    expectUniformError(response, 404, 'NOT_FOUND');
+    expect(response.json.error.message).toBe('Ruta no encontrada');
+  });
+});
+
+// Recomendaciones clínicas (T22). El nutricionista del token llega al servicio:
+// decide qué privadas ve y es el dueño de las que da de alta y edita.
+describe('rutas de recomendaciones clínicas — autenticación, aislamiento y validación de punta a punta', () => {
+  const RECOMMENDATION_ID = '77777777-7777-7777-7777-777777777777';
+  const PATHOLOGY_ID = '88888888-8888-8888-8888-888888888888';
+  const tokenFor = (nutritionistId) => jwt.sign({ sub: nutritionistId }, process.env.JWT_SECRET, { expiresIn: '1h' });
+  const body = { pathologyId: PATHOLOGY_ID, title: 'Ejemplo ficticio', text: 'Texto de ejemplo.' };
+  const fakeRecommendation = (nutritionistId) => ({
+    id: RECOMMENDATION_ID,
+    ...body,
+    pathology: { id: PATHOLOGY_ID, name: 'Celiaquía' },
+    active: true,
+    nutritionistId,
+  });
+
+  function spyOnRecommendationService() {
+    return {
+      list: vi.spyOn(recommendationService, 'list').mockImplementation(async (n) => [fakeRecommendation(n)]),
+      get: vi.spyOn(recommendationService, 'get').mockImplementation(async (_id, n) => fakeRecommendation(n)),
+      create: vi.spyOn(recommendationService, 'create').mockImplementation(async (n) => fakeRecommendation(n)),
+      update: vi.spyOn(recommendationService, 'update').mockImplementation(async (_id, n) => fakeRecommendation(n)),
+    };
+  }
+
+  it.each([
+    ['GET', '/clinical-recommendations'],
+    ['GET', `/clinical-recommendations/${RECOMMENDATION_ID}`],
+    ['POST', '/clinical-recommendations'],
+    ['PUT', `/clinical-recommendations/${RECOMMENDATION_ID}`],
+  ])('%s %s sin token responde 401 y no llega al servicio', async (method, path) => {
+    const spies = spyOnRecommendationService();
+
+    const response = await request(path, { method, body: method === 'GET' ? undefined : body });
+
+    expectUniformError(response, 401, 'UNAUTHORIZED');
+    Object.values(spies).forEach((spy) => expect(spy).not.toHaveBeenCalled());
+  });
+
+  it.each(['nutri-1', 'nutri-2'])('cada ruta pasa al servicio el nutricionista del token (%s)', async (nutritionistId) => {
+    const spies = spyOnRecommendationService();
+    const token = tokenFor(nutritionistId);
+
+    await request(`/clinical-recommendations?pathologyId=${PATHOLOGY_ID}&includeInactive=true`, { token });
+    await request(`/clinical-recommendations/${RECOMMENDATION_ID}`, { token });
+    const alta = await request('/clinical-recommendations', { method: 'POST', token, body });
+    await request(`/clinical-recommendations/${RECOMMENDATION_ID}`, { method: 'PUT', token, body: { ...body, active: false } });
+
+    expect(spies.list).toHaveBeenCalledWith(nutritionistId, { pathologyId: PATHOLOGY_ID, includeInactive: true });
+    expect(spies.get).toHaveBeenCalledWith(RECOMMENDATION_ID, nutritionistId);
+    expect(spies.create).toHaveBeenCalledWith(nutritionistId, body);
+    expect(spies.update).toHaveBeenCalledWith(RECOMMENDATION_ID, nutritionistId, { ...body, active: false });
+    expect(alta.status).toBe(201);
+  });
+
+  it('la respuesta no expone el dueño: dice si es propia', async () => {
+    spyOnRecommendationService();
+
+    const response = await request(`/clinical-recommendations/${RECOMMENDATION_ID}`, { token: tokenFor('nutri-1') });
+
+    expect(response.status).toBe(200);
+    expect(response.json.own).toBe(true);
+    expect(response.json).not.toHaveProperty('nutritionistId');
+  });
+
+  it('un nutritionistId en el body se rechaza con 400 y no llega al servicio', async () => {
+    const spies = spyOnRecommendationService();
+
+    const alta = await request('/clinical-recommendations', {
+      method: 'POST',
+      token: tokenFor('nutri-1'),
+      body: { ...body, nutritionistId: 'nutri-2' },
+    });
+
+    expectUniformError(alta, 400, 'VALIDATION_ERROR');
+    expect(spies.create).not.toHaveBeenCalled();
+  });
+
+  it('una recomendación sin título responde 400 en details.fields.title', async () => {
+    const spies = spyOnRecommendationService();
+
+    const response = await request('/clinical-recommendations', {
+      method: 'POST',
+      token: tokenFor('nutri-1'),
+      body: { ...body, title: '  ' },
+    });
+
+    expectUniformError(response, 400, 'VALIDATION_ERROR');
+    expect(response.json.error.details.fields.title).toBe('El título es obligatorio');
+    expect(spies.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['GET', '/clinical-recommendations/no-es-un-uuid'],
+    ['PUT', '/clinical-recommendations/no-es-un-uuid'],
+  ])('%s %s responde 404, igual que una privada ajena', async (method, path) => {
+    const spies = spyOnRecommendationService();
+
+    const response = await request(path, { method, token: tokenFor('nutri-1'), body: method === 'PUT' ? body : undefined });
+
+    expectUniformError(response, 404, 'NOT_FOUND');
+    expect(response.json.error.message).toBe('Recomendación no encontrada');
+    expect(spies.get).not.toHaveBeenCalled();
+    expect(spies.update).not.toHaveBeenCalled();
+  });
+
+  it('DELETE /clinical-recommendations/:id no existe: la baja es lógica', async () => {
+    const response = await request(`/clinical-recommendations/${RECOMMENDATION_ID}`, {
+      method: 'DELETE',
+      token: tokenFor('nutri-1'),
+    });
 
     expectUniformError(response, 404, 'NOT_FOUND');
     expect(response.json.error.message).toBe('Ruta no encontrada');

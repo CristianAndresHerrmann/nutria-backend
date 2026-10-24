@@ -9,12 +9,12 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 - Modelo de datos del Incremento 2 (T14), en la migración `20261014203321_agrega_datos_clinicos_consultas_y_catalogos`. `schema.prisma` pasa a ser el modelo lógico vigente de los Incrementos 1 y 2. Lo que se agrega:
   - **Paciente**, con todas las columnas nuevas opcionales (RNF-03, RNF-09): antecedentes y medicación (RF-04); tratamiento externo (RF-05); hábitos en cinco campos (actividad física, tabaco, alcohol, horarios de comida y de sueño, RF-06); contexto de cocina, con `cooks` agregado al Anexo A (RF-08); comidas y equipamiento fuera del hogar (RF-09); ocupación y contexto laboral (RF-10); patrones de ingesta (RF-14).
   - **Pacientes y consultas**: `pathology`, `patient_condition`, `consultation`, `measurement` (antropometría y laboratorio en una sola tabla, con `detail` para precisar el tipo) y `prescribed_habit` (consulta que lo establece y consulta que lo evalúa).
-  - **Catálogos**: `food_group` (jerárquico), `food`, `food_category`, `recipe` (con `nutritionist_id`, RNF-05), `recipe_ingredient`, `recipe_meal_type` y `clinical_recommendation`. Alimentos, grupos, patologías y recomendaciones son comunes a todos los nutricionistas. `recipe.plan_origen_id` llega en el Incremento 3.
+  - **Catálogos**: `food_group` (jerárquico), `food`, `food_category`, `recipe` (con `nutritionist_id`, RNF-05), `recipe_ingredient`, `recipe_meal_type` y `clinical_recommendation`. Alimentos, grupos, patologías y recomendaciones son comunes a todos los nutricionistas (desde T15, los alimentos y desde T22, las recomendaciones pueden ser también privadas). `recipe.plan_origen_id` llega en el Incremento 3.
   - Valores de enum en inglés (`pathology`, `follow_up`, `skinfold`, `afternoon_snack`, etc.).
   - Restricciones `CHECK` en el SQL de la migración: alimento y grupo excluyentes en una condición; `pathology_id` si y solo si el tipo es `pathology`; las condiciones que no son patología referencian un alimento o un grupo; `detail` obligatorio para `skinfold`, `circumference` y `other`; `value > 0`; un hábito no se evalúa en la misma consulta que lo pauta; un grupo no es su propio padre; `time_minutes > 0`.
   - Correspondencia completa con el Anexo A y el porqué de cada ajuste: `docs/decisiones/ajustes-al-modelo-del-anexo-a-incremento-2.md` y `docs/decisiones/catalogos-comunes-entre-nutricionistas.md` en el repo raíz.
 - `src/schemas/patientCondition.schema.js` y `src/schemas/measurement.schema.js`, con sus tests: validan en la aplicación las mismas reglas que los `CHECK`, para que los endpoints de esos módulos respondan `400` con el campo puntual. Todavía no están montados en ninguna ruta.
-- Seed (`scripts/seed.js` + `scripts/seed-data/catalogs.js`), solo con datos ficticios: 15 grupos de alimentos en dos niveles, 31 alimentos con sus categorías y las patologías de los casos de prueba (celiaquía, diabetes, hipertensión), cargados con `upsert` por nombre. Los pacientes existentes ahora tienen condiciones, consultas con mediciones y laboratorio, hábitos pautados y evaluados, y mediciones cargadas fuera de una consulta. Cada nutricionista tiene una receta propia. No se cargan recomendaciones clínicas, porque serían contenido clínico real.
+- Seed (`scripts/seed.js` + `scripts/seed-data/catalogs.js`), solo con datos ficticios: 15 grupos de alimentos en dos niveles, 31 alimentos con sus categorías y las patologías de los casos de prueba (celiaquía, diabetes, hipertensión), cargados con `upsert` por nombre. Los pacientes existentes ahora tienen condiciones, consultas con mediciones y laboratorio, hábitos pautados y evaluados, y mediciones cargadas fuera de una consulta. Cada nutricionista tiene una receta propia. No se cargan recomendaciones clínicas, porque serían contenido clínico real (desde T22, solo ejemplos identificados como ficticios).
 
 - Catálogos (T15; RF-04 patologías, RF-24, RF-25). Todas las rutas piden token.
   - **Grupos y patologías:** `GET /food-groups`, `GET /food-groups/:id`, `GET /pathologies` y `GET /pathologies/:id`. Son comunes a todos los nutricionistas y de solo lectura.
@@ -191,6 +191,26 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
     - Validaciones del schema: sin tipos, sin ingredientes, alimento repetido, ingrediente en texto libre, `order` u `origin` en el body, tiempo inválido.
     - RF-28: alimento directo, grupo, subgrupo, condición sobre un subgrupo que no alcanza al padre, varias condiciones combinadas, paciente sin condiciones, preferencias y patologías que no excluyen, paciente ajeno.
     - `401` sin token en las 4 rutas, y `DELETE` inexistente.
+
+- Catálogo de recomendaciones clínicas por patología (T22; RF-30, RF-31; RNF-08).
+  - Migración `20261024190253_agrega_recomendaciones_privadas`: agrega `clinical_recommendation.nutritionist_id` (FK a `nutritionist`, nullable, `RESTRICT`, con índice). `NULL` es común; con valor, privada de ese nutricionista.
+  - `GET` y `POST /clinical-recommendations`, `GET` y `PUT /clinical-recommendations/:id`. Todas piden token.
+  - Campos: `pathologyId`, `title` (hasta 150, sin espacios de más) y `text` (hasta 5000, conserva los saltos de línea), todos obligatorios. Una patología inexistente responde `400` en `details.fields.pathologyId`.
+  - **Visibilidad:** el nutricionista ve las comunes y las suyas. Una privada de otro, una inexistente o un id que no es UUID → `404`.
+  - **Alta y edición:** `POST` crea siempre una privada, con el dueño del token; un `nutritionistId` en el body da `400`. `PUT` reemplaza la recomendación propia. Editar una común → `403 FORBIDDEN` ("Las recomendaciones comunes son de solo lectura").
+  - **Baja lógica:** no hay `DELETE`. `PUT` con `active: false` la da de baja y con `true` la reactiva; si no se manda, conserva el valor. `GET /clinical-recommendations` devuelve solo las vigentes; con `includeInactive=true`, también las dadas de baja. `GET /clinical-recommendations/:id` las devuelve siempre.
+  - `GET /clinical-recommendations?pathologyId=` filtra por patología. El listado viene ordenado por patología y título, con la patología (`{ id, name }`) en cada ítem.
+  - La respuesta no expone `nutritionistId`: trae `own` (`true` si es privada del nutricionista del token).
+  - El repositorio (`recommendation.repository`) limita cada lectura a comunes y propias, lleva el dueño en el where de la edición y corta cualquier operación sin nutricionista.
+  - Separación de RF-31: las recomendaciones de hábitos de cada paciente son los hábitos pautados (T19) y el texto del plan (Incremento 3), no esta entidad.
+  - Seed: una recomendación común por patología y dos privadas de `nutricionista@nutria.com` (una dada de baja), todas con título y texto identificados como ficticios. El contenido real lo carga la nutricionista.
+  - Documentado en Swagger, con el tag nuevo "Recomendaciones" y los schemas `ClinicalRecommendationInput`, `ClinicalRecommendationUpdateInput` y `ClinicalRecommendation`.
+  - Tests:
+    - Privada de otro nutricionista → `404` al leerla y al editarla; común → `403` al editarla y no se modifica. Aislamiento en el repositorio, incluido el corte sin nutricionista.
+    - Alta con el dueño del token, edición, baja lógica y reactivación, `active` omitido que se conserva, filtro por patología y por vigencia, patología inexistente.
+    - Validaciones del schema: obligatorios, solo espacios, largo máximo, normalización del título, `nutritionistId` o `active` en el alta, query.
+    - `401` sin token en las 4 rutas, id no UUID, `DELETE` inexistente, y que la respuesta no exponga el dueño.
+  - Decisión: `docs/decisiones/recomendaciones-privadas-por-nutricionista.md` en el repo raíz.
 
 ### Changed
 

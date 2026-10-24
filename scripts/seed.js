@@ -1,6 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
-const { FOOD_GROUPS, FOODS, PATHOLOGIES } = require('./seed-data/catalogs');
+const { FOOD_GROUPS, FOODS, PATHOLOGIES, RECOMMENDATIONS, RECOMMENDATION_TEXT } = require('./seed-data/catalogs');
 
 const prisma = new PrismaClient();
 
@@ -18,11 +18,21 @@ const SEED_PASSWORD = '123456aA!';
 // - `looseMeasurements` son mediciones cargadas fuera de una consulta.
 //
 // Por nutricionista, `privateFoods` son alimentos privados (T15): solo los ve ese
-// nutricionista. Sirven para verificar a mano que el otro no los ve.
+// nutricionista. Sirven para verificar a mano que el otro no los ve. Lo mismo
+// `privateRecommendations` (T22), con una dada de baja para probar el filtro.
 const SEED_DATA = [
   {
     nutritionist: { name: 'Camila Ríos', email: 'nutricionista@nutria.com' },
     privateFoods: [{ name: 'Kéfir', group: 'Lácteos', categories: ['protein'] }],
+    privateRecommendations: [
+      { pathology: 'Celiaquía', title: 'Ejemplo ficticio: recomendación propia de Camila', text: RECOMMENDATION_TEXT },
+      {
+        pathology: 'Diabetes',
+        title: 'Ejemplo ficticio: recomendación propia dada de baja',
+        text: RECOMMENDATION_TEXT,
+        active: false,
+      },
+    ],
     recipes: [
       {
         name: 'Ensalada de arroz y atún',
@@ -289,6 +299,19 @@ async function seedPrivateFoods(nutritionistId, foods, catalog) {
   }
 }
 
+// Se reemplazan todas las del nutricionista, como las recetas: no las referencia
+// nada todavía.
+async function seedPrivateRecommendations(nutritionistId, recommendations, catalog) {
+  await prisma.clinicalRecommendation.deleteMany({ where: { nutritionistId } });
+  await prisma.clinicalRecommendation.createMany({
+    data: recommendations.map(({ pathology, ...data }) => ({
+      ...data,
+      pathologyId: requireId(catalog.pathologyIds, pathology, 'patología'),
+      nutritionistId,
+    })),
+  });
+}
+
 function toDate(value) {
   return new Date(`${value}T00:00:00.000Z`);
 }
@@ -330,8 +353,18 @@ async function seedCatalogs() {
     pathologyIds[name] = pathology.id;
   }
 
+  // Las recomendaciones del seed son comunes (nutritionistId null). Sin único
+  // en la base: se busca por título, como los alimentos comunes por nombre.
+  for (const { pathology, title, text } of RECOMMENDATIONS) {
+    const existing = await prisma.clinicalRecommendation.findFirst({ where: { title, nutritionistId: null } });
+    const data = { pathologyId: requireId(pathologyIds, pathology, 'patología'), text, active: true };
+    if (existing) await prisma.clinicalRecommendation.update({ where: { id: existing.id }, data });
+    else await prisma.clinicalRecommendation.create({ data: { ...data, title } });
+  }
+
   console.log(
-    `Seed: catálogo con ${FOOD_GROUPS.length} grupos, ${FOODS.length} alimentos y ${PATHOLOGIES.length} patologías.`,
+    `Seed: catálogo con ${FOOD_GROUPS.length} grupos, ${FOODS.length} alimentos, ${PATHOLOGIES.length} patologías ` +
+      `y ${RECOMMENDATIONS.length} recomendaciones comunes.`,
   );
   return { groupIds, foodIds, pathologyIds };
 }
@@ -423,7 +456,7 @@ async function main() {
   const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
   const catalog = await seedCatalogs();
 
-  for (const { nutritionist: data, patients, recipes, privateFoods = [] } of SEED_DATA) {
+  for (const { nutritionist: data, patients, recipes, privateFoods = [], privateRecommendations = [] } of SEED_DATA) {
     const nutritionist = await prisma.nutritionist.upsert({
       where: { email: data.email },
       update: { passwordHash },
@@ -438,10 +471,11 @@ async function main() {
     }
     await seedRecipes(nutritionist.id, recipes, catalog);
     await seedPrivateFoods(nutritionist.id, privateFoods, catalog);
+    await seedPrivateRecommendations(nutritionist.id, privateRecommendations, catalog);
 
     console.log(
-      `Seed: ${nutritionist.email} con ${patients.length} pacientes, ${recipes.length} receta(s) y ` +
-        `${privateFoods.length} alimento(s) privado(s).`,
+      `Seed: ${nutritionist.email} con ${patients.length} pacientes, ${recipes.length} receta(s), ` +
+        `${privateFoods.length} alimento(s) privado(s) y ${privateRecommendations.length} recomendación(es) privada(s).`,
     );
   }
 
