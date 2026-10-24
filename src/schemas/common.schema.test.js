@@ -1,4 +1,43 @@
-const { pastOrTodayDate } = require('./common.schema');
+const { z } = require('zod');
+const { emptyQuerySchema, pastOrTodayDate } = require('./common.schema');
+
+// Cargar common.schema configura los mensajes por defecto de Zod en castellano.
+describe('mensajes por defecto de Zod', () => {
+  it('una clave no admitida nombra la clave, en castellano', () => {
+    expect(emptyQuerySchema.safeParse({ page: '2' }).error.issues[0].message).toBe('Campo no admitido: "page"');
+    expect(emptyQuerySchema.safeParse({ page: '2', sort: 'x' }).error.issues[0].message).toBe(
+      'Campos no admitidos: "page", "sort"',
+    );
+  });
+
+  it('un campo obligatorio que no vino dice que es obligatorio', () => {
+    const result = z.strictObject({ name: z.string() }).safeParse({});
+
+    expect(result.error.issues[0]).toMatchObject({ path: ['name'], message: 'Este campo es obligatorio' });
+  });
+
+  it.each([
+    [z.string(), 1, 'Debe ser texto'],
+    [z.number(), 'x', 'Debe ser un número'],
+    [z.boolean(), 'si', 'Debe ser sí o no'],
+    [z.array(z.string()), 'x', 'Debe ser una lista'],
+    [z.object({}), 'x', 'Debe ser un objeto'],
+  ])('un valor de otro tipo dice qué tipo espera (%#)', (schema, value, message) => {
+    expect(schema.safeParse(value).error.issues[0].message).toBe(message);
+  });
+
+  it('el mensaje propio de un schema tiene prioridad', () => {
+    expect(z.string('El nombre es obligatorio').safeParse(undefined).error.issues[0].message).toBe(
+      'El nombre es obligatorio',
+    );
+  });
+
+  it('el resto de los casos sale del locale en castellano, no en inglés', () => {
+    const message = z.enum(['a', 'b']).safeParse('c').error.issues[0].message;
+
+    expect(message).not.toMatch(/invalid|expected/i);
+  });
+});
 
 // Helper compartido por todas las fechas de la API (nacimiento, medición,
 // registro de condición y, desde T19, consulta). Los schemas que lo usan solo

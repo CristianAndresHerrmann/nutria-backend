@@ -212,7 +212,20 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
     - `401` sin token en las 4 rutas, id no UUID, `DELETE` inexistente, y que la respuesta no exponga el dueño.
   - Decisión: `docs/decisiones/recomendaciones-privadas-por-nutricionista.md` en el repo raíz.
 
+- Cierre del Incremento 2 (T23; RNF-01, RNF-05, RNF-08, RNF-13). Revisión completa en `docs/cierre-incremento-2.md` del repo raíz.
+  - Tests:
+    - Todas las operaciones del spec documentan el `400`.
+    - Mensajes por defecto de Zod en castellano: clave no admitida, obligatorio ausente, tipo inválido, prioridad del mensaje propio del schema.
+    - De punta a punta: un parámetro de query desconocido responde "Campo no admitido", y un obligatorio que no viene en el body responde "Este campo es obligatorio" en su campo.
+
 ### Changed
+
+- Los errores de validación que un schema no personaliza responden en castellano (T23). Antes salía el mensaje por defecto de Zod, en inglés:
+  - Una clave no admitida en la query o en el body (por ejemplo, `nutritionistId`) pasa de `Unrecognized key: "page"` a `Campo no admitido: "page"`. Sigue sin `details.fields`, como antes.
+  - Un obligatorio que no viene pasa de `Invalid input: expected string, received undefined` a `Este campo es obligatorio`.
+  - Un valor de otro tipo responde, según el tipo esperado, "Debe ser texto", "Debe ser un número", "Debe ser sí o no", "Debe ser una lista" o "Debe ser un objeto".
+  - El resto de los casos sale del locale de Zod en castellano.
+  - Se configura una sola vez, en `common.schema.js`. El mensaje propio de cada schema sigue teniendo prioridad, así que ningún mensaje existente cambia.
 
 - `GET /patients` y `GET /patients/:id` devuelven también las columnas nuevas del paciente (T14), en `null` cuando no hay dato, porque el serializer expone el registro completo. Desde T16, `POST` y `PUT` también las aceptan.
 - `PUT /patients/:id` sigue reemplazando el objeto completo, y ahora eso incluye los datos clínicos: un campo clínico que no se manda queda en `null`. El formulario del frontend manda siempre todos los campos.
@@ -222,6 +235,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ### Fixed
 
+- Swagger (T23): 15 operaciones GET y DELETE no documentaban el `400`, que igual devuelven ante un parámetro de query desconocido, porque todas las rutas validan la query.
+  - Ahora lo documentan con la respuesta nueva `UnknownQueryParam`.
+  - La descripción de `ValidationError` decía que un parámetro de ruta inválido da `400`, pero en todas las rutas da `404`. Ahora lo dice así.
+  - `ValidationError` suma un ejemplo de campo no admitido.
 - Antes, cualquier cambio en `prisma/` (el schema, una migración nueva o un `migration.sql` editado) hacía que la imagen del backend reinstalara todas las dependencias, y cada `test:backend`, `db:*` o `up` tardaba unos 5 minutos. Pasaba porque el `Dockerfile` copiaba `prisma/` antes del `npm install`. Ahora instala primero y genera el cliente después, en un `RUN npx prisma generate` propio. Así, un cambio de schema solo repite ese paso (segundos), y `npm install` corre únicamente cuando cambian `package.json` o `package-lock.json`, como ya decía el README de la raíz.
 
 ## [0.0.1] - 2026-09-30

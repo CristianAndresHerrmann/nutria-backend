@@ -1,5 +1,34 @@
 const { z } = require('zod');
 
+// Mensajes en castellano para los errores que un schema no personaliza: una
+// clave que el .strictObject no admite (en el body o en la query), un campo
+// obligatorio que no vino, o uno de otro tipo. Sin esto, la API respondía el
+// mensaje por defecto de Zod, en inglés ("Unrecognized key: ..."). El mensaje
+// propio de un schema tiene prioridad sobre estos, y estos sobre el locale, que
+// cubre el resto de los casos. Es configuración global de Zod: vive acá porque
+// todas las rutas cargan este módulo.
+const TYPE_MESSAGES = {
+  string: 'Debe ser texto',
+  number: 'Debe ser un número',
+  boolean: 'Debe ser sí o no',
+  array: 'Debe ser una lista',
+  object: 'Debe ser un objeto',
+};
+
+z.config(z.locales.es());
+z.config({
+  customError(issue) {
+    if (issue.code === 'unrecognized_keys') {
+      const keys = issue.keys.map((key) => `"${key}"`).join(', ');
+      return issue.keys.length === 1 ? `Campo no admitido: ${keys}` : `Campos no admitidos: ${keys}`;
+    }
+    if (issue.code === 'invalid_type') {
+      return issue.input === undefined ? 'Este campo es obligatorio' : TYPE_MESSAGES[issue.expected];
+    }
+    return undefined;
+  },
+});
+
 // Para rutas que no aceptan parámetros de query: un parámetro desconocido da
 // 400, igual que una clave desconocida en el body de un .strictObject.
 const emptyQuerySchema = z.strictObject({});

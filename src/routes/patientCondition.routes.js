@@ -37,6 +37,7 @@ const byCondition = { notFoundOnInvalidParams: CONDITION_NOT_FOUND_MESSAGE };
  *             schema:
  *               type: array
  *               items: { $ref: '#/components/schemas/PatientCondition' }
+ *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
  *       '404': { $ref: '#/components/responses/PatientNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
@@ -152,6 +153,7 @@ router.put(
  *     responses:
  *       '204':
  *         description: Condición eliminada
+ *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
  *       '404': { $ref: '#/components/responses/PatientConditionNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }

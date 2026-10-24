@@ -41,6 +41,7 @@ const byConsultation = { notFoundOnInvalidParams: CONSULTATION_NOT_FOUND_MESSAGE
  *             schema:
  *               type: array
  *               items: { $ref: '#/components/schemas/Consultation' }
+ *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
  *       '404': { $ref: '#/components/responses/PatientNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
@@ -124,6 +125,7 @@ router.post(
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/Consultation' }
+ *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
  *       '404': { $ref: '#/components/responses/ConsultationNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }

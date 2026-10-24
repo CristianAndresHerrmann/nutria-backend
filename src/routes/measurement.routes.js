@@ -38,6 +38,7 @@ const byMeasurement = { notFoundOnInvalidParams: MEASUREMENT_NOT_FOUND_MESSAGE }
  *             schema:
  *               type: array
  *               items: { $ref: '#/components/schemas/Measurement' }
+ *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
  *       '404': { $ref: '#/components/responses/PatientNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
@@ -148,6 +149,7 @@ router.put(
  *     responses:
  *       '204':
  *         description: Medición eliminada
+ *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
  *       '404': { $ref: '#/components/responses/MeasurementNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }

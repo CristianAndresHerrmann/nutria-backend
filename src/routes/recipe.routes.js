@@ -77,6 +77,7 @@ router.get('/recipes', requireAuth, validate({ query: listRecipesQuerySchema }),
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/Recipe' }
+ *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
  *       '404': { $ref: '#/components/responses/RecipeNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }

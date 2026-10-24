@@ -781,8 +781,9 @@ const responses = {
 
   ValidationError: {
     description:
-      'La request no cumple el schema (body, parámetros de ruta o de query), o el body no es JSON ' +
-      'válido. Un parámetro de query desconocido también da 400.',
+      'La request no cumple el schema (body o parámetros de query), o el body no es JSON válido. ' +
+      'Un campo o un parámetro de query desconocido también da 400. Un parámetro de ruta inválido ' +
+      'da 404, no 400.',
     content: {
       'application/json': {
         schema: { $ref: '#/components/schemas/Error' },
@@ -800,7 +801,21 @@ const responses = {
             summary: 'El body no se puede parsear como JSON',
             value: errorExample('INVALID_JSON', 'El cuerpo de la solicitud no es JSON válido'),
           },
+          campoNoAdmitido: {
+            summary: 'Un campo que el schema no admite, como nutritionistId',
+            value: errorExample('VALIDATION_ERROR', 'Campo no admitido: "nutritionistId"'),
+          },
         },
+      },
+    },
+  },
+
+  UnknownQueryParam: {
+    description: 'La ruta no recibe parámetros de query: mandar uno da 400.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        example: errorExample('VALIDATION_ERROR', 'Campo no admitido: "page"'),
       },
     },
   },

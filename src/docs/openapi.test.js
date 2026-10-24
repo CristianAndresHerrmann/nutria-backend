@@ -137,6 +137,14 @@ describe('spec OpenAPI del backend', () => {
     expect(operation.responses['401']).toBeDefined();
   });
 
+  // Todas las rutas validan la query con un .strictObject: un parámetro
+  // desconocido da 400 aunque la operación no tenga body.
+  it.each(EXPECTED_OPERATIONS)('%s documenta el 400', (operation) => {
+    const [method, path] = operation.split(' ');
+
+    expect(openapiSpec.paths[path][method].responses['400']).toBeDefined();
+  });
+
   it('deja públicas las rutas que no pasan por requireAuth', () => {
     expect(openapiSpec.paths['/health'].get.security).toBeUndefined();
     expect(openapiSpec.paths['/health/ia'].get.security).toBeUndefined();

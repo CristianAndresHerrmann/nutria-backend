@@ -28,6 +28,7 @@ const byId = { notFoundOnInvalidParams: PATHOLOGY_NOT_FOUND_MESSAGE };
  *             schema:
  *               type: array
  *               items: { $ref: '#/components/schemas/Pathology' }
+ *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
@@ -49,6 +50,7 @@ router.get('/pathologies', requireAuth, validate({ query: emptyQuerySchema }), p
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/Pathology' }
+ *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
  *       '404': { $ref: '#/components/responses/PathologyNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }

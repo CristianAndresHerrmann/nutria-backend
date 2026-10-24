@@ -149,6 +149,14 @@ describe('formato uniforme de error de punta a punta', () => {
     const response = await request('/patients?page=2', { token: validToken() });
 
     expectUniformError(response, 400, 'VALIDATION_ERROR');
+    expect(response.json.error.message).toBe('Campo no admitido: "page"');
+  });
+
+  it('un obligatorio que no viene en el body responde en castellano en su campo', async () => {
+    const response = await request('/patients', { method: 'POST', token: validToken(), body: { lastName: 'Diaz' } });
+
+    expectUniformError(response, 400, 'VALIDATION_ERROR');
+    expect(response.json.error.details.fields.firstName).toBe('Este campo es obligatorio');
   });
 });
 

@@ -76,6 +76,7 @@ router.get(
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/ClinicalRecommendation' }
+ *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
  *       '404': { $ref: '#/components/responses/RecommendationNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }

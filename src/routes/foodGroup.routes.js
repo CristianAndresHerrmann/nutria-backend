@@ -31,6 +31,7 @@ const byId = { notFoundOnInvalidParams: FOOD_GROUP_NOT_FOUND_MESSAGE };
  *             schema:
  *               type: array
  *               items: { $ref: '#/components/schemas/FoodGroup' }
+ *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
@@ -52,6 +53,7 @@ router.get('/food-groups', requireAuth, validate({ query: emptyQuerySchema }), f
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/FoodGroup' }
+ *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
  *       '404': { $ref: '#/components/responses/FoodGroupNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }

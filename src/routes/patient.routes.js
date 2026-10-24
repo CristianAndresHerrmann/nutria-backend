@@ -32,6 +32,7 @@ const byId = { notFoundOnInvalidParams: PATIENT_NOT_FOUND_MESSAGE };
  *             schema:
  *               type: array
  *               items: { $ref: '#/components/schemas/Patient' }
+ *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
@@ -61,6 +62,7 @@ router.get('/patients', requireAuth, validate({ query: emptyQuerySchema }), pati
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/PatientDetail' }
+ *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
  *       '404': { $ref: '#/components/responses/PatientNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }

@@ -70,6 +70,7 @@ router.get('/foods', requireAuth, validate({ query: listFoodsQuerySchema }), foo
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/Food' }
+ *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
  *       '404': { $ref: '#/components/responses/FoodNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
