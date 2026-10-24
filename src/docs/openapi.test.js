@@ -38,6 +38,10 @@ const EXPECTED_OPERATIONS = [
   'post /recipes',
   'get /recipes/{id}',
   'put /recipes/{id}',
+  'get /clinical-recommendations',
+  'post /clinical-recommendations',
+  'get /clinical-recommendations/{id}',
+  'put /clinical-recommendations/{id}',
 ];
 
 const PROTECTED_OPERATIONS = [
@@ -68,6 +72,10 @@ const PROTECTED_OPERATIONS = [
   ['/recipes', 'post'],
   ['/recipes/{id}', 'get'],
   ['/recipes/{id}', 'put'],
+  ['/clinical-recommendations', 'get'],
+  ['/clinical-recommendations', 'post'],
+  ['/clinical-recommendations/{id}', 'get'],
+  ['/clinical-recommendations/{id}', 'put'],
 ];
 
 function listOperations(spec) {
@@ -173,6 +181,12 @@ describe('spec OpenAPI del backend', () => {
   it('documenta el alta de receta como 201, y no documenta su borrado: la baja es lógica', () => {
     expect(openapiSpec.paths['/recipes'].post.responses['201']).toBeDefined();
     expect(openapiSpec.paths['/recipes/{id}'].delete).toBeUndefined();
+  });
+
+  it('documenta el alta de recomendación como 201, el 403 de las comunes, y no documenta su borrado', () => {
+    expect(openapiSpec.paths['/clinical-recommendations'].post.responses['201']).toBeDefined();
+    expect(openapiSpec.paths['/clinical-recommendations/{id}'].put.responses['403']).toBeDefined();
+    expect(openapiSpec.paths['/clinical-recommendations/{id}'].delete).toBeUndefined();
   });
 
   it('documenta el 503 del diagnóstico de IA', () => {

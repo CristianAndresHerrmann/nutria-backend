@@ -56,8 +56,7 @@ const FOODS = [
   { name: 'Café', group: 'Infusiones', categories: ['infusion'] },
 ];
 
-// Las patologías de los casos de prueba del Plan de Proyecto. Sin recomendaciones
-// clínicas: serían contenido clínico real, que no se inventa.
+// Las patologías de los casos de prueba del Plan de Proyecto.
 const PATHOLOGY_DESCRIPTION = 'Dato de prueba: patología de los casos de prueba del Plan de Proyecto.';
 
 const PATHOLOGIES = [
@@ -66,4 +65,16 @@ const PATHOLOGIES = [
   { name: 'Hipertensión', description: PATHOLOGY_DESCRIPTION },
 ];
 
-module.exports = { FOOD_GROUPS, FOODS, PATHOLOGIES };
+// Recomendaciones clínicas comunes (T22): solo textos de ejemplo, identificados
+// como ficticios en el título y en el texto. El contenido clínico real lo carga
+// la nutricionista; el sistema no lo redacta.
+const RECOMMENDATION_TEXT =
+  'Texto de ejemplo ficticio (RNF-08): no es una recomendación clínica. El contenido real lo carga la nutricionista.';
+
+const RECOMMENDATIONS = PATHOLOGIES.map(({ name }) => ({
+  pathology: name,
+  title: `Ejemplo ficticio: recomendación común para ${name}`,
+  text: RECOMMENDATION_TEXT,
+}));
+
+module.exports = { FOOD_GROUPS, FOODS, PATHOLOGIES, RECOMMENDATIONS, RECOMMENDATION_TEXT };

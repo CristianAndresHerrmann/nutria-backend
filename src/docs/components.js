@@ -126,6 +126,18 @@ const recipeInputProperties = {
   },
 };
 
+// Campos de una recomendación clínica compartidos por el alta, la edición y la
+// respuesta (T22).
+const recommendationInputProperties = {
+  pathologyId: {
+    type: 'string',
+    format: 'uuid',
+    description: 'Patología del catálogo. Una inexistente da 400 en `details.fields.pathologyId`.',
+  },
+  title: { type: 'string', minLength: 1, maxLength: 150, example: 'Ejemplo ficticio: recomendación de prueba' },
+  text: { type: 'string', minLength: 1, maxLength: 5000, example: 'Texto de ejemplo ficticio.' },
+};
+
 const schemas = {
   Health: {
     type: 'object',
@@ -385,6 +397,48 @@ const schemas = {
       },
       createdAt: { type: 'string', format: 'date-time' },
       updatedAt: { type: 'string', format: 'date-time' },
+    },
+  },
+
+  // Recomendaciones clínicas (T22; RF-30). Comunes o privadas del nutricionista.
+  ClinicalRecommendationInput: {
+    type: 'object',
+    required: ['pathologyId', 'title', 'text'],
+    additionalProperties: false,
+    description:
+      'Alta de una recomendación privada. El dueño no se manda: sale del token. El título se guarda ' +
+      'sin espacios de más; el texto, sin espacios en los extremos.',
+    properties: recommendationInputProperties,
+  },
+
+  ClinicalRecommendationUpdateInput: {
+    type: 'object',
+    required: ['pathologyId', 'title', 'text'],
+    additionalProperties: false,
+    description: 'Reemplazo completo de una recomendación propia, más la baja lógica.',
+    properties: {
+      ...recommendationInputProperties,
+      active: {
+        type: 'boolean',
+        description: '`false` la da de baja y `true` la reactiva. Omitido, conserva el valor que tenía.',
+      },
+    },
+  },
+
+  ClinicalRecommendation: {
+    type: 'object',
+    description: 'Recomendación común o privada del nutricionista autenticado. El dueño no viaja.',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      pathologyId: recommendationInputProperties.pathologyId,
+      pathology: catalogRef('Celiaquía'),
+      title: recommendationInputProperties.title,
+      text: recommendationInputProperties.text,
+      active: { type: 'boolean', description: 'Vigente (baja lógica).', example: true },
+      own: {
+        type: 'boolean',
+        description: '`true` si es privada del nutricionista autenticado (la puede editar); `false` si es común.',
+      },
     },
   },
 
@@ -782,6 +836,17 @@ const responses = {
   FoodNotFound: notFoundResponse('Alimento no encontrado'),
   PathologyNotFound: notFoundResponse('Patología no encontrada'),
   RecipeNotFound: notFoundResponse('Receta no encontrada'),
+  RecommendationNotFound: notFoundResponse('Recomendación no encontrada'),
+
+  CommonRecommendationReadOnly: {
+    description: 'La recomendación es común: ningún nutricionista la edita ni la da de baja.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        example: errorExample('FORBIDDEN', 'Las recomendaciones comunes son de solo lectura'),
+      },
+    },
+  },
 
   PatientConditionNotFound: {
     description:
