@@ -42,6 +42,9 @@
     "swagger-ui-express": "^5.0.1",
     "zod": "^4.6.5"
   },
+  "overrides": {
+    "deepmerge-ts": "^8.0.2"
+  },
   "devDependencies": {
     "@vitest/coverage-v8": "^5.0.0",
     "vitest": "^5.0.0"

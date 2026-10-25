@@ -222,6 +222,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ### Changed
 
+- Dependencias actualizadas para que `npm audit --audit-level=high` de la CI pase (T12): `express` 5.3.0, `zod` 4.6.7, `vitest` y `@vitest/coverage-v8` 5.0.5, y transitivas (`body-parser`, `proxy-addr`, `fast-uri`, `source-map-js`, `vite`), todo dentro de los rangos de `package.json`. `deepmerge-ts` pasa a 8.0.2 con un `overrides`: `@prisma/config` 6.19.3 fija la 7.1.5 (vulnerable) y la única salida de npm era subir a Prisma 7, que rompe compatibilidad. Prisma solo usa `deepmerge` simple, que no cambia en la 8. Sacar el override cuando se suba de Prisma.
 - Los errores de validación que un schema no personaliza responden en castellano (T23). Antes salía el mensaje por defecto de Zod, en inglés:
   - Una clave no admitida en la query o en el body (por ejemplo, `nutritionistId`) pasa de `Unrecognized key: "page"` a `Campo no admitido: "page"`. Sigue sin `details.fields`, como antes.
   - Un obligatorio que no viene pasa de `Invalid input: expected string, received undefined` a `Este campo es obligatorio`.
