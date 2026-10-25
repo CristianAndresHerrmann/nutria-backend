@@ -41,7 +41,8 @@ Organizado por capas:
 - `prisma/schema.prisma` — modelo de datos, y `prisma/migrations/` — historial de migraciones generado por el CLI.
 - `scripts/seed.js` — carga de datos ficticios ejecutada por `prisma db seed`.
 - `Dockerfile` — imagen del backend.
-- `docker-compose.yml` — orquesta el stack (proxy, frontend, backend, ia, postgres, pgadmin). El proyecto se nombra explícitamente `nutria` (campo `name:`) para que las imágenes y contenedores se llamen `nutria-frontend`, `nutria-backend`, `nutria-ia`, etc., en lugar de heredar el nombre de esta carpeta.
+- `.github/workflows/ci.yml` — integración continua (ver "Integración continua").
+- `docker-compose.yml` — orquesta el stack (proxy, frontend, backend, ia, postgres, pgadmin; más `psql` e `ia-test` bajo el perfil `tools`). El proyecto se nombra explícitamente `nutria` (campo `name:`) para que las imágenes y contenedores se llamen `nutria-frontend`, `nutria-backend`, `nutria-ia`, etc., en lugar de heredar el nombre de esta carpeta.
 
 ## Variables de entorno
 
@@ -159,6 +160,30 @@ docker compose run --build --rm --no-deps backend npm run seed
 `docker compose up` deja además las migraciones al día por sí solo: el `CMD` de la
 imagen del backend corre `prisma migrate deploy` antes de levantar el server, así
 que un pull que trae una migración nueva no necesita ningún paso aparte.
+
+## Integración continua
+
+`.github/workflows/ci.yml` corre en cada PR hacia `development` o `master`, en cada
+push a `development` y a mano desde la pestaña Actions (`workflow_dispatch`). El job
+se llama `ci` y es el check obligatorio del ruleset de `development` y `master`: un
+PR no se puede mergear con ese check en rojo.
+
+No usa secrets ni variables de GitHub. Levanta un Postgres `pgvector/pgvector:pg16`
+vacío como servicio, con credenciales efímeras escritas en el workflow, y
+`JWT_SECRET` para los tests lo fija `vitest.config.js`.
+
+Cada paso, y cómo reproducirlo en local (desde esta carpeta, con el stack de
+Compose; o con el script equivalente desde la carpeta raíz `nutria/`):
+
+| Paso de la CI | En local |
+|---|---|
+| `npm ci` | Lo hace el build de la imagen (`docker compose build backend`). |
+| `npx prisma validate` | `docker compose run --build --rm --no-deps backend npx prisma validate` |
+| `npx prisma migrate deploy` sobre base vacía | `npm run db:reset` desde `nutria/`. **Borra la base local**: aplica todas las migraciones desde cero y corre el seed. |
+| `npm run seed` | Incluido en `db:reset`; sobre una base existente, `npm run db:seed` desde `nutria/`. |
+| `npm test` | `npm run test:backend` desde `nutria/`. |
+| `npm audit --audit-level=high` | `docker compose run --build --rm --no-deps backend npm audit --audit-level=high` |
+| `docker build` (sin push) | `docker compose build backend` |
 
 ## Stack
 

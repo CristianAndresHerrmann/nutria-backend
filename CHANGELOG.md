@@ -217,6 +217,8 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
     - Todas las operaciones del spec documentan el `400`.
     - Mensajes por defecto de Zod en castellano: clave no admitida, obligatorio ausente, tipo inválido, prioridad del mensaje propio del schema.
     - De punta a punta: un parámetro de query desconocido responde "Campo no admitido", y un obligatorio que no viene en el body responde "Este campo es obligatorio" en su campo.
+- Integración continua con GitHub Actions (T12; RNF-06, RNF-13), en `.github/workflows/ci.yml`. Corre en cada PR hacia `development` o `master`, en cada push a `development` y a mano (`workflow_dispatch`). Sobre un Postgres `pgvector/pgvector:pg16` vacío: `npm ci`, `prisma validate`, `prisma generate`, `prisma migrate deploy` (las migraciones aplican desde cero), el seed (corre sobre una base recién migrada, DA-24), los tests unitarios, `npm audit --audit-level=high` y `docker build` sin push. Sin secrets: las credenciales de la base son efímeras y están en el workflow. El job `ci` es el check obligatorio del ruleset de `development` y `master`.
+- Servicio `ia-test` en `docker-compose.yml`, bajo el perfil `tools`: construye la etapa `test` de `nutria-ia` para que `npm run test:ia` corra `pytest` dentro del contenedor.
 
 ### Changed
 

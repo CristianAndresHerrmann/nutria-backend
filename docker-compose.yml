@@ -99,6 +99,15 @@ services:
       - "traefik.http.routers.ia.rule=Host(`ia.local.nutria.com`)"
       - "traefik.http.services.ia.loadbalancer.server.port=8000"
 
+  # pytest del servicio de IA (`npm run test:ia` desde la raíz). La etapa `test`
+  # del Dockerfile suma requirements-dev.txt y tests/, que la imagen de `ia` no
+  # lleva. `profiles` evita que levante con `up`.
+  ia-test:
+    build:
+      context: ../nutria-ia
+      target: test
+    profiles: [tools]
+
   postgres:
     # Postgres estándar con la extensión pgvector disponible para cuando se
     # integre RAG. La extensión no se activa en este incremento.

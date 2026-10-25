@@ -1,0 +1,81 @@
+# CI del backend (T12). Sin secrets: las credenciales de Postgres son de una base
+# efímera que vive lo que dura el job. Cómo reproducir cada paso en local: README,
+# sección "Integración continua".
+name: CI
+
+# Sin filtros `paths:` a propósito: el ruleset exige el check `ci`, y un PR que no
+# dispara el workflow quedaría bloqueado esperando un check que nunca llega.
+on:
+  pull_request:
+    branches: [development, master]
+  push:
+    branches: [development]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # El nombre del job es el del check obligatorio del ruleset: no renombrarlo.
+  ci:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: nutria
+          POSTGRES_PASSWORD: nutria_ci
+          POSTGRES_DB: nutria
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nutria -d nutria"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+
+    env:
+      DATABASE_URL: postgresql://nutria:nutria_ci@localhost:5432/nutria
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Misma línea mayor que el Dockerfile (node:22-alpine).
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Validar schema de Prisma
+        run: npx prisma validate
+
+      - name: Generar cliente de Prisma
+        run: npx prisma generate
+
+      # Sobre la base vacía: verifica que las migraciones aplican desde cero.
+      - name: Aplicar migraciones
+        run: npx prisma migrate deploy
+
+      # DA-24: el seed tiene que correr sobre una base recién migrada.
+      - name: Seed
+        run: npm run seed
+
+      - name: Tests unitarios
+        run: npm test
+
+      - name: Auditoría de dependencias
+        run: npm audit --audit-level=high
+
+      # Sin push: solo valida que el Dockerfile construye.
+      - name: Build de la imagen
+        run: docker build -t nutria-backend:ci .
