@@ -4,7 +4,12 @@ const { FOOD_GROUPS, FOODS, PATHOLOGIES, RECOMMENDATIONS, RECOMMENDATION_TEXT } 
 
 const prisma = new PrismaClient();
 
-const SEED_PASSWORD = '123456aA!';
+// En local vale la contraseña de desarrollo. Con NODE_ENV=production (staging) es
+// obligatorio pasarla en SEED_PASSWORD: este archivo está en un repo público y el
+// backend desplegado es accesible desde internet.
+const DEV_SEED_PASSWORD = '123456aA!';
+const SEED_PASSWORD =
+  process.env.SEED_PASSWORD || (process.env.NODE_ENV === 'production' ? null : DEV_SEED_PASSWORD);
 
 // Todo es ficticio (RNF-08). Dos nutricionistas con pacientes propios: permite
 // verificar a mano que cada uno ve y edita solo los suyos (aislamiento por
@@ -453,6 +458,9 @@ async function seedRecipes(nutritionistId, recipes, catalog) {
 }
 
 async function main() {
+  if (!SEED_PASSWORD) {
+    throw new Error('Con NODE_ENV=production el seed necesita SEED_PASSWORD (la contraseña de los nutricionistas).');
+  }
   const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
   const catalog = await seedCatalogs();
 
@@ -479,7 +487,11 @@ async function main() {
     );
   }
 
-  console.log(`Contraseña de prueba de ambos nutricionistas: ${SEED_PASSWORD}`);
+  if (SEED_PASSWORD === DEV_SEED_PASSWORD) {
+    console.log(`Contraseña de prueba de ambos nutricionistas: ${SEED_PASSWORD}`);
+  } else {
+    console.log('Contraseña de ambos nutricionistas: la de SEED_PASSWORD.');
+  }
 }
 
 main()
