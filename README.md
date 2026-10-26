@@ -41,7 +41,9 @@ Organizado por capas:
 - `prisma/schema.prisma` — modelo de datos, y `prisma/migrations/` — historial de migraciones generado por el CLI.
 - `scripts/seed.js` — carga de datos ficticios ejecutada por `prisma db seed`.
 - `Dockerfile` — imagen del backend.
-- `.github/workflows/ci.yml` — integración continua (ver "Integración continua").
+- `docker-compose.staging.yml` — cambios del compose para staging (ver "Staging").
+- `scripts/deploy-staging.sh` — despliegue en la VM de staging; lo ejecuta `cd-staging.yml` por SSH.
+- `.github/workflows/ci.yml` — integración continua (ver "Integración continua"); `cd-staging.yml` — despliegue a staging (ver "Staging").
 - `docker-compose.yml` — orquesta el stack (proxy, frontend, backend, ia, postgres, pgadmin; más `psql` e `ia-test` bajo el perfil `tools`). El proyecto se nombra explícitamente `nutria` (campo `name:`) para que las imágenes y contenedores se llamen `nutria-frontend`, `nutria-backend`, `nutria-ia`, etc., en lugar de heredar el nombre de esta carpeta.
 
 ## Variables de entorno
@@ -163,9 +165,9 @@ que un pull que trae una migración nueva no necesita ningún paso aparte.
 
 ## Integración continua
 
-`.github/workflows/ci.yml` corre en cada PR hacia `development` o `master`, en cada
+`.github/workflows/ci.yml` corre en cada PR hacia `development`, `staging` o `master`, en cada
 push a `development` y a mano desde la pestaña Actions (`workflow_dispatch`). El job
-se llama `ci` y es el check obligatorio del ruleset de `development` y `master`: un
+se llama `ci` y es el check obligatorio del ruleset de `development`, `staging` y `master`: un
 PR no se puede mergear con ese check en rojo.
 
 No usa secrets ni variables de GitHub. Levanta un Postgres `pgvector/pgvector:pg16`
@@ -184,6 +186,83 @@ Compose; o con el script equivalente desde la carpeta raíz `nutria/`):
 | `npm test` | `npm run test:backend` desde `nutria/`. |
 | `npm audit --audit-level=high` | `docker compose run --build --rm --no-deps backend npm audit --audit-level=high` |
 | `docker build` (sin push) | `docker compose build backend` |
+
+## Staging
+
+Staging corre en una VM de OCI (Always Free, ARM) con este mismo compose más
+`docker-compose.staging.yml`, que cambia solo lo que no puede quedar igual en un
+servidor público: HTTPS con Let's Encrypt, frontend como build estático, sin pgAdmin,
+sin puerto de Postgres publicado y sin ruta pública al servicio de IA. Frontend en
+`https://<APP_HOST>` y backend en `https://api.<APP_HOST>`. Solo datos ficticios.
+
+En la VM conviene un alias para no repetir los dos `-f` (agregarlo a `~/.bashrc`):
+
+```bash
+alias dcs='docker compose -f ~/nutria/nutria-backend/docker-compose.yml -f ~/nutria/nutria-backend/docker-compose.staging.yml'
+```
+
+### Cómo se despliega
+
+Un push a `staging` en cualquiera de los tres repos dispara su `cd-staging.yml`
+(también se puede correr a mano con `workflow_dispatch`):
+
+1. Corre el `ci.yml` del repo; si falla, no se despliega.
+2. Entra por SSH a la VM con la clave de despliegue. Esa clave solo puede ejecutar
+   `scripts/deploy-staging.sh`, que recibe el servicio (`backend`, `frontend` o `ia`),
+   deja el repo igual a `origin/staging` y rebuildea ese servicio. El del backend
+   levanta todo el stack, porque el compose y Traefik viven en este repo. Un lock
+   evita dos despliegues a la vez.
+3. Smoke test por HTTPS: `/health` y `/health/ia` del backend, la página del frontend.
+
+Las migraciones las aplica el `CMD` de la imagen al arrancar, igual que en local.
+
+Configuración en GitHub (Environment `staging` de cada repo, restringido a la rama
+`staging`):
+
+| Nombre | Tipo | Valor |
+|---|---|---|
+| `STAGING_SSH_KEY` | secret | Clave privada de despliegue (ed25519, sin passphrase). |
+| `STAGING_SSH_KNOWN_HOSTS` | secret | `<IP> ssh-ed25519 AAAA…`, la clave de host de la VM. |
+| `STAGING_HOST` | variable | IP pública de la VM. |
+| `STAGING_SSH_USER` | variable | `ubuntu` |
+| `STAGING_DOMAIN` | variable | El mismo valor que `APP_HOST`. |
+
+### Preparar la VM (una sola vez)
+
+1. Clonar los tres repos en `~/nutria/` en la rama `staging`. El frontend va en la
+   carpeta `nutria-frontend`, aunque el repo de GitHub se llame `nutria-frontned`.
+2. Crear los `.env` (no se versionan):
+   - `nutria-backend/.env` a partir de `.env.example`, con `NODE_ENV=production`
+     (oculta Swagger), `JWT_SECRET` y `POSTGRES_PASSWORD` propios de staging,
+     `CORS_ORIGIN=https://<APP_HOST>`, y las variables de la sección "Solo staging":
+     `APP_HOST`, `ACME_EMAIL` y `SEED_PASSWORD`.
+   - `nutria-frontend/.env` y `nutria-ia/.env` copiados de sus `.env.example`: en
+     staging no se usan, pero el compose los exige.
+3. Primer arranque y seed:
+   ```bash
+   dcs up -d --build
+   dcs run --rm backend npm run seed
+   ```
+4. Habilitar la clave de despliegue: agregar a `~/.ssh/authorized_keys` una línea con
+   la clave pública y la restricción, todo en una línea:
+   ```
+   restrict,command="bash /home/ubuntu/nutria/nutria-backend/scripts/deploy-staging.sh" ssh-ed25519 AAAA… github-actions-deploy
+   ```
+   `restrict` le quita la terminal y los reenvíos; `command=` hace que, pida lo que
+   pida, solo corra el script de despliegue.
+
+### Operación
+
+| Para | En la VM |
+|---|---|
+| Ver el estado | `dcs ps` |
+| Ver logs | `dcs logs -f backend` (o `frontend`, `ia`, `proxy`) |
+| Recargar el seed | `dcs run --rm backend npm run seed` |
+| Desplegar a mano | `bash ~/nutria/nutria-backend/scripts/deploy-staging.sh backend` |
+| Ver el espacio que ocupa Docker | `docker system df`; liberar cache de builds con `docker builder prune` |
+
+Antes de una sesión con la nutricionista: confirmar que la VM está *Running* en la
+consola de OCI, recargar el seed y hacer login una vez.
 
 ## Stack
 

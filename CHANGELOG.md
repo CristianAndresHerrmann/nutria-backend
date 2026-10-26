@@ -219,6 +219,12 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
     - De punta a punta: un parámetro de query desconocido responde "Campo no admitido", y un obligatorio que no viene en el body responde "Este campo es obligatorio" en su campo.
 - Integración continua con GitHub Actions (T12; RNF-06, RNF-13), en `.github/workflows/ci.yml`. Corre en cada PR hacia `development` o `master`, en cada push a `development` y a mano (`workflow_dispatch`). Sobre un Postgres `pgvector/pgvector:pg16` vacío: `npm ci`, `prisma validate`, `prisma generate`, `prisma migrate deploy` (las migraciones aplican desde cero), el seed (corre sobre una base recién migrada, DA-24), los tests unitarios, `npm audit --audit-level=high` y `docker build` sin push. Sin secrets: las credenciales de la base son efímeras y están en el workflow. El job `ci` es el check obligatorio del ruleset de `development` y `master`.
 - Servicio `ia-test` en `docker-compose.yml`, bajo el perfil `tools`: construye la etapa `test` de `nutria-ia` para que `npm run test:ia` corra `pytest` dentro del contenedor.
+- Staging en una VM de OCI Always Free con CD desde la rama `staging` (T-; RNF-06, RNF-13). Cómo se opera: README, sección "Staging".
+  - `docker-compose.staging.yml`, que se suma al compose normal: HTTPS con Let's Encrypt en Traefik (el 80 redirige al 443), frontend como build estático, sin pgAdmin, sin puerto de Postgres publicado, servicio de IA sin ruta pública y `restart: unless-stopped`. El compose local no cambia.
+  - `.github/workflows/cd-staging.yml`: en cada push a `staging` (o a mano) corre el CI y, si pasa, entra por SSH a la VM y despliega; después verifica `/health` y `/health/ia` por HTTPS. Secrets y variables en el Environment `staging`.
+  - `scripts/deploy-staging.sh`: lo que ejecuta la clave de despliegue como forced command. Acepta solo `backend`, `frontend` o `ia`, deja el repo igual a `origin/staging` y rebuildea ese servicio (el backend, todo el stack), con un lock para no pisar dos despliegues.
+  - El CI también corre en los PR hacia `staging` y se puede reutilizar desde otro workflow (`workflow_call`).
+  - Seed: la contraseña de los nutricionistas sale de `SEED_PASSWORD`. Sin la variable se usa la de desarrollo, salvo con `NODE_ENV=production`, donde el seed falla. Solo se imprime cuando es la de desarrollo.
 
 ### Changed
 
