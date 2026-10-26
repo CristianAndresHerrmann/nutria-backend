@@ -29,8 +29,8 @@ const MEAL_COMPOSITION = Object.freeze({
 });
 
 // Categorías esperadas que ningún ítem de la opción cubre, en el orden de la
-// configuración. Cada ítem trae sus categorías: en un alimento, la copia
-// foodCategories; cómo se derivan las de una receta se define con el motor.
+// configuración. Cada ítem trae sus categorías: las deriva itemCategories.js
+// según el tipo de ítem (DA-30).
 function missingCategories(mealType, items, composition = MEAL_COMPOSITION) {
   const expected = composition[mealType];
   if (!expected) return [];
