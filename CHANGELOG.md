@@ -296,12 +296,12 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
     - Los `CHECK` y la FK compuesta se verificaron a mano contra Postgres, hasta que existan las pruebas de integración.
   - Decisión: `docs/decisiones/ajustes-al-modelo-del-anexo-a-incremento-3.md` en el repo raíz (DA-26 y DA-27; completa DA-19).
 - Composición esperada por tipo de comida (T27; RF-25, RF-26, RF-44), en `src/domain/reglas/mealComposition.js`, la carpeta del motor de reglas. Es configuración versionada, sin tabla ni pantalla de edición (Tabla 3 del registro de decisiones del Inc. 2). Genera advertencias, no bloquea la aprobación.
-  - **Almuerzo y cena:** `vegetable`, `protein` y `carbohydrate`, con origen P (RF-26 del Plan).
-  - **Desayuno y merienda:** `protein` (el lácteo) y `carbohydrate` (pan o cereales), con origen S. Es un supuesto tomado del *Manual para la aplicación de las Guías Alimentarias para la Población Argentina*, que la entrevista de validación tiene que confirmar. No se exige fruta ni frutas secas.
-  - Cada entrada lleva su origen: E entrevista, P plan, S supuesto o V pendiente de validación. Una entrada sin categorías (V) no genera advertencias.
+  - **Almuerzo y cena:** `vegetable`, `protein` y `carbohydrate` (RF-26).
+  - **Desayuno y merienda:** `protein` (el lácteo) y `carbohydrate` (pan o cereales). Es un supuesto tomado del *Manual para la aplicación de las Guías Alimentarias para la Población Argentina*, que la entrevista de validación tiene que confirmar. No se exige fruta ni frutas secas.
+  - Un tipo de comida con composición `null` no genera advertencias.
   - `missingCategories(mealType, items)`: función pura que recibe los ítems de una opción con sus categorías y devuelve las esperadas que faltan. No depende del modelo de plan; la usa el motor de reglas (T37) para los hallazgos `composition`.
   - Cómo se derivan las categorías de un ítem receta o grupo se define junto con el motor (T37).
-  - `mealComposition.test.js`: opción completa, categoría faltante, tipo de comida sin composición definida, desayuno y merienda, y la integridad de la configuración (un tipo de comida por entrada, orígenes y categorías válidos, lo no definido marcado como pendiente).
+  - `mealComposition.test.js`: opción completa, categoría faltante, tipo de comida sin composición definida, desayuno y merienda, y la integridad de la configuración (una entrada por tipo de comida, con categorías válidas).
   - Decisión: `docs/decisiones/composicion-esperada-por-tipo-de-comida.md` en el repo raíz (DA-29).
 
 ### Changed

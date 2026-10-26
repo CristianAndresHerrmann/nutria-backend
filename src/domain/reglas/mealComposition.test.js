@@ -1,5 +1,5 @@
 const { FoodCategoryType, MealType } = require('@prisma/client');
-const { COMPOSITION_ORIGINS, MEAL_COMPOSITION, missingCategories } = require('./mealComposition');
+const { MEAL_COMPOSITION, missingCategories } = require('./mealComposition');
 
 describe('missingCategories', () => {
   it('una opción completa no tiene faltantes (un alimento puede cubrir dos categorías)', () => {
@@ -13,7 +13,7 @@ describe('missingCategories', () => {
   });
 
   it('un tipo de comida sin composición definida no tiene faltantes', () => {
-    const composition = { breakfast: { categories: null, origin: 'V' } };
+    const composition = { breakfast: null };
     expect(missingCategories('breakfast', [], composition)).toEqual([]);
   });
 
@@ -38,22 +38,13 @@ describe('missingCategories', () => {
 });
 
 describe('MEAL_COMPOSITION', () => {
-  const entries = Object.entries(MEAL_COMPOSITION);
-
   it('tiene una entrada por cada tipo de comida', () => {
     expect(Object.keys(MEAL_COMPOSITION).sort()).toEqual(Object.values(MealType).sort());
   });
 
-  it.each(entries)('%s lleva un origen válido y categorías existentes', (_mealType, { categories, origin }) => {
-    expect(COMPOSITION_ORIGINS).toContain(origin);
+  it.each(Object.entries(MEAL_COMPOSITION))('%s usa categorías existentes', (_mealType, categories) => {
     for (const category of categories ?? []) {
       expect(Object.values(FoodCategoryType)).toContain(category);
-    }
-  });
-
-  it('una composición sin definir queda marcada como pendiente de validación', () => {
-    for (const [, { categories, origin }] of entries) {
-      if (categories === null) expect(origin).toBe('V');
     }
   });
 });
