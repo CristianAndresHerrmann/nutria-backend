@@ -231,6 +231,10 @@ Configuración en GitHub (Environment `staging` de cada repo, restringido a la r
 
 1. Clonar los tres repos en `~/nutria/` en la rama `staging`. El frontend va en la
    carpeta `nutria-frontend`, aunque el repo de GitHub se llame `nutria-frontned`.
+   El clon tiene que incluir `scripts/deploy-staging.sh`: el primer despliegue por CD
+   necesita encontrarlo, y recién desde ahí se actualiza solo. Si los repos se
+   clonaron antes de que el script llegara a `staging`, hacer `git pull` en los tres
+   antes del primer despliegue.
 2. Crear los `.env` (no se versionan):
    - `nutria-backend/.env` a partir de `.env.example`, con `NODE_ENV=production`
      (oculta Swagger), `JWT_SECRET` y `POSTGRES_PASSWORD` propios de staging,

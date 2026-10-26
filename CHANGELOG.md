@@ -244,6 +244,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ### Fixed
 
+- Traefik pasa de `v3.1` a `v3.7` (T-): con Docker Engine 29+, el de la VM de staging, `v3.1` no veía ningún contenedor y respondía 404 a todo, aunque los servicios estuvieran arriba.
 - Swagger (T23): 15 operaciones GET y DELETE no documentaban el `400`, que igual devuelven ante un parámetro de query desconocido, porque todas las rutas validan la query.
   - Ahora lo documentan con la respuesta nueva `UnknownQueryParam`.
   - La descripción de `ValidationError` decía que un parámetro de ruta inválido da `400`, pero en todas las rutas da `404`. Ahora lo dice así.

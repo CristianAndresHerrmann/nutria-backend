@@ -2,7 +2,9 @@ name: nutria
 
 services:
   proxy:
-    image: traefik:v3.1
+    # v3.1 no ve los contenedores con Docker Engine 29+ (la VM de staging): rechaza
+    # la versión de API que usaba ese Traefik y todo responde 404.
+    image: traefik:v3.7
     command:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
