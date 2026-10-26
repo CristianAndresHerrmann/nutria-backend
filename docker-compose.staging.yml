@@ -1,0 +1,72 @@
+# Staging (VM de OCI): se suma al compose normal y cambia solo lo que no puede
+# quedar igual en un servidor público. Se usa siempre de a dos:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
+#
+# APP_HOST y ACME_EMAIL salen del .env de esta carpeta, el mismo que ya interpola
+# POSTGRES_*. Qué variables lleva y cómo se despliega: README, sección "Staging".
+#
+# Por defecto Compose suma listas y mapas al compose normal. `!override` los
+# reemplaza y `!reset` los vacía (Compose 2.24.4+): así no quedan publicados el
+# puerto de Postgres ni las rutas de desarrollo.
+
+services:
+  proxy:
+    # HTTPS con Let's Encrypt: todo lo que entra por el 80 se redirige al 443,
+    # salvo el desafío HTTP del certificado, que Traefik atiende antes.
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.websecure.http.tls.certresolver=le"
+      - "--certificatesresolvers.le.acme.email=${ACME_EMAIL:?definir ACME_EMAIL en .env}"
+      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web"
+    ports:
+      - "443:443"
+    volumes:
+      - traefik_letsencrypt:/letsencrypt
+    restart: unless-stopped
+
+  frontend:
+    # Build estático servido por nginx en vez de `vite dev`. Vite fija las
+    # variables VITE_* en el build, por eso van como build args.
+    build:
+      target: prod
+      args:
+        VITE_API_URL: https://api.${APP_HOST:?definir APP_HOST en .env}
+        VITE_ENV_LABEL: Entorno de prueba — solo datos ficticios
+    labels: !override
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`${APP_HOST}`)"
+      - "traefik.http.routers.frontend.entrypoints=websecure"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+    restart: unless-stopped
+
+  backend:
+    # Sin el host de Swagger: con NODE_ENV=production el backend ni monta /docs.
+    labels: !override
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=Host(`api.${APP_HOST}`)"
+      - "traefik.http.routers.backend.entrypoints=websecure"
+      - "traefik.http.services.backend.loadbalancer.server.port=3000"
+    restart: unless-stopped
+
+  # Sin ruta en Traefik: solo lo alcanza el backend por la red interna de Docker.
+  ia:
+    labels: !reset []
+    restart: unless-stopped
+
+  postgres:
+    ports: !reset []
+    restart: unless-stopped
+
+  # pgAdmin es una herramienta de desarrollo local (sin login): en staging no arranca.
+  pgadmin:
+    profiles: [local]
+
+volumes:
+  traefik_letsencrypt:

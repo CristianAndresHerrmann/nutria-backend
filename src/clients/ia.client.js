@@ -9,8 +9,7 @@ function iaUnavailable(reason) {
 
 // Único punto por el que el backend llama al servicio de IA. Toda falla (caído,
 // lento, respuesta de error o cuerpo ilegible) sale como un 503 controlado con
-// `reason`, nunca como un error crudo de fetch. Cuando el servicio de IA se
-// despliegue privado (Incremento 3), acá es donde se adjunta el identity token.
+// `reason`, nunca como un error crudo de fetch.
 function createIaClient({ baseUrl, timeoutMs, fetchImpl = (...args) => fetch(...args) }) {
   return {
     async getJson(path) {
