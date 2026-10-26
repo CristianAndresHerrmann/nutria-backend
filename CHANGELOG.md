@@ -264,6 +264,37 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
     - Script del administrador: alta, idempotencia, que no promueve a una nutricionista, y validación de las variables.
     - `openapi.test.js` exige el `403` en toda operación protegida y el `429` del login.
   - Decisión: `docs/decisiones/administrador-y-gestion-de-cuentas.md` en el repo raíz (DA-25, que modifica DA-07 y actualiza DA-04).
+- Modelo de datos del Incremento 3: plan alimentario y validación (T32; RF-34, RF-36, RF-41, RF-43, RF-47; RNF-05, RNF-11). Migración `20261026173617_agrega_planes_validacion_y_generaciones_ia`. `schema.prisma` pasa a ser el modelo lógico vigente de los Incrementos 1 a 3. Todavía no hay endpoints.
+  - **Plan** (`plan`):
+    - Pertenece a un paciente y a su nutricionista. Una FK compuesta `(patient_id, nutritionist_id) → patient(id, nutritionist_id)` hace que la base rechace un plan con un nutricionista distinto al de su paciente. `patient` suma el único `(id, nutritionist_id)` que esa FK necesita.
+    - Estado `draft`, el único por ahora: los estados de aprobación son del Incremento 4 (RF-48).
+    - Textos de RF-34 (diagnóstico situacional, introducción y objetivos) y cuatro textos de recomendaciones del Anexo A (generales, contextuales, clínicas y temáticas). Las recomendaciones del catálogo se copian como texto (DA-16).
+  - **Estructura del plan:**
+    - `plan_meal`: una comida por tipo (enum `meal_type` existente), con la indicación de fraccionamiento en texto (`instructions`, RF-36).
+    - `meal_option`: opción con orden y descripción.
+    - `option_item`, de tipo `food`, `food_group`, `recipe` o `unrecognized`. El alimento guarda una copia de su nombre y categorías, y el grupo, de su nombre (DA-16). El ítem no reconocido guarda el texto original de la propuesta (DA-26).
+  - **Validación:**
+    - `clinical_rule`: patología, alimento o grupo, severidad (`prohibited` | `moderate`), fuente bibliográfica y `active` (RF-47). Catálogo común; las reglas se cargan en T35.
+    - `finding`: plan, opción o ítem señalado, tipo (`direct_condition`, `pathology_rule`, `composition`, `unrecognized_item`), severidad (`blocking` | `warning`), regla o condición que lo origina, y mensaje.
+  - **Trazabilidad** (`ai_generation`):
+    - Por cada generación: el plan, el contexto enviado (jsonb, sin datos identificatorios), el proveedor y el modelo, la versión de plantilla, la respuesta cruda, la duración, los tokens cuando el proveedor los informa, el resultado de la llamada y el de la validación de la propuesta.
+    - `recipe.origin_plan_id`: el plan para el que se generó la receta (diferido por DA-19).
+  - **Restricciones `CHECK`:**
+    - `option_item_type_chk`: cada ítem referencia exactamente lo que su tipo indica.
+    - `clinical_rule_target_chk` y `clinical_rule_source_chk`: un alimento o un grupo, y una fuente no vacía.
+    - `finding_origin_chk`: lo que señala cada tipo de hallazgo.
+    - `ai_generation_metrics_chk`, `ai_generation_response_chk` y `ai_generation_validation_chk`.
+  - **Borrado:**
+    - Lo del plan se borra con él, y el plan con su paciente.
+    - Los hallazgos se borran con la condición que los origina, porque se recalculan.
+    - Alimentos, grupos, recetas y reglas en uso no se pueden borrar (`RESTRICT`).
+  - `src/schemas/plan.schema.js` (`optionItemSchema`) valida en la aplicación la misma regla que `option_item_type_chk`. El cliente nunca manda la copia del catálogo: la arma el backend. Todavía no está montado en ninguna ruta.
+  - `src/repositories/plan.repository.js`: corta cualquier consulta sin nutricionista, igual que `patient.repository`.
+  - **Tests:**
+    - `plan.schema.test.js`: combinaciones válidas e inválidas por tipo de ítem, y la copia del catálogo rechazada.
+    - `plan.repository.test.js`: el where de cada consulta lleva el nutricionista, y con un nutricionista vacío ninguna operación llega a Prisma.
+    - Los `CHECK` y la FK compuesta se verificaron a mano contra Postgres, hasta que existan las pruebas de integración.
+  - Decisión: `docs/decisiones/ajustes-al-modelo-del-anexo-a-incremento-3.md` en el repo raíz (DA-26 y DA-27; completa DA-19).
 
 ### Changed
 
