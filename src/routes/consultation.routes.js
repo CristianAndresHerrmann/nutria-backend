@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const consultationController = require('../controllers/consultation.controller');
-const requireAuth = require('../middlewares/auth');
+const { requireNutritionist } = require('../middlewares/auth');
 const validate = require('../middlewares/validate');
 const { emptyQuerySchema } = require('../schemas/common.schema');
 const { patientIdParamsSchema } = require('../schemas/patient.schema');
@@ -43,12 +43,13 @@ const byConsultation = { notFoundOnInvalidParams: CONSULTATION_NOT_FOUND_MESSAGE
  *               items: { $ref: '#/components/schemas/Consultation' }
  *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/PatientNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.get(
   '/patients/:id/consultations',
-  requireAuth,
+  requireNutritionist,
   validate({ params: patientIdParamsSchema, query: emptyQuerySchema }, byPatient),
   consultationController.listConsultations,
 );
@@ -98,12 +99,13 @@ router.get(
  *             schema: { $ref: '#/components/schemas/Consultation' }
  *       '400': { $ref: '#/components/responses/ValidationError' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/PatientNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.post(
   '/patients/:id/consultations',
-  requireAuth,
+  requireNutritionist,
   validate({ params: patientIdParamsSchema, query: emptyQuerySchema, body: createConsultationSchema }, byPatient),
   consultationController.createConsultation,
 );
@@ -127,12 +129,13 @@ router.post(
  *             schema: { $ref: '#/components/schemas/Consultation' }
  *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/ConsultationNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.get(
   '/patients/:id/consultations/:consultationId',
-  requireAuth,
+  requireNutritionist,
   validate({ params: consultationParamsSchema, query: emptyQuerySchema }, byConsultation),
   consultationController.getConsultation,
 );
@@ -165,12 +168,13 @@ router.get(
  *             schema: { $ref: '#/components/schemas/Consultation' }
  *       '400': { $ref: '#/components/responses/ValidationError' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/ConsultationNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.put(
   '/patients/:id/consultations/:consultationId',
-  requireAuth,
+  requireNutritionist,
   validate({ params: consultationParamsSchema, query: emptyQuerySchema, body: consultationSchema }, byConsultation),
   consultationController.updateConsultation,
 );

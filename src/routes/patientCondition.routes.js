@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const patientConditionController = require('../controllers/patientCondition.controller');
-const requireAuth = require('../middlewares/auth');
+const { requireNutritionist } = require('../middlewares/auth');
 const validate = require('../middlewares/validate');
 const { emptyQuerySchema } = require('../schemas/common.schema');
 const { patientIdParamsSchema } = require('../schemas/patient.schema');
@@ -39,12 +39,13 @@ const byCondition = { notFoundOnInvalidParams: CONDITION_NOT_FOUND_MESSAGE };
  *               items: { $ref: '#/components/schemas/PatientCondition' }
  *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/PatientNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.get(
   '/patients/:id/conditions',
-  requireAuth,
+  requireNutritionist,
   validate({ params: patientIdParamsSchema, query: emptyQuerySchema }, byPatient),
   patientConditionController.listConditions,
 );
@@ -86,13 +87,14 @@ router.get(
  *             schema: { $ref: '#/components/schemas/PatientCondition' }
  *       '400': { $ref: '#/components/responses/ValidationError' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/PatientNotFound' }
  *       '409': { $ref: '#/components/responses/PatientConditionConflict' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.post(
   '/patients/:id/conditions',
-  requireAuth,
+  requireNutritionist,
   validate({ params: patientIdParamsSchema, query: emptyQuerySchema, body: patientConditionSchema }, byPatient),
   patientConditionController.createCondition,
 );
@@ -125,13 +127,14 @@ router.post(
  *             schema: { $ref: '#/components/schemas/PatientCondition' }
  *       '400': { $ref: '#/components/responses/ValidationError' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/PatientConditionNotFound' }
  *       '409': { $ref: '#/components/responses/PatientConditionConflict' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.put(
   '/patients/:id/conditions/:conditionId',
-  requireAuth,
+  requireNutritionist,
   validate(
     { params: patientConditionParamsSchema, query: emptyQuerySchema, body: patientConditionSchema },
     byCondition,
@@ -155,12 +158,13 @@ router.put(
  *         description: Condición eliminada
  *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/PatientConditionNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.delete(
   '/patients/:id/conditions/:conditionId',
-  requireAuth,
+  requireNutritionist,
   validate({ params: patientConditionParamsSchema, query: emptyQuerySchema }, byCondition),
   patientConditionController.deleteCondition,
 );

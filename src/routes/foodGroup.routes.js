@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const { foodGroupController } = require('../controllers/catalog.controller');
-const requireAuth = require('../middlewares/auth');
+const { requireNutritionist } = require('../middlewares/auth');
 const validate = require('../middlewares/validate');
 const { emptyQuerySchema, catalogIdParamsSchema } = require('../schemas/common.schema');
 const { FOOD_GROUP_NOT_FOUND_MESSAGE } = require('../services/foodGroup.service');
@@ -33,9 +33,10 @@ const byId = { notFoundOnInvalidParams: FOOD_GROUP_NOT_FOUND_MESSAGE };
  *               items: { $ref: '#/components/schemas/FoodGroup' }
  *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
-router.get('/food-groups', requireAuth, validate({ query: emptyQuerySchema }), foodGroupController.list);
+router.get('/food-groups', requireNutritionist, validate({ query: emptyQuerySchema }), foodGroupController.list);
 
 /**
  * @openapi
@@ -55,12 +56,13 @@ router.get('/food-groups', requireAuth, validate({ query: emptyQuerySchema }), f
  *             schema: { $ref: '#/components/schemas/FoodGroup' }
  *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/FoodGroupNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.get(
   '/food-groups/:id',
-  requireAuth,
+  requireNutritionist,
   validate({ params: catalogIdParamsSchema, query: emptyQuerySchema }, byId),
   foodGroupController.get,
 );

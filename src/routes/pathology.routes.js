@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const { pathologyController } = require('../controllers/catalog.controller');
-const requireAuth = require('../middlewares/auth');
+const { requireNutritionist } = require('../middlewares/auth');
 const validate = require('../middlewares/validate');
 const { emptyQuerySchema, catalogIdParamsSchema } = require('../schemas/common.schema');
 const { PATHOLOGY_NOT_FOUND_MESSAGE } = require('../services/pathology.service');
@@ -30,9 +30,10 @@ const byId = { notFoundOnInvalidParams: PATHOLOGY_NOT_FOUND_MESSAGE };
  *               items: { $ref: '#/components/schemas/Pathology' }
  *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
-router.get('/pathologies', requireAuth, validate({ query: emptyQuerySchema }), pathologyController.list);
+router.get('/pathologies', requireNutritionist, validate({ query: emptyQuerySchema }), pathologyController.list);
 
 /**
  * @openapi
@@ -52,12 +53,13 @@ router.get('/pathologies', requireAuth, validate({ query: emptyQuerySchema }), p
  *             schema: { $ref: '#/components/schemas/Pathology' }
  *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/PathologyNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.get(
   '/pathologies/:id',
-  requireAuth,
+  requireNutritionist,
   validate({ params: catalogIdParamsSchema, query: emptyQuerySchema }, byId),
   pathologyController.get,
 );

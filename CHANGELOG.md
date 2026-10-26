@@ -225,6 +225,45 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
   - `scripts/deploy-staging.sh`: lo que ejecuta la clave de despliegue como forced command. Acepta solo `backend`, `frontend` o `ia`, deja el repo igual a `origin/staging` y rebuildea ese servicio (el backend, todo el stack), con un lock para no pisar dos despliegues.
   - El CI también corre en los PR hacia `staging` y se puede reutilizar desde otro workflow (`workflow_call`).
   - Seed: la contraseña de los nutricionistas sale de `SEED_PASSWORD`. Sin la variable se usa la de desarrollo, salvo con `NODE_ENV=production`, donde el seed falla. Solo se imprime cuando es la de desarrollo.
+- Rol administrador y gestión de cuentas de nutricionistas (T31; RNF-05, RNF-06). Requerimiento fuera del catálogo del IA1, que se informa en el IA3.
+  - Migración `20261026143412_agrega_rol_estado_y_alta_a_nutricionista`: `nutritionist` suma `role` (enum `account_role`: `nutritionist` | `admin`, por defecto `nutritionist`), `active` (por defecto `true`) y `created_at`. Las cuentas existentes quedan como nutricionistas activas.
+  - **Rutas de administración**, solo para administradores:
+    - `GET /admin/nutritionists`: nombre, email, estado y fecha de alta de cada cuenta de nutricionista. No incluye administradores ni datos de pacientes.
+    - `POST /admin/nutritionists`: alta con nombre, email y contraseña inicial. La cuenta nace activa. Un email repetido da `409 CONFLICT` en `details.fields.email`.
+    - `PATCH /admin/nutritionists/:id` con `{ active }`: desactiva o reactiva la cuenta. El administrador no puede desactivarse a sí mismo (`403`).
+    - `PUT /admin/nutritionists/:id/password`: restablece la contraseña, que define el administrador (`204`).
+    - Solo operan sobre cuentas de nutricionista: el id de un administrador, uno inexistente o uno que no es UUID responden `404`. No hay `DELETE`, porque la baja es lógica.
+  - **Acceso por rol:**
+    - `requireAuth` lee rol y estado de la cuenta en cada request. Una cuenta desactivada, o que ya no existe, recibe `401` aunque su token no haya vencido.
+    - El rol que autoriza es el de la base, no el del token.
+    - Toda ruta protegida usa `requireNutritionist` o `requireAdmin`. El administrador recibe `403` en pacientes, condiciones, consultas, mediciones, recetas, recomendaciones y catálogos, y el nutricionista recibe `403` en `/admin/*`.
+  - **Login:**
+    - Una cuenta desactivada recibe el mismo `401` "Credenciales inválidas" que una contraseña incorrecta.
+    - El JWT suma el claim `role`, y la respuesta suma `nutritionist.role`.
+    - Rate limit con `express-rate-limit`: 10 intentos fallidos por IP cada 15 minutos, configurables con `LOGIN_RATE_LIMIT_MAX` y `LOGIN_RATE_LIMIT_WINDOW_MS`. Los exitosos no cuentan. Superado el límite, responde `429 TOO_MANY_REQUESTS`.
+    - `app.js` confía en un salto de proxy (`trust proxy`) para contar por la IP real detrás de Traefik.
+  - **Validación:** email sin espacios y en minúsculas, tanto en el alta como en el login. Contraseña de al menos 8 caracteres y hasta 72 bytes.
+  - **Script del administrador:** `scripts/create-admin.js` (`npm run create-admin`; desde la raíz, `npm run db:create-admin`).
+    - Crea la cuenta con `ADMIN_EMAIL`, `ADMIN_PASSWORD` y `ADMIN_NAME` (opcional) del entorno. El seed no crea administradores.
+    - Es idempotente: si la cuenta ya existe, pone al día la contraseña y la reactiva.
+    - Si el email ya es de una nutricionista, falla y no la toca. Nunca imprime la contraseña.
+  - El seed no cambia: solo actualiza sus dos cuentas por email, así que no toca las creadas desde el panel ni la del administrador.
+  - Documentado en Swagger:
+    - Tag nuevo "Administración", con los schemas `NutritionistAccount`, `NutritionistAccountInput`, `NutritionistActiveInput` y `NutritionistPasswordInput`.
+    - Respuestas `ForbiddenRole` (documentada en toda operación protegida), `ForbiddenAccountChange`, `DuplicateAccountEmail`, `NutritionistAccountNotFound` y `TooManyLoginAttempts`.
+  - Tests:
+    - `403` cruzados por rol, generados desde el spec: el administrador en cada operación clínica y de catálogo, y el nutricionista en cada operación de `/admin`, que no llega al servicio.
+    - `401` sin token en `/admin`.
+    - Token vigente de una cuenta desactivada → `401`, y el rol tomado de la base aunque el token diga otro.
+    - Login de una cuenta inactiva con el mismo error que credenciales inválidas.
+    - Email repetido → `409` en `details.fields.email`, también contra la cuenta del administrador.
+    - El administrador no se desactiva a sí mismo.
+    - Desactivar y reactivar; restablecer la contraseña (la nueva valida y la anterior no).
+    - El listado sin hash de la contraseña; las escrituras del repositorio limitadas a cuentas de nutricionista.
+    - Rate limit: `429` con el formato uniforme, y los exitosos no consumen el límite.
+    - Script del administrador: alta, idempotencia, que no promueve a una nutricionista, y validación de las variables.
+    - `openapi.test.js` exige el `403` en toda operación protegida y el `429` del login.
+  - Decisión: `docs/decisiones/administrador-y-gestion-de-cuentas.md` en el repo raíz (DA-25, que modifica DA-07 y actualiza DA-04).
 
 ### Changed
 
@@ -241,6 +280,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 - `optionalField` y el parseo de fechas `AAAA-MM-DD` (`pastOrTodayDate`) pasan de `patient.schema.js` a `common.schema.js`, para reutilizarlos. Los mensajes de `birthDate` no cambian.
 - `touchPatient` (mover `updatedAt` del paciente) pasa de `consultation.repository` a `src/repositories/touchPatient.js`, para reusarlo en `measurement.repository` (T20).
 - `measurement.schema.js` (T14) se separa en `measurementSchema` (con fecha y consulta) y `consultationMeasurementSchema` (sin ellas), y suma la unidad por tipo: fija en todos salvo `other`, que la elige de una lista (T20).
+- `src/middlewares/auth.js` exporta `requireAuth`, `requireRole`, `requireNutritionist`, `requireAdmin` y el factory `createRequireAuth`, en lugar de exportar solo `requireAuth` (T31). `nutritionist.repository` pasa al patrón factory de los demás repositorios.
 
 ### Fixed
 

@@ -79,9 +79,34 @@ function catalogName(label) {
     .pipe(z.string().min(1, `${label} es obligatorio`).max(100, `${label} no puede superar los 100 caracteres`));
 }
 
+// Email de una cuenta. Se guarda y se busca sin espacios y en minúsculas, así
+// "Ana@Nutria.com " y "ana@nutria.com" son la misma cuenta al darla de alta y al
+// iniciar sesión.
+function accountEmail({ required = 'El email es obligatorio', invalid = 'El email no tiene un formato válido' } = {}) {
+  return z.string(required).trim().toLowerCase().min(1, required).email(invalid);
+}
+
+// Contraseña que define el administrador (alta y restablecimiento) o el script
+// del administrador. bcrypt ignora lo que pase de 72 bytes: más largo, dos
+// contraseñas distintas validarían igual, así que se rechaza.
+const MIN_PASSWORD_LENGTH = 8;
+const MAX_PASSWORD_BYTES = 72;
+const accountPassword = z
+  .string('La contraseña es obligatoria')
+  .min(MIN_PASSWORD_LENGTH, `La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres`)
+  .refine((value) => Buffer.byteLength(value, 'utf8') <= MAX_PASSWORD_BYTES, 'La contraseña es demasiado larga');
+
 // :id de los catálogos. z.guid() y no z.uuid(), por lo mismo que en
 // patientIdParamsSchema: el seed y los tests usan ids que no respetan los bits
 // de versión del RFC.
 const catalogIdParamsSchema = z.strictObject({ id: z.guid() });
 
-module.exports = { emptyQuerySchema, optionalField, pastOrTodayDate, catalogName, catalogIdParamsSchema };
+module.exports = {
+  emptyQuerySchema,
+  optionalField,
+  pastOrTodayDate,
+  catalogName,
+  catalogIdParamsSchema,
+  accountEmail,
+  accountPassword,
+};

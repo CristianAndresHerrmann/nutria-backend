@@ -40,6 +40,7 @@ Organizado por capas:
 - `src/server.js` — punto de entrada, levanta el servidor HTTP.
 - `prisma/schema.prisma` — modelo de datos, y `prisma/migrations/` — historial de migraciones generado por el CLI.
 - `scripts/seed.js` — carga de datos ficticios ejecutada por `prisma db seed`.
+- `scripts/create-admin.js` — crea o pone al día la cuenta de administrador a partir de `ADMIN_EMAIL` y `ADMIN_PASSWORD` (ver "Variables de entorno").
 - `Dockerfile` — imagen del backend.
 - `docker-compose.staging.yml` — cambios del compose para staging (ver "Staging").
 - `scripts/deploy-staging.sh` — despliegue en la VM de staging; lo ejecuta `cd-staging.yml` por SSH.
@@ -58,9 +59,16 @@ cp ../nutria-ia/.env.example ../nutria-ia/.env
 
 Completar `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` y `JWT_SECRET` con valores propios del entorno local. `CORS_ORIGIN` trae un valor por defecto (dominio de Docker Compose, puerto de Vite en local y dominio de la documentación interactiva) que alcanza para desarrollo; solo hace falta tocarlo si el frontend corre en otro origen. `IA_SERVICE_URL` es el hostname interno de Docker con el que el backend alcanza al servicio de IA; ningún navegador lo usa. `IA_TIMEOUT_MS` (opcional: si no se define vale 3000; el `.env.example` trae 5000) es cuánto espera el backend al servicio de IA antes de darlo por no disponible. Ninguno de los `.env` se versiona (están excluidos en el `.gitignore` de cada repo); solo se versiona el `.env.example` correspondiente.
 
-No hay alta de usuarios por interfaz: los nutricionistas disponibles en local son
-los dos que crea el seed, y sus credenciales viven en `scripts/seed.js` (no se
-documentan acá ni en el changelog).
+`LOGIN_RATE_LIMIT_MAX` y `LOGIN_RATE_LIMIT_WINDOW_MS` son opcionales: cuántos intentos de login fallidos se aceptan por IP y en qué ventana (por defecto, 10 cada 15 minutos).
+
+Cuentas: el seed crea dos nutricionistas de prueba, cuyas credenciales están en
+`scripts/seed.js` (no se documentan acá ni en el changelog). Las demás cuentas de
+nutricionista las da de alta el administrador desde la aplicación (`/admin`). La cuenta
+de administrador no sale del seed: se crea con `npm run create-admin` (desde `nutria/`,
+`npm run db:create-admin`), que lee `ADMIN_EMAIL`, `ADMIN_PASSWORD` (al menos 8
+caracteres) y, si se define, `ADMIN_NAME` del `.env`. Es idempotente: volver a correrlo
+pone al día la contraseña y reactiva la cuenta. Si el email ya es de una nutricionista,
+falla y no la toca.
 
 ## Cómo ejecutar (sin Docker)
 
@@ -128,6 +136,7 @@ Para bajar el stack: `npm run docker:down` (equivalente a `docker compose down`)
 | `npm run migrate` | `prisma migrate dev` | Aplica `prisma/schema.prisma` a la base, creando una migración si hay cambios pendientes. Requiere Postgres corriendo (`docker compose up -d postgres`) y `DATABASE_URL` apuntando a `localhost:5433`. |
 | `npm run migrate:deploy` | `prisma migrate deploy` | Aplica migraciones ya generadas, sin crear nuevas (uso en CI/producción). |
 | `npm run seed` | `prisma db seed` | Ejecuta `scripts/seed.js` (datos ficticios). |
+| `npm run create-admin` | `node scripts/create-admin.js` | Crea o pone al día la cuenta de administrador con `ADMIN_EMAIL` y `ADMIN_PASSWORD`. |
 | `npm run studio` | `prisma studio` | Abre Prisma Studio para inspeccionar los datos. |
 | `npm run test` | `vitest run` | Corre la suite de tests una vez. |
 | `npm run test:watch` | `vitest` | Modo watch, para iterar mientras se escribe un test. |
@@ -157,6 +166,9 @@ docker compose run --build --rm --no-deps -v ./prisma:/app/prisma backend npx pr
 
 # Seed
 docker compose run --build --rm --no-deps backend npm run seed
+
+# Cuenta de administrador (lee ADMIN_EMAIL y ADMIN_PASSWORD del .env)
+docker compose run --build --rm --no-deps backend npm run create-admin
 ```
 
 `docker compose up` deja además las migraciones al día por sí solo: el `CMD` de la
@@ -239,14 +251,18 @@ Configuración en GitHub (Environment `staging` de cada repo, restringido a la r
    - `nutria-backend/.env` a partir de `.env.example`, con `NODE_ENV=production`
      (oculta Swagger), `JWT_SECRET` y `POSTGRES_PASSWORD` propios de staging,
      `CORS_ORIGIN=https://<APP_HOST>`, y las variables de la sección "Solo staging":
-     `APP_HOST`, `ACME_EMAIL` y `SEED_PASSWORD`.
+     `APP_HOST`, `ACME_EMAIL`, `SEED_PASSWORD`, `ADMIN_EMAIL` y `ADMIN_PASSWORD`.
    - `nutria-frontend/.env` y `nutria-ia/.env` copiados de sus `.env.example`: en
      staging no se usan, pero el compose los exige.
-3. Primer arranque y seed:
+3. Primer arranque, seed y cuenta de administrador:
    ```bash
    dcs up -d --build
    dcs run --rm backend npm run seed
+   dcs run --rm backend npm run create-admin
    ```
+   Con el administrador, las cuentas de las nutricionistas se dan de alta desde
+   `https://<APP_HOST>/admin`. Ni un redeploy (`deploy-staging.sh`) ni el seed las
+   tocan: el deploy no borra volúmenes y el seed solo actualiza sus dos cuentas.
 4. Habilitar la clave de despliegue: agregar a `~/.ssh/authorized_keys` una línea con
    la clave pública y la restricción, todo en una línea:
    ```
@@ -262,11 +278,13 @@ Configuración en GitHub (Environment `staging` de cada repo, restringido a la r
 | Ver el estado | `dcs ps` |
 | Ver logs | `dcs logs -f backend` (o `frontend`, `ia`, `proxy`) |
 | Recargar el seed | `dcs run --rm backend npm run seed` |
+| Crear el administrador o cambiar su contraseña | Actualizar `ADMIN_EMAIL`/`ADMIN_PASSWORD` en el `.env` y correr `dcs run --rm backend npm run create-admin` |
 | Desplegar a mano | `bash ~/nutria/nutria-backend/scripts/deploy-staging.sh backend` |
 | Ver el espacio que ocupa Docker | `docker system df`; liberar cache de builds con `docker builder prune` |
 
 Antes de una sesión con la nutricionista: confirmar que la VM está *Running* en la
-consola de OCI, recargar el seed y hacer login una vez.
+consola de OCI, recargar el seed y hacer login una vez. Al darle su cuenta, recordarle
+que cargue solo pacientes ficticios (RNF-08); la interfaz lo avisa en un cartel fijo.
 
 ## Stack
 

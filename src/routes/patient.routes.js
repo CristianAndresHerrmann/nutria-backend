@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const patientController = require('../controllers/patient.controller');
-const requireAuth = require('../middlewares/auth');
+const { requireNutritionist } = require('../middlewares/auth');
 const validate = require('../middlewares/validate');
 const { emptyQuerySchema } = require('../schemas/common.schema');
 const { createPatientSchema, updatePatientSchema, patientIdParamsSchema } = require('../schemas/patient.schema');
@@ -34,9 +34,10 @@ const byId = { notFoundOnInvalidParams: PATIENT_NOT_FOUND_MESSAGE };
  *               items: { $ref: '#/components/schemas/Patient' }
  *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
-router.get('/patients', requireAuth, validate({ query: emptyQuerySchema }), patientController.getPatients);
+router.get('/patients', requireNutritionist, validate({ query: emptyQuerySchema }), patientController.getPatients);
 
 /**
  * @openapi
@@ -64,12 +65,13 @@ router.get('/patients', requireAuth, validate({ query: emptyQuerySchema }), pati
  *             schema: { $ref: '#/components/schemas/PatientDetail' }
  *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/PatientNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.get(
   '/patients/:id',
-  requireAuth,
+  requireNutritionist,
   validate({ params: patientIdParamsSchema, query: emptyQuerySchema }, byId),
   patientController.getPatientById,
 );
@@ -117,11 +119,12 @@ router.get(
  *             schema: { $ref: '#/components/schemas/Patient' }
  *       '400': { $ref: '#/components/responses/ValidationError' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.post(
   '/patients',
-  requireAuth,
+  requireNutritionist,
   validate({ query: emptyQuerySchema, body: createPatientSchema }),
   patientController.createPatient,
 );
@@ -158,12 +161,13 @@ router.post(
  *             schema: { $ref: '#/components/schemas/Patient' }
  *       '400': { $ref: '#/components/responses/ValidationError' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/PatientNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.put(
   '/patients/:id',
-  requireAuth,
+  requireNutritionist,
   validate({ params: patientIdParamsSchema, query: emptyQuerySchema, body: updatePatientSchema }, byId),
   patientController.updatePatient,
 );

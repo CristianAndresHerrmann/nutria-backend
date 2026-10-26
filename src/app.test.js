@@ -9,12 +9,28 @@ const foodService = require('./services/food.service');
 const pathologyService = require('./services/pathology.service');
 const recipeService = require('./services/recipe.service');
 const recommendationService = require('./services/recommendation.service');
+const nutritionistAccountService = require('./services/nutritionistAccount.service');
+const nutritionistRepository = require('./repositories/nutritionist.repository');
+const openapiSpec = require('./docs/openapi');
+const { FORBIDDEN_ROLE_MESSAGE } = require('./middlewares/auth');
 
 // Integración liviana: la app real levantada en un puerto efímero, sin base ni
 // servicio de IA. Cada caso corta antes de llegar a Prisma (ruta inexistente,
 // body inválido, sin token, id inválido) o stubbea el fetch hacia la IA, así que
 // no necesita Postgres. Verifica el criterio de T7 desde afuera: ningún fallo
 // termina en respuesta vacía ni expone un stack, y todos usan el mismo formato.
+//
+// requireAuth lee la cuenta del token en la base en cada request: acá esa
+// lectura se stubbea. ADMIN_ID es un administrador, INACTIVE_ID una cuenta
+// desactivada, y cualquier otro id un nutricionista activo.
+const ADMIN_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
+const INACTIVE_ID = 'bbbbbbbb-0000-4000-8000-000000000002';
+
+function fakeAuthState(id) {
+  if (id === INACTIVE_ID) return { role: 'nutritionist', active: false };
+  if (id === ADMIN_ID) return { role: 'admin', active: true };
+  return { role: 'nutritionist', active: true };
+}
 
 // Se guarda antes de cualquier stub: los tests que simulan la IA caída
 // reemplazan el fetch global, pero las requests de este archivo tienen que
@@ -38,6 +54,7 @@ afterAll(async () => {
 beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
+  vi.spyOn(nutritionistRepository, 'findAuthState').mockImplementation(async (id) => fakeAuthState(id));
 });
 
 afterEach(() => {
@@ -1028,5 +1045,161 @@ describe('rutas de mediciones del paciente — autenticación, aislamiento y val
     expectUniformError(response, 404, 'NOT_FOUND');
     expect(response.json.error.message).toBe(message);
     Object.values(spies).forEach((spy) => expect(spy).not.toHaveBeenCalled());
+  });
+});
+
+describe('roles — 403 cruzados y panel del administrador de punta a punta', () => {
+  const tokenFor = (accountId) => jwt.sign({ sub: accountId }, process.env.JWT_SECRET, { expiresIn: '1h' });
+  const SOME_ID = '11111111-1111-4111-8111-111111111111';
+
+  // Todas las operaciones protegidas salen del spec, que openapi.test.js obliga
+  // a mantener completo: una ruta nueva entra sola en estos tests.
+  const protectedOperations = Object.entries(openapiSpec.paths).flatMap(([path, item]) =>
+    Object.entries(item)
+      .filter(([, operation]) => operation.security)
+      .map(([method]) => [method.toUpperCase(), path.replace(/\{[^}]+\}/g, SOME_ID)]),
+  );
+  const adminOperations = protectedOperations.filter(([, path]) => path.startsWith('/admin'));
+  const nutritionistOperations = protectedOperations.filter(([, path]) => !path.startsWith('/admin'));
+  const bodyFor = (method) => (method === 'GET' || method === 'DELETE' ? undefined : {});
+
+  it('el spec tiene operaciones de los dos roles', () => {
+    expect(adminOperations.length).toBe(4);
+    expect(nutritionistOperations.length).toBeGreaterThan(25);
+  });
+
+  it.each(nutritionistOperations)('un administrador recibe 403 en %s %s', async (method, path) => {
+    const response = await request(path, { method, token: tokenFor(ADMIN_ID), body: bodyFor(method) });
+
+    expectUniformError(response, 403, 'FORBIDDEN');
+    expect(response.json.error.message).toBe(FORBIDDEN_ROLE_MESSAGE);
+  });
+
+  it.each(adminOperations)('un nutricionista recibe 403 en %s %s y no llega al servicio', async (method, path) => {
+    const spies = ['list', 'create', 'setActive', 'resetPassword'].map((name) =>
+      vi.spyOn(nutritionistAccountService, name).mockResolvedValue(undefined),
+    );
+
+    const response = await request(path, { method, token: tokenFor('nutri-1'), body: bodyFor(method) });
+
+    expectUniformError(response, 403, 'FORBIDDEN');
+    expect(response.json.error.message).toBe(FORBIDDEN_ROLE_MESSAGE);
+    spies.forEach((spy) => expect(spy).not.toHaveBeenCalled());
+  });
+
+  it.each(adminOperations)('%s %s sin token responde 401', async (method, path) => {
+    const response = await request(path, { method, body: bodyFor(method) });
+
+    expectUniformError(response, 401, 'UNAUTHORIZED');
+  });
+
+  it('el token vigente de una cuenta desactivada responde 401', async () => {
+    const response = await request('/patients', { token: tokenFor(INACTIVE_ID) });
+
+    expectUniformError(response, 401, 'UNAUTHORIZED');
+  });
+
+  it('el listado de cuentas no expone el hash de la contraseña', async () => {
+    vi.spyOn(nutritionistAccountService, 'list').mockResolvedValue([
+      { id: SOME_ID, name: 'Ana', email: 'ana@nutria.test', active: true, createdAt: new Date('2026-10-26'), passwordHash: 'hash' },
+    ]);
+
+    const response = await request('/admin/nutritionists', { token: tokenFor(ADMIN_ID) });
+
+    expect(response.status).toBe(200);
+    expect(response.json).toEqual([
+      { id: SOME_ID, name: 'Ana', email: 'ana@nutria.test', active: true, createdAt: '2026-10-26T00:00:00.000Z' },
+    ]);
+  });
+
+  it('un email repetido en el alta responde 409 con el error en details.fields.email', async () => {
+    vi.spyOn(nutritionistRepository, 'findByEmail').mockResolvedValue({ id: SOME_ID, email: 'ana@nutria.test' });
+    const create = vi.spyOn(nutritionistRepository, 'createNutritionist');
+
+    const response = await request('/admin/nutritionists', {
+      method: 'POST',
+      token: tokenFor(ADMIN_ID),
+      body: { name: 'Ana', email: ' Ana@Nutria.test ', password: 'inicial-123' },
+    });
+
+    expectUniformError(response, 409, 'CONFLICT');
+    expect(response.json.error.details.fields.email).toBe('Ya existe una cuenta con ese email');
+    expect(nutritionistRepository.findByEmail).toHaveBeenCalledWith('ana@nutria.test');
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('el alta rechaza con 400 un rol elegido por el cliente y una contraseña corta', async () => {
+    const create = vi.spyOn(nutritionistAccountService, 'create');
+
+    const withRole = await request('/admin/nutritionists', {
+      method: 'POST',
+      token: tokenFor(ADMIN_ID),
+      body: { name: 'Ana', email: 'ana@nutria.test', password: 'inicial-123', role: 'admin' },
+    });
+    const shortPassword = await request('/admin/nutritionists', {
+      method: 'POST',
+      token: tokenFor(ADMIN_ID),
+      body: { name: 'Ana', email: 'ana@nutria.test', password: 'corta' },
+    });
+
+    expectUniformError(withRole, 400, 'VALIDATION_ERROR');
+    expectUniformError(shortPassword, 400, 'VALIDATION_ERROR');
+    expect(shortPassword.json.error.details.fields.password).toBe('La contraseña debe tener al menos 8 caracteres');
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('el administrador no puede desactivarse a sí mismo', async () => {
+    const setActive = vi.spyOn(nutritionistRepository, 'setActive');
+
+    const response = await request(`/admin/nutritionists/${ADMIN_ID}`, {
+      method: 'PATCH',
+      token: tokenFor(ADMIN_ID),
+      body: { active: false },
+    });
+
+    expectUniformError(response, 403, 'FORBIDDEN');
+    expect(response.json.error.message).toBe('No podés desactivar tu propia cuenta');
+    expect(setActive).not.toHaveBeenCalled();
+  });
+
+  it('desactivar pasa al servicio el id de la ruta y el del administrador del token', async () => {
+    const setActive = vi
+      .spyOn(nutritionistAccountService, 'setActive')
+      .mockResolvedValue({ id: SOME_ID, name: 'Ana', email: 'ana@nutria.test', active: false, createdAt: new Date() });
+
+    const response = await request(`/admin/nutritionists/${SOME_ID}`, {
+      method: 'PATCH',
+      token: tokenFor(ADMIN_ID),
+      body: { active: false },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.json.active).toBe(false);
+    expect(setActive).toHaveBeenCalledWith(SOME_ID, ADMIN_ID, false);
+  });
+
+  it('un id que no es UUID responde 404 como una cuenta inexistente', async () => {
+    const response = await request('/admin/nutritionists/no-es-uuid', {
+      method: 'PATCH',
+      token: tokenFor(ADMIN_ID),
+      body: { active: false },
+    });
+
+    expectUniformError(response, 404, 'NOT_FOUND');
+    expect(response.json.error.message).toBe('Cuenta no encontrada');
+  });
+
+  it('restablecer la contraseña responde 204 sin body', async () => {
+    const resetPassword = vi.spyOn(nutritionistAccountService, 'resetPassword').mockResolvedValue(undefined);
+
+    const response = await request(`/admin/nutritionists/${SOME_ID}/password`, {
+      method: 'PUT',
+      token: tokenFor(ADMIN_ID),
+      body: { password: 'nueva-clave-1' },
+    });
+
+    expect(response.status).toBe(204);
+    expect(response.text).toBe('');
+    expect(resetPassword).toHaveBeenCalledWith(SOME_ID, 'nueva-clave-1');
   });
 });

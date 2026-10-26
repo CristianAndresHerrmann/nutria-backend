@@ -19,11 +19,15 @@ function createAuthService({ nutritionistRepository: repository, jwtSecret, jwtE
       const passwordHash = nutritionist ? nutritionist.passwordHash : DUMMY_HASH;
       const passwordMatches = await bcrypt.compare(password, passwordHash);
 
-      if (!nutritionist || !passwordMatches) {
+      // Una cuenta desactivada recibe el mismo error que una contraseña
+      // incorrecta: el login no revela qué cuentas existen ni su estado.
+      if (!nutritionist || !passwordMatches || !nutritionist.active) {
         throw new AppError(401, INVALID_CREDENTIALS_MESSAGE);
       }
 
-      const token = jwt.sign({ sub: nutritionist.id }, jwtSecret, {
+      // El rol viaja en el token para que el frontend sepa a qué inicio
+      // llevar. El backend no lo usa para autorizar: requireAuth lo lee de la base.
+      const token = jwt.sign({ sub: nutritionist.id, role: nutritionist.role }, jwtSecret, {
         expiresIn: jwtExpiresIn,
       });
 
@@ -33,6 +37,7 @@ function createAuthService({ nutritionistRepository: repository, jwtSecret, jwtE
           id: nutritionist.id,
           name: nutritionist.name,
           email: nutritionist.email,
+          role: nutritionist.role,
         },
       };
     },

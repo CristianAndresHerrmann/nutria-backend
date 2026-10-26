@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const recipeController = require('../controllers/recipe.controller');
-const requireAuth = require('../middlewares/auth');
+const { requireNutritionist } = require('../middlewares/auth');
 const validate = require('../middlewares/validate');
 const { emptyQuerySchema, catalogIdParamsSchema } = require('../schemas/common.schema');
 const { createRecipeSchema, updateRecipeSchema, listRecipesQuerySchema } = require('../schemas/recipe.schema');
@@ -53,10 +53,11 @@ const byId = { notFoundOnInvalidParams: RECIPE_NOT_FOUND_MESSAGE };
  *               items: { $ref: '#/components/schemas/Recipe' }
  *       '400': { $ref: '#/components/responses/ValidationError' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/PatientNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
-router.get('/recipes', requireAuth, validate({ query: listRecipesQuerySchema }), recipeController.listRecipes);
+router.get('/recipes', requireNutritionist, validate({ query: listRecipesQuerySchema }), recipeController.listRecipes);
 
 /**
  * @openapi
@@ -79,12 +80,13 @@ router.get('/recipes', requireAuth, validate({ query: listRecipesQuerySchema }),
  *             schema: { $ref: '#/components/schemas/Recipe' }
  *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/RecipeNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.get(
   '/recipes/:id',
-  requireAuth,
+  requireNutritionist,
   validate({ params: catalogIdParamsSchema, query: emptyQuerySchema }, byId),
   recipeController.getRecipe,
 );
@@ -114,11 +116,12 @@ router.get(
  *             schema: { $ref: '#/components/schemas/Recipe' }
  *       '400': { $ref: '#/components/responses/ValidationError' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.post(
   '/recipes',
-  requireAuth,
+  requireNutritionist,
   validate({ query: emptyQuerySchema, body: createRecipeSchema }),
   recipeController.createRecipe,
 );
@@ -151,12 +154,13 @@ router.post(
  *             schema: { $ref: '#/components/schemas/Recipe' }
  *       '400': { $ref: '#/components/responses/ValidationError' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/RecipeNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.put(
   '/recipes/:id',
-  requireAuth,
+  requireNutritionist,
   validate({ params: catalogIdParamsSchema, query: emptyQuerySchema, body: updateRecipeSchema }, byId),
   recipeController.updateRecipe,
 );

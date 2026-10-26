@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const recommendationController = require('../controllers/recommendation.controller');
-const requireAuth = require('../middlewares/auth');
+const { requireNutritionist } = require('../middlewares/auth');
 const validate = require('../middlewares/validate');
 const { emptyQuerySchema, catalogIdParamsSchema } = require('../schemas/common.schema');
 const {
@@ -48,11 +48,12 @@ const byId = { notFoundOnInvalidParams: RECOMMENDATION_NOT_FOUND_MESSAGE };
  *               items: { $ref: '#/components/schemas/ClinicalRecommendation' }
  *       '400': { $ref: '#/components/responses/ValidationError' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.get(
   '/clinical-recommendations',
-  requireAuth,
+  requireNutritionist,
   validate({ query: listRecommendationsQuerySchema }),
   recommendationController.listRecommendations,
 );
@@ -78,12 +79,13 @@ router.get(
  *             schema: { $ref: '#/components/schemas/ClinicalRecommendation' }
  *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/RecommendationNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.get(
   '/clinical-recommendations/:id',
-  requireAuth,
+  requireNutritionist,
   validate({ params: catalogIdParamsSchema, query: emptyQuerySchema }, byId),
   recommendationController.getRecommendation,
 );
@@ -112,11 +114,12 @@ router.get(
  *             schema: { $ref: '#/components/schemas/ClinicalRecommendation' }
  *       '400': { $ref: '#/components/responses/ValidationError' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.post(
   '/clinical-recommendations',
-  requireAuth,
+  requireNutritionist,
   validate({ query: emptyQuerySchema, body: createRecommendationSchema }),
   recommendationController.createRecommendation,
 );
@@ -153,7 +156,7 @@ router.post(
  */
 router.put(
   '/clinical-recommendations/:id',
-  requireAuth,
+  requireNutritionist,
   validate({ params: catalogIdParamsSchema, query: emptyQuerySchema, body: updateRecommendationSchema }, byId),
   recommendationController.updateRecommendation,
 );

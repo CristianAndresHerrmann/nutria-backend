@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const measurementController = require('../controllers/measurement.controller');
-const requireAuth = require('../middlewares/auth');
+const { requireNutritionist } = require('../middlewares/auth');
 const validate = require('../middlewares/validate');
 const { emptyQuerySchema } = require('../schemas/common.schema');
 const { patientIdParamsSchema } = require('../schemas/patient.schema');
@@ -40,12 +40,13 @@ const byMeasurement = { notFoundOnInvalidParams: MEASUREMENT_NOT_FOUND_MESSAGE }
  *               items: { $ref: '#/components/schemas/Measurement' }
  *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/PatientNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.get(
   '/patients/:id/measurements',
-  requireAuth,
+  requireNutritionist,
   validate({ params: patientIdParamsSchema, query: emptyQuerySchema }, byPatient),
   measurementController.listMeasurements,
 );
@@ -87,12 +88,13 @@ router.get(
  *             schema: { $ref: '#/components/schemas/Measurement' }
  *       '400': { $ref: '#/components/responses/ValidationError' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/PatientNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.post(
   '/patients/:id/measurements',
-  requireAuth,
+  requireNutritionist,
   validate({ params: patientIdParamsSchema, query: emptyQuerySchema, body: measurementSchema }, byPatient),
   measurementController.createMeasurement,
 );
@@ -124,12 +126,13 @@ router.post(
  *             schema: { $ref: '#/components/schemas/Measurement' }
  *       '400': { $ref: '#/components/responses/ValidationError' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/MeasurementNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.put(
   '/patients/:id/measurements/:measurementId',
-  requireAuth,
+  requireNutritionist,
   validate({ params: measurementParamsSchema, query: emptyQuerySchema, body: measurementSchema }, byMeasurement),
   measurementController.updateMeasurement,
 );
@@ -151,12 +154,13 @@ router.put(
  *         description: Medición eliminada
  *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/MeasurementNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.delete(
   '/patients/:id/measurements/:measurementId',
-  requireAuth,
+  requireNutritionist,
   validate({ params: measurementParamsSchema, query: emptyQuerySchema }, byMeasurement),
   measurementController.deleteMeasurement,
 );

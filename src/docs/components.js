@@ -14,7 +14,9 @@ const securitySchemes = {
     bearerFormat: 'JWT',
     description:
       'Token devuelto por `POST /auth/login`. Se manda como `Authorization: Bearer <token>` ' +
-      'y expira a las 2 horas por defecto (`JWT_EXPIRES_IN`).',
+      'y expira a las 2 horas por defecto (`JWT_EXPIRES_IN`). Si la cuenta se desactiva, el ' +
+      'token deja de servir en la siguiente request. Las rutas clínicas y de catálogo son de ' +
+      'nutricionista y las de `/admin`, de administrador: con el otro rol responden 403.',
   },
 };
 
@@ -162,7 +164,8 @@ const schemas = {
     properties: {
       token: {
         type: 'string',
-        description: 'JWT firmado con HS256. El id del nutricionista viaja en el claim `sub`.',
+        description:
+          'JWT firmado con HS256. El id de la cuenta viaja en el claim `sub` y su rol en `role`.',
         example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
       },
       nutritionist: {
@@ -171,7 +174,69 @@ const schemas = {
           id: { type: 'string', format: 'uuid' },
           name: { type: 'string', example: 'Camila Ríos' },
           email: { type: 'string', format: 'email', example: 'nutricionista@nutria.com' },
+          role: {
+            type: 'string',
+            enum: ['nutritionist', 'admin'],
+            description: 'El frontend lleva al administrador a `/admin` y al nutricionista a su inicio.',
+          },
         },
+      },
+    },
+  },
+
+  NutritionistAccount: {
+    type: 'object',
+    description: 'Cuenta de nutricionista vista desde el panel del administrador. Nunca trae datos de pacientes.',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      name: { type: 'string', example: 'Lic. Ejemplo Ficticio' },
+      email: { type: 'string', format: 'email', example: 'ejemplo@nutria.test' },
+      active: { type: 'boolean', example: true, description: 'Con `false` la cuenta no inicia sesión.' },
+      createdAt: { type: 'string', format: 'date-time', example: '2026-10-26T14:03:11.204Z' },
+    },
+  },
+
+  NutritionistAccountInput: {
+    type: 'object',
+    required: ['name', 'email', 'password'],
+    additionalProperties: false,
+    description: 'El rol y el estado no se eligen: la cuenta nace de nutricionista y activa.',
+    properties: {
+      name: { type: 'string', minLength: 1, maxLength: 100, example: 'Lic. Ejemplo Ficticio' },
+      email: {
+        type: 'string',
+        format: 'email',
+        description: 'Se guarda sin espacios y en minúsculas.',
+        example: 'ejemplo@nutria.test',
+      },
+      password: {
+        type: 'string',
+        format: 'password',
+        minLength: 8,
+        description: 'Contraseña inicial: al menos 8 caracteres y hasta 72 bytes.',
+      },
+    },
+  },
+
+  NutritionistActiveInput: {
+    type: 'object',
+    required: ['active'],
+    additionalProperties: false,
+    properties: {
+      active: { type: 'boolean', example: false, description: '`false` desactiva la cuenta; `true` la reactiva.' },
+    },
+  },
+
+  NutritionistPasswordInput: {
+    type: 'object',
+    required: ['password'],
+    additionalProperties: false,
+    properties: {
+      password: {
+        type: 'string',
+        format: 'password',
+        minLength: 8,
+        description: 'Contraseña nueva: al menos 8 caracteres y hasta 72 bytes.',
       },
     },
   },
@@ -712,7 +777,8 @@ const schemas = {
             type: 'string',
             description:
               '`VALIDATION_ERROR`, `INVALID_JSON`, `BAD_REQUEST` (400); `UNAUTHORIZED` (401); ' +
-              '`NOT_FOUND` (404); `CONFLICT` (409); `PAYLOAD_TOO_LARGE` (413); `INTERNAL_ERROR` ' +
+              '`FORBIDDEN` (403); `NOT_FOUND` (404); `CONFLICT` (409); `PAYLOAD_TOO_LARGE` (413); ' +
+              '`TOO_MANY_REQUESTS` (429); `INTERNAL_ERROR` ' +
               '(500); `BAD_GATEWAY` (502); `IA_UNAVAILABLE`, `SERVICE_UNAVAILABLE` (503).',
             example: 'UNAUTHORIZED',
           },
@@ -759,9 +825,81 @@ function notFoundResponse(message) {
   };
 }
 
+// 403 por rol: lo responde requireRole antes de llegar al controlador.
+const forbiddenRoleExample = errorExample('FORBIDDEN', 'No tenés permiso para acceder a este recurso');
+
 const responses = {
+  ForbiddenRole: {
+    description:
+      'La cuenta del token no tiene el rol de la ruta: un administrador en una ruta clínica o ' +
+      'de catálogo, o un nutricionista en `/admin`.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        example: forbiddenRoleExample,
+      },
+    },
+  },
+
+  ForbiddenAccountChange: {
+    description:
+      'La cuenta del token no es de administrador, o el administrador intenta desactivar su ' +
+      'propia cuenta.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        examples: {
+          rol: { summary: 'El token no es de un administrador', value: forbiddenRoleExample },
+          propia: {
+            summary: 'El administrador intenta desactivarse a sí mismo',
+            value: errorExample('FORBIDDEN', 'No podés desactivar tu propia cuenta'),
+          },
+        },
+      },
+    },
+  },
+
+  TooManyLoginAttempts: {
+    description:
+      'Se superó el límite de intentos de login fallidos desde la misma IP (10 cada 15 minutos ' +
+      'por defecto). Los exitosos no cuentan. El header `RateLimit` indica cuándo se libera.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        example: errorExample(
+          'TOO_MANY_REQUESTS',
+          'Demasiados intentos de inicio de sesión. Probá de nuevo en unos minutos.',
+        ),
+      },
+    },
+  },
+
+  DuplicateAccountEmail: {
+    description: 'Ya existe una cuenta (de nutricionista o de administrador) con ese email.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        example: errorExample('CONFLICT', 'Ya existe una cuenta con ese email', {
+          fields: { email: 'Ya existe una cuenta con ese email' },
+        }),
+      },
+    },
+  },
+
+  NutritionistAccountNotFound: {
+    description:
+      'No hay una cuenta de nutricionista con ese id: no existe, es de un administrador o el id ' +
+      'no es un UUID.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        example: errorExample('NOT_FOUND', 'Cuenta no encontrada'),
+      },
+    },
+  },
+
   UnauthorizedError: {
-    description: 'Falta el token, está mal formado, es inválido o expiró.',
+    description: 'Falta el token, está mal formado, es inválido, expiró o la cuenta está desactivada.',
     content: {
       'application/json': {
         schema: { $ref: '#/components/schemas/Error' },
@@ -771,7 +909,7 @@ const responses = {
             value: errorExample('UNAUTHORIZED', 'No autenticado'),
           },
           tokenInvalido: {
-            summary: 'El token no verifica contra JWT_SECRET, o ya expiró',
+            summary: 'El token no verifica contra JWT_SECRET, ya expiró o la cuenta está desactivada',
             value: errorExample('UNAUTHORIZED', 'Token inválido o expirado'),
           },
         },
@@ -854,11 +992,19 @@ const responses = {
   RecommendationNotFound: notFoundResponse('Recomendación no encontrada'),
 
   CommonRecommendationReadOnly: {
-    description: 'La recomendación es común: ningún nutricionista la edita ni la da de baja.',
+    description:
+      'La recomendación es común: ningún nutricionista la edita ni la da de baja. También ' +
+      'responde 403 un token de administrador.',
     content: {
       'application/json': {
         schema: { $ref: '#/components/schemas/Error' },
-        example: errorExample('FORBIDDEN', 'Las recomendaciones comunes son de solo lectura'),
+        examples: {
+          comun: {
+            summary: 'La recomendación es común',
+            value: errorExample('FORBIDDEN', 'Las recomendaciones comunes son de solo lectura'),
+          },
+          rol: { summary: 'El token no es de un nutricionista', value: forbiddenRoleExample },
+        },
       },
     },
   },
@@ -949,6 +1095,13 @@ const responses = {
 };
 
 const parameters = {
+  NutritionistId: {
+    name: 'id',
+    in: 'path',
+    required: true,
+    description: 'Id de la cuenta de nutricionista. Un valor que no sea un UUID devuelve 404, no 400.',
+    schema: { type: 'string', format: 'uuid' },
+  },
   CatalogId: {
     name: 'id',
     in: 'path',

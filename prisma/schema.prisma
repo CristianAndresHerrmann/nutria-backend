@@ -4,7 +4,7 @@
 // mediciones y laboratorio, hábitos pautados, y catálogos de alimentos, recetas y
 // recomendaciones (RF-24, RF-25, RF-27, RF-30). PLAN y lo que depende de él llegan en el
 // Incremento 3. T15: alimentos privados por nutricionista y nombres de catálogo sin
-// distinguir mayúsculas.
+// distinguir mayúsculas. Incremento 3 (T31): rol, estado y fecha de alta de la cuenta.
 //
 // Convención de nombres: campos en camelCase (idiomático de Prisma/JS), mapeados con
 // @map a columnas snake_case en Postgres. Los valores de los enums también son
@@ -25,11 +25,19 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Cuenta de acceso (T31). Un administrador es una fila más de esta tabla con
+// role = admin: comparte el login, pero no tiene pacientes ni catálogo propio y
+// las rutas clínicas le responden 403. Una cuenta con active = false no inicia
+// sesión y su token deja de servir en la siguiente request. La baja es lógica:
+// los alimentos y recomendaciones privados la referencian con RESTRICT.
 model Nutritionist {
-  id           String @id @default(uuid()) @db.Uuid
+  id           String      @id @default(uuid()) @db.Uuid
   name         String
-  email        String @unique
-  passwordHash String @map("password_hash")
+  email        String      @unique
+  passwordHash String      @map("password_hash")
+  role         AccountRole @default(nutritionist)
+  active       Boolean     @default(true)
+  createdAt    DateTime    @default(now()) @map("created_at")
 
   patients Patient[]
   recipes  Recipe[]
@@ -41,6 +49,13 @@ model Nutritionist {
   clinicalRecommendations ClinicalRecommendation[]
 
   @@map("nutritionist")
+}
+
+enum AccountRole {
+  nutritionist
+  admin
+
+  @@map("account_role")
 }
 
 model Patient {

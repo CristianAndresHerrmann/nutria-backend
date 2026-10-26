@@ -42,6 +42,10 @@ const EXPECTED_OPERATIONS = [
   'post /clinical-recommendations',
   'get /clinical-recommendations/{id}',
   'put /clinical-recommendations/{id}',
+  'get /admin/nutritionists',
+  'post /admin/nutritionists',
+  'patch /admin/nutritionists/{id}',
+  'put /admin/nutritionists/{id}/password',
 ];
 
 const PROTECTED_OPERATIONS = [
@@ -76,6 +80,10 @@ const PROTECTED_OPERATIONS = [
   ['/clinical-recommendations', 'post'],
   ['/clinical-recommendations/{id}', 'get'],
   ['/clinical-recommendations/{id}', 'put'],
+  ['/admin/nutritionists', 'get'],
+  ['/admin/nutritionists', 'post'],
+  ['/admin/nutritionists/{id}', 'patch'],
+  ['/admin/nutritionists/{id}/password', 'put'],
 ];
 
 function listOperations(spec) {
@@ -137,6 +145,12 @@ describe('spec OpenAPI del backend', () => {
     expect(operation.responses['401']).toBeDefined();
   });
 
+  // Toda ruta protegida es de un solo rol (requireNutritionist o requireAdmin):
+  // con el otro responde 403.
+  it.each(PROTECTED_OPERATIONS)('%s %s documenta el 403 por rol', (path, method) => {
+    expect(openapiSpec.paths[path][method].responses['403']).toBeDefined();
+  });
+
   // Todas las rutas validan la query con un .strictObject: un parámetro
   // desconocido da 400 aunque la operación no tenga body.
   it.each(EXPECTED_OPERATIONS)('%s documenta el 400', (operation) => {
@@ -195,6 +209,19 @@ describe('spec OpenAPI del backend', () => {
     expect(openapiSpec.paths['/clinical-recommendations'].post.responses['201']).toBeDefined();
     expect(openapiSpec.paths['/clinical-recommendations/{id}'].put.responses['403']).toBeDefined();
     expect(openapiSpec.paths['/clinical-recommendations/{id}'].delete).toBeUndefined();
+  });
+
+  it('documenta el alta de cuenta como 201 con el 409 por email repetido, y el restablecimiento como 204', () => {
+    const create = openapiSpec.paths['/admin/nutritionists'].post.responses;
+
+    expect(create['201']).toBeDefined();
+    expect(create['409']).toBeDefined();
+    expect(openapiSpec.paths['/admin/nutritionists/{id}/password'].put.responses['204']).toBeDefined();
+    expect(openapiSpec.paths['/admin/nutritionists/{id}'].delete).toBeUndefined();
+  });
+
+  it('documenta el 429 del login por exceso de intentos', () => {
+    expect(openapiSpec.paths['/auth/login'].post.responses['429']).toBeDefined();
   });
 
   it('documenta el 503 del diagnóstico de IA', () => {

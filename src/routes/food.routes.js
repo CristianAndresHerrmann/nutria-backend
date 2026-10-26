@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const { foodController } = require('../controllers/catalog.controller');
-const requireAuth = require('../middlewares/auth');
+const { requireNutritionist } = require('../middlewares/auth');
 const validate = require('../middlewares/validate');
 const { emptyQuerySchema, catalogIdParamsSchema } = require('../schemas/common.schema');
 const { createFoodSchema, listFoodsQuerySchema } = require('../schemas/food.schema');
@@ -47,9 +47,10 @@ const byId = { notFoundOnInvalidParams: FOOD_NOT_FOUND_MESSAGE };
  *               items: { $ref: '#/components/schemas/Food' }
  *       '400': { $ref: '#/components/responses/ValidationError' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
-router.get('/foods', requireAuth, validate({ query: listFoodsQuerySchema }), foodController.list);
+router.get('/foods', requireNutritionist, validate({ query: listFoodsQuerySchema }), foodController.list);
 
 /**
  * @openapi
@@ -72,12 +73,13 @@ router.get('/foods', requireAuth, validate({ query: listFoodsQuerySchema }), foo
  *             schema: { $ref: '#/components/schemas/Food' }
  *       '400': { $ref: '#/components/responses/UnknownQueryParam' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/FoodNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
 router.get(
   '/foods/:id',
-  requireAuth,
+  requireNutritionist,
   validate({ params: catalogIdParamsSchema, query: emptyQuerySchema }, byId),
   foodController.get,
 );
@@ -108,9 +110,10 @@ router.get(
  *             schema: { $ref: '#/components/schemas/Food' }
  *       '400': { $ref: '#/components/responses/ValidationError' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '409': { $ref: '#/components/responses/ConflictError' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */
-router.post('/foods', requireAuth, validate({ query: emptyQuerySchema, body: createFoodSchema }), foodController.create);
+router.post('/foods', requireNutritionist, validate({ query: emptyQuerySchema, body: createFoodSchema }), foodController.create);
 
 module.exports = router;
