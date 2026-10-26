@@ -3,37 +3,38 @@ const { descendantIds } = require('./foodGroupTree');
 // Filtro de recetas por las condiciones del paciente (RF-28). Solo las
 // condiciones directas sobre un alimento o un grupo: una preferencia no excluye
 // nada, y lo que se deriva de una patología son reglas clínicas del Incremento 3
-// (REGLA_CLINICA), no de este filtro.
+// (REGLA_CLINICA), no de este filtro. El motor de reglas (RF-43) usa el mismo
+// criterio por condición (DA-23): conditionScopes y scopeCoversFood.
 const RESTRICTIVE_CONDITION_TYPES = ['allergy', 'intolerance', 'rejection'];
 
-// Alimentos y grupos que el paciente no puede recibir. Una condición sobre un
-// grupo alcanza a todos sus subgrupos: rechazar "Carnes, pescados y huevos"
-// excluye también lo de "Pescados".
-function restrictedTargets(conditions, groups) {
-  const foodIds = new Set();
-  const groupIds = new Set();
+// Lo que alcanza cada condición restrictiva: su alimento, o su grupo con todos
+// sus subgrupos (rechazar "Carnes, pescados y huevos" alcanza también a
+// "Pescados"). Las demás condiciones no alcanzan nada y no aparecen.
+function conditionScopes(conditions, groups) {
+  return conditions
+    .filter((condition) => RESTRICTIVE_CONDITION_TYPES.includes(condition.type))
+    .map((condition) => ({
+      condition,
+      foodId: condition.foodId || null,
+      groupIds: new Set(condition.foodGroupId ? descendantIds(groups, condition.foodGroupId) : []),
+    }));
+}
 
-  for (const condition of conditions) {
-    if (!RESTRICTIVE_CONDITION_TYPES.includes(condition.type)) continue;
-    if (condition.foodId) foodIds.add(condition.foodId);
-    if (condition.foodGroupId) {
-      for (const id of descendantIds(groups, condition.foodGroupId)) groupIds.add(id);
-    }
-  }
-
-  return { foodIds, groupIds };
+// true si el alimento ({ id, foodGroupId }) está comprendido en la condición.
+function scopeCoversFood(scope, food) {
+  return food.id === scope.foodId || scope.groupIds.has(food.foodGroupId);
 }
 
 // Función pura: recibe las recetas con sus ingredientes ({ food: { id,
 // foodGroupId } }), las condiciones del paciente y la lista plana de grupos.
 // Devuelve las recetas sin ningún ingrediente comprendido en una condición.
 function excludeRecipesForConditions(recipes, conditions, groups) {
-  const { foodIds, groupIds } = restrictedTargets(conditions, groups);
-  if (foodIds.size === 0 && groupIds.size === 0) return recipes;
+  const scopes = conditionScopes(conditions, groups);
+  if (scopes.length === 0) return recipes;
 
   return recipes.filter((recipe) =>
-    recipe.ingredients.every(({ food }) => !foodIds.has(food.id) && !groupIds.has(food.foodGroupId)),
+    recipe.ingredients.every(({ food }) => !scopes.some((scope) => scopeCoversFood(scope, food))),
   );
 }
 
-module.exports = { excludeRecipesForConditions, RESTRICTIVE_CONDITION_TYPES };
+module.exports = { excludeRecipesForConditions, conditionScopes, scopeCoversFood, RESTRICTIVE_CONDITION_TYPES };

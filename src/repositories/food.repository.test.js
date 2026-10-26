@@ -35,6 +35,15 @@ describe('food.repository — visibilidad por nutricionista', () => {
     );
   });
 
+  it('el catálogo del motor de reglas trae comunes y propios, incluidos los dados de baja', async () => {
+    const prisma = createFakePrisma();
+    const repository = createFoodRepository({ prisma });
+
+    await repository.findAllVisible('nutri-1');
+
+    expect(prisma.food.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: VISIBLE_TO_NUTRI_1 }));
+  });
+
   it('la búsqueda por id y por nombre filtran por lo visible', async () => {
     const prisma = createFakePrisma();
     const repository = createFoodRepository({ prisma });
@@ -71,6 +80,7 @@ describe('food.repository — visibilidad por nutricionista', () => {
     const repository = createFoodRepository({ prisma });
 
     expect(() => repository.findVisible(nutritionistId)).toThrow(/sin nutritionistId/);
+    expect(() => repository.findAllVisible(nutritionistId)).toThrow(/sin nutritionistId/);
     expect(() => repository.findVisibleById('f-1', nutritionistId)).toThrow(/sin nutritionistId/);
     expect(() => repository.findVisibleByName('Leche', nutritionistId)).toThrow(/sin nutritionistId/);
     expect(() => repository.createPrivate(nutritionistId, { name: 'X', foodGroupId: 'g', categories: ['protein'] })).toThrow(

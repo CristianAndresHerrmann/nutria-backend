@@ -299,10 +299,36 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
   - **Almuerzo y cena:** `vegetable`, `protein` y `carbohydrate` (RF-26).
   - **Desayuno y merienda:** `protein` (el lácteo) y `carbohydrate` (pan o cereales). Es un supuesto tomado del *Manual para la aplicación de las Guías Alimentarias para la Población Argentina*, que la entrevista de validación tiene que confirmar. No se exige fruta ni frutas secas.
   - Un tipo de comida con composición `null` no genera advertencias.
-  - `missingCategories(mealType, items)`: función pura que recibe los ítems de una opción con sus categorías y devuelve las esperadas que faltan. No depende del modelo de plan; la usa el motor de reglas (T37) para los hallazgos `composition`.
-  - Cómo se derivan las categorías de un ítem receta o grupo se define junto con el motor (T37).
+  - `missingCategories(mealType, items)`: función pura que recibe los ítems de una opción con sus categorías y devuelve las esperadas que faltan. No depende del modelo de plan; la usa el motor de reglas (T34) para los hallazgos `composition`.
+  - Cómo se derivan las categorías de un ítem receta o grupo se define junto con el motor (T34).
   - `mealComposition.test.js`: opción completa, categoría faltante, tipo de comida sin composición definida, desayuno y merienda, y la integridad de la configuración (una entrada por tipo de comida, con categorías válidas).
   - Decisión: `docs/decisiones/composicion-esperada-por-tipo-de-comida.md` en el repo raíz (DA-29).
+- Motor de reglas v1 (T34; RF-37, RF-43, RF-44, RF-46), en `src/domain/reglas/`. Son funciones puras, (plan, condiciones del paciente, catálogo) → hallazgos, sin endpoint propio. Las reglas por patología llegan con T35.
+  - **Condición directa** (`direct_condition`, bloqueo):
+    - Dispara cuando el alimento del ítem, un ingrediente de su receta o su grupo está comprendido en una alergia, intolerancia o rechazo del paciente, por alimento o por grupo con sus subgrupos.
+    - Genera un hallazgo por cada par de ítem y condición. En una receta, el mensaje nombra los ingredientes alcanzados.
+    - Las preferencias y las patologías no disparan. Un ítem de grupo más amplio que la condición ("una fruta" con alergia a la banana) tampoco.
+  - **Ítem no reconocido** (`unrecognized_item`, bloqueo): no se puede validar hasta que se lo reemplaza por algo del catálogo.
+  - **Composición** (`composition`, advertencia sobre la opción). Usa la configuración de T27, que no cambia. Las categorías de cada ítem salen así:
+    - Alimento: la copia del ítem.
+    - Receta: la unión de las categorías de sus ingredientes.
+    - Grupo: la intersección de las categorías de los alimentos vigentes del grupo y sus subgrupos.
+    - No reconocido: ninguna.
+  - `validationResult(findings)` resume el resultado como `no_findings`, `warnings` o `blocking`, para `ai_generation.validation_result`.
+  - **Catálogo de entrada:** alimentos comunes y privados del nutricionista, incluidos los dados de baja, más los grupos y sus recetas. Un alimento o una receta que falta en el catálogo corta con un error, en vez de saltear el ítem.
+  - **Revalidación:** `planValidation.service.revalidate(planId, nutritionistId)` carga las entradas y reemplaza los hallazgos del plan en una transacción (`plan.repository.replaceFindings`), sin acumularlos. Un plan ajeno da `404`. Lo llamarán la generación y el editor después de cada guardado.
+  - `food.repository.findAllVisible`: todo lo que ve el nutricionista, con los dados de baja.
+  - `recipeConditionFilter.js` expone el criterio por condición (`conditionScopes`, `scopeCoversFood`), que comparten el filtro de recetas (RF-28) y el motor (DA-23). El filtro de recetas se comporta igual que antes.
+  - **Pruebas por regla**, de casos que disparan y que no:
+    - Alimento directo, grupo y subgrupo, ingrediente de receta y alimento privado.
+    - Preferencia y patología, que no disparan.
+    - Ítem no reconocido.
+    - Opción con y sin composición completa.
+    - Categorías por tipo de ítem.
+    - Forma de cada hallazgo según `finding_origin_chk`, y orden determinístico.
+    - El servicio, con repositorios fake.
+  - La escritura de los tres tipos de hallazgo se verificó a mano contra Postgres (`finding_origin_chk`), dentro de una transacción revertida, hasta que existan las pruebas de integración.
+  - Decisión: `docs/decisiones/motor-de-reglas-v1.md` en el repo raíz (DA-30; modifica DA-26 y completa DA-29). Se activa el skill `reglas-clinicas-deterministicas`.
 
 ### Changed
 

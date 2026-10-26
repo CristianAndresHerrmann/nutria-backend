@@ -33,6 +33,13 @@ function createFoodRepository({ prisma: client }) {
     return client.food.findMany({ where, include: FOOD_INCLUDE, orderBy: { name: 'asc' } });
   }
 
+  // Todo lo que ve el nutricionista, incluidos los dados de baja: es el catálogo
+  // de entrada del motor de reglas, y un ítem del plan o un ingrediente puede
+  // seguir referenciando un alimento que se dio de baja después.
+  function findAllVisible(nutritionistId) {
+    return client.food.findMany({ where: visibleTo(nutritionistId), include: FOOD_INCLUDE, orderBy: { name: 'asc' } });
+  }
+
   function findVisibleById(id, nutritionistId) {
     return client.food.findFirst({ where: { id, ...visibleTo(nutritionistId) }, include: FOOD_INCLUDE });
   }
@@ -55,7 +62,7 @@ function createFoodRepository({ prisma: client }) {
     });
   }
 
-  return { findVisible, findVisibleById, findVisibleByName, createPrivate };
+  return { findVisible, findAllVisible, findVisibleById, findVisibleByName, createPrivate };
 }
 
 module.exports = createFoodRepository({ prisma });

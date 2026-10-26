@@ -1,4 +1,4 @@
-const { excludeRecipesForConditions } = require('./recipeConditionFilter');
+const { excludeRecipesForConditions, conditionScopes, scopeCoversFood } = require('./recipeConditionFilter');
 
 const GROUPS = [
   { id: 'carnes', parentId: null },
@@ -73,5 +73,28 @@ describe('excludeRecipesForConditions (RF-28)', () => {
     ];
 
     expect(excludeRecipesForConditions(RECIPES, conditions, GROUPS)).toEqual(RECIPES);
+  });
+});
+
+describe('conditionScopes y scopeCoversFood (criterio compartido con el motor de reglas, DA-23)', () => {
+  it('un alcance por condición restrictiva, con la condición que lo origina', () => {
+    const conditions = [
+      { id: 'c-1', type: 'allergy', foodId: 'leche', foodGroupId: null },
+      { id: 'c-2', type: 'preference', foodId: 'arroz', foodGroupId: null },
+      { id: 'c-3', type: 'rejection', foodId: null, foodGroupId: 'pescados' },
+    ];
+
+    const scopes = conditionScopes(conditions, GROUPS);
+
+    expect(scopes.map(({ condition }) => condition.id)).toEqual(['c-1', 'c-3']);
+    expect(scopes[0]).toMatchObject({ foodId: 'leche', groupIds: new Set() });
+    expect(scopes[1]).toMatchObject({ foodId: null, groupIds: new Set(['pescados', 'mariscos']) });
+  });
+
+  it('un alimento está comprendido por su id o por su grupo, no por un grupo padre del de la condición', () => {
+    const [scope] = conditionScopes([{ type: 'intolerance', foodId: null, foodGroupId: 'pescados' }], GROUPS);
+
+    expect(scopeCoversFood(scope, { id: 'langostino', foodGroupId: 'mariscos' })).toBe(true);
+    expect(scopeCoversFood(scope, { id: 'pollo', foodGroupId: 'carnes' })).toBe(false);
   });
 });
