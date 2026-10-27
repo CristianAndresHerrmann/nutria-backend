@@ -5,7 +5,8 @@
 // recomendaciones (RF-24, RF-25, RF-27, RF-30). T15: alimentos privados por nutricionista y
 // nombres de catálogo sin distinguir mayúsculas. Incremento 3 (T31): rol, estado y fecha de
 // alta de la cuenta. T32: plan alimentario, reglas clínicas, hallazgos y generaciones de IA
-// (RF-34, RF-36, RF-41, RF-43, RF-47). Los estados de aprobación y el versionado del plan
+// (RF-34, RF-36, RF-41, RF-43, RF-47). T37: la traza de una generación fallida queda sin
+// plan, colgada del paciente. Los estados de aprobación y el versionado del plan
 // llegan en el Incremento 4.
 //
 // Convención de nombres: campos en camelCase (idiomático de Prisma/JS), mapeados con
@@ -52,7 +53,8 @@ model Nutritionist {
   // Recomendaciones clínicas privadas que cargó (T22): solo las ve y las edita él.
   clinicalRecommendations ClinicalRecommendation[]
 
-  plans Plan[]
+  plans         Plan[]
+  aiGenerations AiGeneration[]
 
   @@map("nutritionist")
 }
@@ -131,9 +133,10 @@ model Patient {
   consultations Consultation[]
   measurements  Measurement[]
   plans         Plan[]
+  aiGenerations AiGeneration[]
 
-  // Destino de la FK compuesta de Plan (T32): el plan lleva el mismo
-  // nutricionista que su paciente.
+  // Destino de las FK compuestas de Plan (T32) y AiGeneration (T37): el plan y
+  // la generación llevan el mismo nutricionista que su paciente.
   @@unique([id, nutritionistId])
   @@map("patient")
 }
@@ -692,15 +695,25 @@ enum AiValidationResult {
 
 // Una fila por generación asistida de un plan (RF-41, RNF-11). contextSent es el
 // contexto anonimizado que efectivamente se envió: sin datos identificatorios del
-// paciente (lo arma el backend, ver el skill servicio-ia-fastapi). El plan es
-// obligatorio: el borrador se crea antes de invocar a la IA, así una generación
-// fallida también queda registrada. CHECK en la migración: duración y tokens no
-// negativos; rawResponse presente cuando el proveedor respondió (success,
-// invalid_response); validationResult solo cuando result = success.
+// paciente (lo arma el backend, ver el skill servicio-ia-fastapi).
+//
+// T37 (DA-31, modifica DA-27): el borrador se crea solo cuando la generación
+// salió bien, en la misma transacción que su traza. Una generación fallida queda
+// registrada sin plan, aislada por su paciente: la FK compuesta (patient_id,
+// nutritionist_id) → patient(id, nutritionist_id) es la misma que la de Plan.
+// CHECK en la migración: duración y tokens no negativos; rawResponse presente
+// cuando el proveedor respondió (success, invalid_response); validationResult
+// solo cuando result = success; planId presente si y solo si result = success
+// (ai_generation_plan_chk). Que el plan sea de ese paciente lo controla el
+// servicio.
 model AiGeneration {
   id               String              @id @default(uuid()) @db.Uuid
-  planId           String              @map("plan_id") @db.Uuid
-  plan             Plan                @relation(fields: [planId], references: [id], onDelete: Cascade)
+  planId           String?             @map("plan_id") @db.Uuid
+  plan             Plan?               @relation(fields: [planId], references: [id], onDelete: Cascade)
+  patientId        String              @map("patient_id") @db.Uuid
+  patient          Patient             @relation(fields: [patientId, nutritionistId], references: [id, nutritionistId], onDelete: Cascade)
+  nutritionistId   String              @map("nutritionist_id") @db.Uuid
+  nutritionist     Nutritionist        @relation(fields: [nutritionistId], references: [id])
   contextSent      Json                @map("context_sent")
   provider         String
   model            String
@@ -714,5 +727,7 @@ model AiGeneration {
   generatedAt      DateTime            @default(now()) @map("generated_at")
 
   @@index([planId])
+  @@index([patientId])
+  @@index([nutritionistId])
   @@map("ai_generation")
 }

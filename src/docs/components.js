@@ -140,6 +140,46 @@ const recommendationInputProperties = {
   text: { type: 'string', minLength: 1, maxLength: 5000, example: 'Texto de ejemplo ficticio.' },
 };
 
+
+// Plan alimentario (T37; RF-34, RF-36, RF-40, RF-43). Los textos tienen el mismo
+// tope que la propuesta de la IA, así un borrador generado se puede volver a
+// guardar tal cual.
+const MEAL_TYPE_ENUM = ['breakfast', 'lunch', 'afternoon_snack', 'dinner'];
+
+const planText = (description, example) => ({ type: 'string', nullable: true, maxLength: 4000, description, example });
+
+const planTextProperties = {
+  situationalDiagnosis: planText('Diagnóstico situacional.', 'Texto de ejemplo ficticio.'),
+  introduction: planText('Introducción dirigida al paciente.', 'Texto de ejemplo ficticio.'),
+  objectives: planText('Objetivos del plan.', 'Texto de ejemplo ficticio.'),
+  generalRecommendations: planText('Recomendaciones generales.', 'Texto de ejemplo ficticio.'),
+  contextualRecommendations: planText('Recomendaciones contextuales.', 'Texto de ejemplo ficticio.'),
+  clinicalRecommendations: planText(
+    'Recomendaciones clínicas. No las redacta la IA: el profesional copia las del catálogo (DA-16, DA-28). ' +
+      'Un plan generado nace con `null`.',
+    null,
+  ),
+  thematicRecommendations: planText('Recomendaciones temáticas.', 'Texto de ejemplo ficticio.'),
+};
+
+const optionItemInput = {
+  type: 'object',
+  required: ['type'],
+  additionalProperties: false,
+  description:
+    'Ítem de una opción. Cada tipo manda solo su referencia: `food` → `foodId`, `food_group` → ' +
+    '`foodGroupId`, `recipe` → `recipeId`, `unrecognized` → `originalText` (hasta 300 caracteres). La ' +
+    'copia del nombre y las categorías la arma el servidor.',
+  properties: {
+    type: { type: 'string', enum: ['food', 'food_group', 'recipe', 'unrecognized'] },
+    foodId: { type: 'string', format: 'uuid' },
+    foodGroupId: { type: 'string', format: 'uuid' },
+    recipeId: { type: 'string', format: 'uuid' },
+    originalText: { type: 'string', minLength: 1, maxLength: 300 },
+  },
+  example: { type: 'food', foodId: '6f1c2a5e-0000-4000-8000-000000000001' },
+};
+
 const schemas = {
   Health: {
     type: 'object',
@@ -742,6 +782,204 @@ const schemas = {
     },
   },
 
+  GeneratePlanInput: {
+    type: 'object',
+    additionalProperties: false,
+    description: 'Opcional. Sin body (o sin `mealTypes`) se piden las cuatro comidas.',
+    properties: {
+      mealTypes: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 4,
+        uniqueItems: true,
+        items: { type: 'string', enum: MEAL_TYPE_ENUM },
+        example: ['breakfast', 'lunch', 'afternoon_snack', 'dinner'],
+      },
+    },
+  },
+
+  PlanInput: {
+    type: 'object',
+    required: ['meals'],
+    additionalProperties: false,
+    description:
+      'Reemplazo completo del borrador. Un texto omitido o vacío se guarda como `null`. Se admiten ' +
+      'comidas sin opciones y opciones sin ítems (guardado parcial).',
+    properties: {
+      ...planTextProperties,
+      meals: {
+        type: 'array',
+        maxItems: 4,
+        description: 'Una por tipo de comida, sin repetir. El orden de opciones e ítems es su posición en la lista.',
+        items: {
+          type: 'object',
+          required: ['mealType', 'options'],
+          additionalProperties: false,
+          properties: {
+            mealType: { type: 'string', enum: MEAL_TYPE_ENUM },
+            instructions: {
+              type: 'string',
+              nullable: true,
+              maxLength: 500,
+              description: 'Indicación de fraccionamiento para el paciente (RF-36).',
+            },
+            options: {
+              type: 'array',
+              maxItems: 10,
+              items: {
+                type: 'object',
+                required: ['items'],
+                additionalProperties: false,
+                properties: {
+                  description: { type: 'string', nullable: true, maxLength: 500 },
+                  items: { type: 'array', maxItems: 15, items: optionItemInput },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+
+  PlanSummary: {
+    type: 'object',
+    description: 'Plan en el historial del paciente.',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      patientId: { type: 'string', format: 'uuid' },
+      status: { type: 'string', enum: ['draft'], description: 'Solo borrador en el Incremento 3.' },
+      createdAt: { type: 'string', format: 'date-time' },
+      updatedAt: { type: 'string', format: 'date-time' },
+    },
+  },
+
+  Finding: {
+    type: 'object',
+    description:
+      'Hallazgo del motor de reglas (RF-43, RF-44). Se recalculan en cada guardado y al abrir el ' +
+      'borrador (RF-46): no se marcan como resueltos, dejan de existir cuando se corrige lo que los produjo. ' +
+      'Los de ítem traen `optionItemId`; el de composición, `optionId`.',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      planId: { type: 'string', format: 'uuid' },
+      optionId: { type: 'string', format: 'uuid', nullable: true },
+      optionItemId: { type: 'string', format: 'uuid', nullable: true },
+      type: { type: 'string', enum: ['direct_condition', 'pathology_rule', 'composition', 'unrecognized_item'] },
+      severity: { type: 'string', enum: ['blocking', 'warning'] },
+      clinicalRuleId: { type: 'string', format: 'uuid', nullable: true },
+      patientConditionId: { type: 'string', format: 'uuid', nullable: true },
+      message: { type: 'string', example: 'Opción 1 del almuerzo: falta verdura' },
+      detectedAt: { type: 'string', format: 'date-time' },
+    },
+  },
+
+  Plan: {
+    type: 'object',
+    description:
+      'Plan alimentario del paciente, por tipo de comida con opciones intercambiables (RF-34), sin ' +
+      'cantidades (RF-35). El dueño no viaja.',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      patientId: { type: 'string', format: 'uuid' },
+      status: { type: 'string', enum: ['draft'] },
+      ...planTextProperties,
+      createdAt: { type: 'string', format: 'date-time' },
+      updatedAt: { type: 'string', format: 'date-time' },
+      meals: {
+        type: 'array',
+        description: 'En el orden de las comidas (desayuno a cena).',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            planId: { type: 'string', format: 'uuid' },
+            mealType: { type: 'string', enum: MEAL_TYPE_ENUM },
+            instructions: { type: 'string', nullable: true },
+            options: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string', format: 'uuid' },
+                  planMealId: { type: 'string', format: 'uuid' },
+                  order: { type: 'integer', minimum: 1 },
+                  description: { type: 'string', nullable: true },
+                  items: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      description:
+                        'Ítem con la referencia de su tipo y la copia del catálogo tomada al guardar (DA-16): ' +
+                        '`foodName` y `foodCategories` en un alimento, `foodGroupName` en un grupo. Las ' +
+                        'referencias y copias que no corresponden al tipo vienen en `null` (o `[]`).',
+                      properties: {
+                        id: { type: 'string', format: 'uuid' },
+                        optionId: { type: 'string', format: 'uuid' },
+                        order: { type: 'integer', minimum: 1 },
+                        type: { type: 'string', enum: ['food', 'food_group', 'recipe', 'unrecognized'] },
+                        foodId: { type: 'string', format: 'uuid', nullable: true },
+                        foodName: { type: 'string', nullable: true, example: 'Pollo' },
+                        foodCategories: {
+                          type: 'array',
+                          items: {
+                            type: 'string',
+                            enum: ['protein', 'carbohydrate', 'fiber', 'vegetable', 'healthy_fat', 'infusion'],
+                          },
+                        },
+                        foodGroupId: { type: 'string', format: 'uuid', nullable: true },
+                        foodGroupName: { type: 'string', nullable: true },
+                        recipeId: { type: 'string', format: 'uuid', nullable: true },
+                        recipe: {
+                          type: 'object',
+                          nullable: true,
+                          description:
+                            'Solo en un ítem `recipe`: la receta vigente (no se copia). `availableInCatalog` ' +
+                            'es `false` si se dio de baja después de agregarla.',
+                          properties: {
+                            id: { type: 'string', format: 'uuid' },
+                            name: { type: 'string', example: 'Tarta de verduras' },
+                            availableInCatalog: { type: 'boolean' },
+                          },
+                        },
+                        originalText: { type: 'string', nullable: true },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      findings: {
+        type: 'array',
+        description:
+          'En el orden del plan: por comida, opción e ítem; dentro de un ítem, el no reconocido primero; ' +
+          'la composición al final de su opción.',
+        items: { $ref: '#/components/schemas/Finding' },
+      },
+      generation: {
+        type: 'object',
+        nullable: true,
+        description:
+          'Resumen de la generación que originó el plan (RF-41), o `null`. El contexto enviado y la ' +
+          'respuesta cruda quedan en la trazabilidad y no viajan.',
+        properties: {
+          provider: { type: 'string', example: 'fake' },
+          model: { type: 'string', example: 'fake-deterministic' },
+          templateVersion: { type: 'string', example: 'plan_proposal_v1' },
+          validationResult: {
+            type: 'string',
+            enum: ['no_findings', 'warnings', 'blocking'],
+            description: 'Resultado de validar la propuesta tal como llegó, antes de cualquier edición.',
+          },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+    },
+  },
+
   IaHealth: {
     type: 'object',
     properties: {
@@ -796,8 +1034,17 @@ const schemas = {
               },
               reason: {
                 type: 'string',
-                enum: ['timeout', 'unreachable', 'bad_status', 'bad_body'],
-                description: 'Por qué no se pudo usar el servicio de IA.',
+                enum: [
+                  'timeout',
+                  'unreachable',
+                  'bad_status',
+                  'bad_body',
+                  'provider_timeout',
+                  'provider_error',
+                  'invalid_output',
+                ],
+                description:
+                  'Por qué no se pudo usar el servicio de IA. Los tres últimos solo en la generación del plan.',
               },
             },
           },
@@ -1092,6 +1339,36 @@ const responses = {
       },
     },
   },
+
+  PlanGenerationUnavailable: {
+    description:
+      'La generación no se pudo completar y no se creó ningún plan (RNF-02). Es recuperable: se puede ' +
+      'reintentar. `reason`: `unreachable` (servicio caído), `timeout` (no respondió dentro de ' +
+      '`IA_GENERATION_TIMEOUT_MS`), `provider_timeout` y `provider_error` (falla del proveedor de IA), ' +
+      '`invalid_output` (la propuesta no respeta el contrato), `bad_status` / `bad_body` (respuesta ' +
+      'inesperada del servicio).',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        example: errorExample('IA_UNAVAILABLE', 'El servicio de IA no está disponible', { reason: 'provider_timeout' }),
+      },
+    },
+  },
+
+  PlanNotFound: {
+    description:
+      'El paciente o el plan no existen para el nutricionista autenticado: inexistentes, de otro ' +
+      'nutricionista, un plan de otro paciente o un id que no es UUID. La API no distingue los casos.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        examples: {
+          plan: { summary: 'Plan', value: errorExample('NOT_FOUND', 'Plan no encontrado') },
+          paciente: { summary: 'Paciente', value: errorExample('NOT_FOUND', 'Paciente no encontrado') },
+        },
+      },
+    },
+  },
 };
 
 const parameters = {
@@ -1135,6 +1412,13 @@ const parameters = {
     in: 'path',
     required: true,
     description: 'Id de la medición. Un valor que no sea un UUID devuelve 404, no 400.',
+    schema: { type: 'string', format: 'uuid' },
+  },
+  PlanId: {
+    name: 'planId',
+    in: 'path',
+    required: true,
+    description: 'Id del plan. Un valor que no sea un UUID devuelve 404, no 400.',
     schema: { type: 'string', format: 'uuid' },
   },
   RecipeId: {
