@@ -19,8 +19,9 @@ const FOODS = [
 
 const visible = (food, nutritionistId) => food.nutritionistId === null || food.nutritionistId === nutritionistId;
 
-// Repositorio fake en memoria con el mismo aislamiento que el real: todo filtra
-// por el nutricionista. Guarda las recetas con la forma que devuelve Prisma
+// Repositorio fake en memoria con el mismo aislamiento que el real: un
+// nutricionista ve las comunes (dueño null) y las suyas, y edita solo las
+// suyas. Guarda las recetas con la forma que devuelve Prisma
 // (ingredientes con su alimento, tipos como filas).
 function createFakeRecipeRepository() {
   const store = [];
@@ -44,28 +45,33 @@ function createFakeRecipeRepository() {
 
   return {
     store,
-    async findAllForNutritionist(nutritionistId, { mealType = null, includeUnavailable = false } = {}) {
+    async findVisible(nutritionistId, { mealType = null, includeUnavailable = false } = {}) {
       return store.filter(
         (recipe) =>
-          recipe.nutritionistId === nutritionistId &&
+          visible(recipe, nutritionistId) &&
           (includeUnavailable || recipe.availableInCatalog) &&
           (!mealType || recipe.mealTypes.some((row) => row.mealType === mealType)),
       );
     },
-    async findByIdForNutritionist(id, nutritionistId) {
-      return store.find((recipe) => recipe.id === id && recipe.nutritionistId === nutritionistId) || null;
+    async findVisibleById(id, nutritionistId) {
+      return store.find((recipe) => recipe.id === id && visible(recipe, nutritionistId)) || null;
     },
     async create(nutritionistId, data, ingredients, mealTypes) {
       const recipe = build(`receta-${nextId++}`, nutritionistId, data, ingredients, mealTypes);
       store.push(recipe);
       return recipe;
     },
-    async updateForNutritionist(id, nutritionistId, data, ingredients, mealTypes) {
+    async updateOwn(id, nutritionistId, data, ingredients, mealTypes) {
       const index = store.findIndex((recipe) => recipe.id === id && recipe.nutritionistId === nutritionistId);
       if (index === -1) return null;
       store[index] = build(id, nutritionistId, data, ingredients, mealTypes, store[index]);
       return store[index];
     },
+    upsertCommon: vi.fn(async (data, ingredients, mealTypes) => {
+      const recipe = build(`comun-${nextId++}`, null, data, ingredients, mealTypes);
+      store.push(recipe);
+      return recipe;
+    }),
   };
 }
 
@@ -74,6 +80,9 @@ function buildService({ conditions = [] } = {}) {
   const foodRepository = {
     async findVisibleById(id, nutritionistId) {
       return FOODS.find((food) => food.id === id && visible(food, nutritionistId)) || null;
+    },
+    async findCommonById(id) {
+      return FOODS.find((food) => food.id === id && food.nutritionistId === null) || null;
     },
   };
   const foodGroupRepository = { findAll: async () => GROUPS };
@@ -216,7 +225,7 @@ describe('recipe.service — aislamiento por nutricionista (RNF-05)', () => {
   it('el servicio no expone borrado: la baja es lógica', () => {
     const { service } = buildService();
 
-    expect(Object.keys(service).sort()).toEqual(['create', 'get', 'list', 'update']);
+    expect(Object.keys(service).sort()).toEqual(['create', 'get', 'list', 'update', 'upsertCommon']);
   });
 });
 
@@ -312,5 +321,89 @@ describe('recipe.service — filtro por condiciones del paciente (RF-28)', () =>
     });
     await expect(service.list('nutri-1', { patientId: 'no-existe' })).rejects.toMatchObject({ status: 404 });
     expect(patientConditionRepository.findAllForPatient).not.toHaveBeenCalled();
+  });
+});
+
+describe('recipe.service — recetas básicas comunes (T30)', () => {
+  // La común se carga como lo hace el seed: por el servicio.
+  async function seedCommon(service, overrides = {}) {
+    return service.upsertCommon({ ...ensalada, name: 'Ensalada básica', ...overrides });
+  }
+
+  it('una común es visible para los dos nutricionistas, en el listado y por id', async () => {
+    const { service } = buildService();
+    const common = await seedCommon(service);
+    await service.create('nutri-1', ensalada);
+
+    expect(names(await service.list('nutri-1'))).toEqual(['Ensalada básica', ensalada.name]);
+    expect(names(await service.list('nutri-2'))).toEqual(['Ensalada básica']);
+    expect(await service.get(common.id, 'nutri-1')).toMatchObject({ id: common.id, nutritionistId: null });
+    expect(await service.get(common.id, 'nutri-2')).toMatchObject({ id: common.id, nutritionistId: null });
+  });
+
+  it('una privada de otro nutricionista sigue dando 404 aunque haya comunes', async () => {
+    const { service } = buildService();
+    await seedCommon(service);
+    const own = await service.create('nutri-1', ensalada);
+
+    await expect(service.get(own.id, 'nutri-2')).rejects.toMatchObject({ status: 404, message: 'Receta no encontrada' });
+  });
+
+  it.each([
+    ['editarla', { name: 'Ensalada mía' }],
+    ['darla de baja', { availableInCatalog: false }],
+  ])('%s da 403 y la común no cambia', async (_label, changes) => {
+    const { service } = buildService();
+    const common = await seedCommon(service);
+
+    for (const nutritionistId of ['nutri-1', 'nutri-2']) {
+      await expect(service.update(common.id, nutritionistId, { ...ensalada, ...changes })).rejects.toMatchObject({
+        status: 403,
+        message: 'Las recetas comunes son de solo lectura',
+      });
+    }
+    expect(await service.get(common.id, 'nutri-1')).toMatchObject({ name: 'Ensalada básica', availableInCatalog: true });
+  });
+
+  it('RF-28 excluye una común con un ingrediente restringido, igual que a una propia', async () => {
+    const { service } = buildService({ conditions: [{ type: 'allergy', foodId: 'atun', foodGroupId: null }] });
+    await seedCommon(service);
+    await seedCommon(service, {
+      name: 'Arroz con tomate básico',
+      ingredients: [
+        { foodId: 'arroz', quantityDescription: null },
+        { foodId: 'tomate', quantityDescription: null },
+      ],
+    });
+    await service.create('nutri-1', ensalada);
+
+    expect(names(await service.list('nutri-1', { patientId: 'paciente-1' }))).toEqual(['Arroz con tomate básico']);
+  });
+
+  it.each([
+    ['un alimento privado', 'kefir-1', 'Una receta común solo lleva alimentos comunes'],
+    ['un alimento inexistente', 'no-existe', 'Una receta común solo lleva alimentos comunes'],
+    ['un alimento dado de baja', 'baja', 'El alimento está dado de baja'],
+  ])('una común con %s se rechaza con 400 en ingredients y no se guarda', async (_label, foodId, message) => {
+    const { service, recipeRepository } = buildService();
+
+    await expect(
+      seedCommon(service, { ingredients: [...ensalada.ingredients, { foodId, quantityDescription: null }] }),
+    ).rejects.toMatchObject({ status: 400, code: 'VALIDATION_ERROR', details: { fields: { ingredients: message } } });
+    expect(recipeRepository.upsertCommon).not.toHaveBeenCalled();
+    expect(recipeRepository.store).toHaveLength(0);
+  });
+
+  it('con ingredientes comunes, la guarda sin dueño', async () => {
+    const { service, recipeRepository } = buildService();
+
+    const common = await seedCommon(service);
+
+    expect(common.nutritionistId).toBeNull();
+    expect(recipeRepository.upsertCommon).toHaveBeenCalledWith(
+      expect.not.objectContaining({ ingredients: expect.anything() }),
+      ensalada.ingredients,
+      ensalada.mealTypes,
+    );
   });
 });

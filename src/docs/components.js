@@ -440,7 +440,7 @@ const schemas = {
     },
   },
 
-  // Recetas (T21; RF-27). Propias de cada nutricionista.
+  // Recetas (T21; RF-27). Básicas comunes (T30) y propias de cada nutricionista.
   RecipeInput: {
     type: 'object',
     required: ['name', 'mealTypes', 'ingredients'],
@@ -467,7 +467,7 @@ const schemas = {
 
   Recipe: {
     type: 'object',
-    description: 'Receta del nutricionista autenticado. El dueño no viaja.',
+    description: 'Receta básica común o propia del nutricionista autenticado. El dueño no viaja: va `own`.',
     properties: {
       id: { type: 'string', format: 'uuid' },
       name: recipeInputProperties.name,
@@ -482,6 +482,10 @@ const schemas = {
         description: 'Siempre `professional` por ahora: `ai_generated` llega con RF-39 (Incremento 3).',
       },
       availableInCatalog: { type: 'boolean', description: 'Disponible en el catálogo (baja lógica).' },
+      own: {
+        type: 'boolean',
+        description: '`true` si es propia del nutricionista autenticado (la puede editar); `false` si es una receta básica común.',
+      },
       mealTypes: recipeInputProperties.mealTypes,
       ingredients: {
         type: 'array',
@@ -1252,6 +1256,24 @@ const responses = {
           comun: {
             summary: 'La recomendación es común',
             value: errorExample('FORBIDDEN', 'Las recomendaciones comunes son de solo lectura'),
+          },
+          rol: { summary: 'El token no es de un nutricionista', value: forbiddenRoleExample },
+        },
+      },
+    },
+  },
+
+  CommonRecipeReadOnly: {
+    description:
+      'La receta es una básica común: ningún nutricionista la edita ni la da de baja. También ' +
+      'responde 403 un token de administrador.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        examples: {
+          comun: {
+            summary: 'La receta es común',
+            value: errorExample('FORBIDDEN', 'Las recetas comunes son de solo lectura'),
           },
           rol: { summary: 'El token no es de un nutricionista', value: forbiddenRoleExample },
         },

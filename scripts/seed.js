@@ -1,8 +1,9 @@
-const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const { FOOD_GROUPS, FOODS, PATHOLOGIES, RECOMMENDATIONS, RECOMMENDATION_TEXT } = require('./seed-data/catalogs');
-
-const prisma = new PrismaClient();
+const { COMMON_RECIPES } = require('./seed-data/recipes');
+// El mismo cliente que usa el servicio de recetas, para no abrir dos conexiones.
+const prisma = require('../src/lib/prisma');
+const recipeService = require('../src/services/recipe.service');
 
 // En local vale la contraseña de desarrollo. Con NODE_ENV=production (staging) es
 // obligatorio pasarla en SEED_PASSWORD: este archivo está en un repo público y el
@@ -436,6 +437,24 @@ async function seedPatient(nutritionistId, patient, catalog) {
   });
 }
 
+// Las recetas básicas comunes (T30) entran por el servicio, que rechaza un
+// ingrediente que no sea común, y se ponen al día por nombre. No se borran: a
+// diferencia de las privadas del seed, un plan de cualquier nutricionista puede
+// referenciarlas (option_item las restringe).
+async function seedCommonRecipes(catalog) {
+  for (const { ingredients, ...recipeData } of COMMON_RECIPES) {
+    await recipeService.upsertCommon({
+      ...recipeData,
+      ingredients: ingredients.map(({ food, quantityDescription }) => ({
+        foodId: requireId(catalog.foodIds, food, 'alimento'),
+        quantityDescription,
+      })),
+    });
+  }
+  console.log(`Seed: ${COMMON_RECIPES.length} recetas básicas comunes.`);
+}
+
+// Solo las privadas del nutricionista: el where por dueño no toca las comunes.
 async function seedRecipes(nutritionistId, recipes, catalog) {
   await prisma.recipe.deleteMany({ where: { nutritionistId } });
 
@@ -463,6 +482,7 @@ async function main() {
   }
   const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
   const catalog = await seedCatalogs();
+  await seedCommonRecipes(catalog);
 
   for (const { nutritionist: data, patients, recipes, privateFoods = [], privateRecommendations = [] } of SEED_DATA) {
     const nutritionist = await prisma.nutritionist.upsert({

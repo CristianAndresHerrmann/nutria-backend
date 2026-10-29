@@ -8,24 +8,26 @@ const { RECIPE_NOT_FOUND_MESSAGE } = require('../services/recipe.service');
 
 const router = Router();
 
-// Un id que no es UUID responde 404, igual que una receta inexistente o de otro
-// nutricionista.
+// Un id que no es UUID responde 404, igual que una receta inexistente o privada de
+// otro nutricionista.
 const byId = { notFoundOnInvalidParams: RECIPE_NOT_FOUND_MESSAGE };
 
-// No hay DELETE: la baja es lógica, con availableInCatalog = false en el PUT.
+// No hay DELETE: la baja es lógica, con availableInCatalog = false en el PUT. Las
+// recetas básicas comunes (T30) se leen, pero no se editan ni se dan de baja.
 
 /**
  * @openapi
  * /recipes:
  *   get:
  *     tags: [Recetas]
- *     summary: Lista las recetas del nutricionista autenticado
+ *     summary: Lista las recetas básicas comunes y las del nutricionista autenticado
  *     description: >
- *       Devuelve solo las recetas del nutricionista del token, ordenadas por nombre. Por defecto,
+ *       Devuelve las recetas básicas comunes y las del nutricionista del token (nunca las privadas
+ *       de otro), ordenadas por nombre; `own` las distingue. Por defecto,
  *       solo las disponibles en el catálogo. Con `patientId`, deja afuera las recetas con algún
  *       ingrediente comprendido en una alergia, intolerancia o rechazo del paciente, sea por el
  *       alimento o por su grupo, incluidos los subgrupos (RF-28). Las preferencias y las patologías
- *       no excluyen recetas.
+ *       no excluyen recetas. Los filtros se aplican igual a las comunes y a las propias.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -64,10 +66,10 @@ router.get('/recipes', requireNutritionist, validate({ query: listRecipesQuerySc
  * /recipes/{id}:
  *   get:
  *     tags: [Recetas]
- *     summary: Obtiene una receta del nutricionista autenticado
+ *     summary: Obtiene una receta básica común o del nutricionista autenticado
  *     description: >
- *       Incluye las dadas de baja. Una receta de otro nutricionista responde 404, igual que una
- *       inexistente.
+ *       Incluye las dadas de baja. Una receta privada de otro nutricionista responde 404, igual
+ *       que una inexistente.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -98,7 +100,8 @@ router.get(
  *     tags: [Recetas]
  *     summary: Da de alta una receta
  *     description: >
- *       La receta queda asociada al nutricionista del token, con origen `professional`, y nace
+ *       Siempre crea una receta privada: queda asociada al nutricionista del token (también al
+ *       duplicar una receta básica común desde el frontend), con origen `professional`, y nace
  *       disponible en el catálogo. Cada ingrediente es un alimento del catálogo (común o privado
  *       propio, vigente); el orden es la posición en la lista.
  *     security:
@@ -136,7 +139,8 @@ router.post(
  *       Reemplazo completo: un campo opcional omitido se guarda como `null`, y los ingredientes y
  *       tipos de comida se reemplazan por los que llegan. `availableInCatalog: false` la da de baja
  *       y `true` la reactiva; omitido, conserva el valor que tenía. Un alimento dado de baja que ya
- *       estaba en la receta se puede conservar, pero no agregar.
+ *       estaba en la receta se puede conservar, pero no agregar. Una receta básica común responde
+ *       403: es de solo lectura.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -154,7 +158,7 @@ router.post(
  *             schema: { $ref: '#/components/schemas/Recipe' }
  *       '400': { $ref: '#/components/responses/ValidationError' }
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
- *       '403': { $ref: '#/components/responses/ForbiddenRole' }
+ *       '403': { $ref: '#/components/responses/CommonRecipeReadOnly' }
  *       '404': { $ref: '#/components/responses/RecipeNotFound' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  */

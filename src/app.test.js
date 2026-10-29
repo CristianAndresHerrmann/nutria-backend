@@ -8,11 +8,13 @@ const foodGroupService = require('./services/foodGroup.service');
 const foodService = require('./services/food.service');
 const pathologyService = require('./services/pathology.service');
 const recipeService = require('./services/recipe.service');
+const { COMMON_READ_ONLY_MESSAGE } = require('./services/recipe.service');
 const recommendationService = require('./services/recommendation.service');
 const nutritionistAccountService = require('./services/nutritionistAccount.service');
 const nutritionistRepository = require('./repositories/nutritionist.repository');
 const openapiSpec = require('./docs/openapi');
 const { FORBIDDEN_ROLE_MESSAGE } = require('./middlewares/auth');
+const AppError = require('./utils/AppError');
 
 // Integración liviana: la app real levantada en un puerto efímero, sin base ni
 // servicio de IA. Cada caso corta antes de llegar a Prisma (ruta inexistente,
@@ -463,6 +465,20 @@ describe('rutas de recetas — autenticación, aislamiento y validación de punt
     expect(response.status).toBe(200);
     expect(response.json.mealTypes).toEqual(['lunch', 'dinner']);
     expect(response.json).not.toHaveProperty('nutritionistId');
+  });
+
+  it('marca la receta básica común con own: false y su edición responde 403 (T30)', async () => {
+    const spies = spyOnRecipeService();
+    spies.get.mockImplementation(async () => fakeRecipe(null));
+    spies.update.mockRejectedValue(new AppError(403, COMMON_READ_ONLY_MESSAGE));
+    const token = tokenFor('nutri-2');
+
+    const lectura = await request(`/recipes/${RECIPE_ID}`, { token });
+    const edicion = await request(`/recipes/${RECIPE_ID}`, { method: 'PUT', token, body: { ...body, availableInCatalog: false } });
+
+    expect(lectura.json.own).toBe(false);
+    expectUniformError(edicion, 403, 'FORBIDDEN');
+    expect(edicion.json.error.message).toBe(COMMON_READ_ONLY_MESSAGE);
   });
 
   it.each([

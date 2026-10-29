@@ -52,6 +52,12 @@ function createFoodRepository({ prisma: client }) {
     });
   }
 
+  // Solo un alimento común: es el único que puede ir en una receta común (T30),
+  // que ven todos los nutricionistas.
+  function findCommonById(id) {
+    return client.food.findFirst({ where: { id, nutritionistId: null } });
+  }
+
   // Siempre privado: el dueño es obligatorio. Los alimentos comunes los carga el
   // seed (y, más adelante, el administrador).
   function createPrivate(nutritionistId, { categories, ...data }) {
@@ -62,7 +68,7 @@ function createFoodRepository({ prisma: client }) {
     });
   }
 
-  return { findVisible, findAllVisible, findVisibleById, findVisibleByName, createPrivate };
+  return { findVisible, findAllVisible, findVisibleById, findVisibleByName, findCommonById, createPrivate };
 }
 
 module.exports = createFoodRepository({ prisma });
