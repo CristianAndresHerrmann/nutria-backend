@@ -6,6 +6,8 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ### Added
 
+- AUD-004: test de contrato backend ↔ IA contra una copia versionada del OpenAPI de `nutria-ia`. Compara los enums de Prisma, los campos y límites de la propuesta Zod, y los topes del catálogo y textos de contexto enviados. Corre en la suite unitaria sin necesitar el servicio de IA ni el otro repo.
+
 - Recetas básicas comunes (T30; RF-27, RF-28; DA-34, modifica DA-15), con el mismo criterio que las recomendaciones comunes. Origen, criterios y pendientes en `docs/recetas-basicas.md` y `docs/decisiones/recetas-comunes.md` del repo raíz.
   - Migración `recetas_comunes`: `recipe.nutritionist_id` pasa a nullable (null = común). La FK queda en `RESTRICT`, explícito en el schema.
   - `GET /recipes` devuelve las comunes y las propias, con los filtros por tipo de comida y por condiciones del paciente (RF-28) aplicados igual a las dos. `GET /recipes/:id` muestra una común; una privada de otro nutricionista sigue dando `404`.

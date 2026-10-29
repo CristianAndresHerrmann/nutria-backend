@@ -207,6 +207,13 @@ valida el destino antes de ejecutar `prisma migrate reset --force --skip-seed`.
 Cada test limpia las tablas y crea sus fixtures ficticias; el seed se verifica en
 una prueba aparte. La suite unitaria sigue sin necesitar Postgres.
 
+La suite unitaria incluye `src/schemas/iaProposal.contract.test.js` (AUD-004):
+compara los enums de Prisma y las restricciones de la propuesta Zod con la copia
+versionada del OpenAPI de IA en `src/schemas/fixtures/ia.openapi.json`, además de
+los topes del catálogo y los textos de contexto enviados. Ante un cambio
+intencional del contrato, ejecutar `npm run contract:ia:update` desde `nutria/`
+y revisar las pruebas de ambos repos; el test no actualiza la copia solo.
+
 ## Staging
 
 Staging corre en una VM de OCI (Always Free, ARM) con este mismo compose más
