@@ -382,13 +382,18 @@ enum RecipeOrigin {
   @@map("recipe_origin")
 }
 
-// Receta (RF-27). Pertenece a un nutricionista (RNF-05). CHECK en la migración:
-// timeMinutes > 0. originPlanId (plan_origen_id del Anexo A, T32) es el plan para el
-// que se generó; el servicio controla que sea del mismo nutricionista.
+// Receta (RF-27). Como los alimentos y las recomendaciones (T30, DA-34):
+// nutritionistId null es una receta básica común (la carga el seed, solo con
+// ingredientes comunes, y nadie la edita desde la API); con valor es privada de
+// ese nutricionista (RNF-05). onDelete Restrict explícito: con la relación
+// opcional, el default de Prisma (SetNull) convertiría las privadas en comunes.
+// CHECK en la migración: timeMinutes > 0. originPlanId (plan_origen_id del
+// Anexo A, T32) es el plan para el que se generó; el servicio controla que sea
+// del mismo nutricionista.
 model Recipe {
   id                 String         @id @default(uuid()) @db.Uuid
-  nutritionistId     String         @map("nutritionist_id") @db.Uuid
-  nutritionist       Nutritionist   @relation(fields: [nutritionistId], references: [id])
+  nutritionistId     String?        @map("nutritionist_id") @db.Uuid
+  nutritionist       Nutritionist?  @relation(fields: [nutritionistId], references: [id], onDelete: Restrict)
   originPlanId       String?        @map("origin_plan_id") @db.Uuid
   originPlan         Plan?          @relation(fields: [originPlanId], references: [id], onDelete: SetNull)
   name               String

@@ -25,6 +25,13 @@ function assertNutritionistId(nutritionistId) {
   }
 }
 
+// Un nutricionista ve las recetas básicas comunes (nutritionistId null) y las
+// suyas (T30), como los alimentos y las recomendaciones.
+function visibleTo(nutritionistId) {
+  assertNutritionistId(nutritionistId);
+  return { OR: [{ nutritionistId: null }, { nutritionistId }] };
+}
+
 // El orden de cada ingrediente es su posición en la lista.
 function ingredientRows(ingredients) {
   return ingredients.map(({ foodId, quantityDescription }, index) => ({
@@ -38,25 +45,35 @@ function mealTypeRows(mealTypes) {
   return mealTypes.map((mealType) => ({ mealType }));
 }
 
+// Los ingredientes y tipos se borran antes de recrearlos, para no chocar con el
+// único (recipe_id, order).
+async function replaceChildren(tx, recipeId, ingredients, mealTypes) {
+  await tx.recipeIngredient.deleteMany({ where: { recipeId } });
+  await tx.recipeMealType.deleteMany({ where: { recipeId } });
+  await tx.recipeIngredient.createMany({
+    data: ingredientRows(ingredients).map((row) => ({ ...row, recipeId })),
+  });
+  await tx.recipeMealType.createMany({ data: mealTypeRows(mealTypes).map((row) => ({ ...row, recipeId })) });
+}
+
 function createRecipeRepository({ prisma: client }) {
   // Una receta con varios tipos de comida aparece al filtrar por cualquiera de
   // ellos. Sin includeUnavailable, las dadas de baja no se ofrecen.
-  function findAllForNutritionist(nutritionistId, { mealType = null, includeUnavailable = false } = {}) {
-    assertNutritionistId(nutritionistId);
-    const where = { nutritionistId };
+  function findVisible(nutritionistId, { mealType = null, includeUnavailable = false } = {}) {
+    const where = visibleTo(nutritionistId);
     if (!includeUnavailable) where.availableInCatalog = true;
     if (mealType) where.mealTypes = { some: { mealType } };
 
     return client.recipe.findMany({ where, include: RECIPE_INCLUDE, orderBy: [{ name: 'asc' }, { id: 'asc' }] });
   }
 
-  function findByIdForNutritionist(id, nutritionistId, db = client) {
-    assertNutritionistId(nutritionistId);
-    return db.recipe.findFirst({ where: { id, nutritionistId }, include: RECIPE_INCLUDE });
+  function findVisibleById(id, nutritionistId, db = client) {
+    return db.recipe.findFirst({ where: { id, ...visibleTo(nutritionistId) }, include: RECIPE_INCLUDE });
   }
 
-  // La receta, sus ingredientes y sus tipos se crean juntos: si falla uno, no
-  // queda ninguno. El origen (professional) lo pone la base.
+  // Siempre privada: el dueño es obligatorio. La receta, sus ingredientes y sus
+  // tipos se crean juntos: si falla uno, no queda ninguno. El origen
+  // (professional) lo pone la base.
   function create(nutritionistId, data, ingredients, mealTypes) {
     assertNutritionistId(nutritionistId);
     return client.recipe.create({
@@ -70,28 +87,44 @@ function createRecipeRepository({ prisma: client }) {
     });
   }
 
-  // Reemplazo completo en una transacción. updateMany lleva el aislamiento en el
-  // where: una receta de otro nutricionista afecta 0 filas y sus ingredientes no
-  // se tocan. Los ingredientes y tipos se borran antes de recrearlos, para no
-  // chocar con el único (recipe_id, order).
-  function updateForNutritionist(id, nutritionistId, data, ingredients, mealTypes) {
+  // Reemplazo completo en una transacción. updateMany lleva el dueño en el
+  // where: una común o una receta de otro nutricionista afectan 0 filas y sus
+  // ingredientes no se tocan.
+  function updateOwn(id, nutritionistId, data, ingredients, mealTypes) {
     assertNutritionistId(nutritionistId);
     return client.$transaction(async (tx) => {
       const { count } = await tx.recipe.updateMany({ where: { id, nutritionistId }, data });
       if (count === 0) return null;
 
-      await tx.recipeIngredient.deleteMany({ where: { recipeId: id } });
-      await tx.recipeMealType.deleteMany({ where: { recipeId: id } });
-      await tx.recipeIngredient.createMany({
-        data: ingredientRows(ingredients).map((row) => ({ ...row, recipeId: id })),
-      });
-      await tx.recipeMealType.createMany({ data: mealTypeRows(mealTypes).map((row) => ({ ...row, recipeId: id })) });
-
-      return findByIdForNutritionist(id, nutritionistId, tx);
+      await replaceChildren(tx, id, ingredients, mealTypes);
+      return findVisibleById(id, nutritionistId, tx);
     });
   }
 
-  return { findAllForNutritionist, findByIdForNutritionist, create, updateForNutritionist };
+  // Receta básica común (T30): la carga el seed. Sin único en la base (null no
+  // choca en un único), se busca por nombre como los alimentos y las
+  // recomendaciones comunes. Nunca se borra: un plan puede referenciarla.
+  function upsertCommon(data, ingredients, mealTypes) {
+    return client.$transaction(async (tx) => {
+      const existing = await tx.recipe.findFirst({ where: { name: data.name, nutritionistId: null } });
+      if (!existing) {
+        return tx.recipe.create({
+          data: {
+            ...data,
+            ingredients: { create: ingredientRows(ingredients) },
+            mealTypes: { create: mealTypeRows(mealTypes) },
+          },
+          include: RECIPE_INCLUDE,
+        });
+      }
+
+      await tx.recipe.update({ where: { id: existing.id }, data });
+      await replaceChildren(tx, existing.id, ingredients, mealTypes);
+      return tx.recipe.findFirst({ where: { id: existing.id }, include: RECIPE_INCLUDE });
+    });
+  }
+
+  return { findVisible, findVisibleById, create, updateOwn, upsertCommon };
 }
 
 module.exports = createRecipeRepository({ prisma });

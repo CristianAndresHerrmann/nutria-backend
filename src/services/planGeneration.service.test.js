@@ -82,7 +82,7 @@ function setup({ conditions = [], postJson, recordFailedGeneration } = {}) {
     patientConditionRepository: { findAllForPatient: async () => conditions },
     foodRepository: { findAllVisible: async () => FOODS },
     foodGroupRepository: { findAll: async () => GROUPS },
-    recipeRepository: { findAllForNutritionist: async () => [] },
+    recipeRepository: { findVisible: async () => [] },
   });
   const planRepository = {
     createGenerated: vi.fn(async (nutritionistId, data) => ({ id: 'plan-1', nutritionistId, ...data })),

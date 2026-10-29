@@ -6,6 +6,15 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ### Added
 
+- Recetas básicas comunes (T30; RF-27, RF-28; DA-34, modifica DA-15), con el mismo criterio que las recomendaciones comunes. Origen, criterios y pendientes en `docs/recetas-basicas.md` y `docs/decisiones/recetas-comunes.md` del repo raíz.
+  - Migración `recetas_comunes`: `recipe.nutritionist_id` pasa a nullable (null = común). La FK queda en `RESTRICT`, explícito en el schema.
+  - `GET /recipes` devuelve las comunes y las propias, con los filtros por tipo de comida y por condiciones del paciente (RF-28) aplicados igual a las dos. `GET /recipes/:id` muestra una común; una privada de otro nutricionista sigue dando `404`.
+  - `PUT /recipes/:id` sobre una común (editarla o darla de baja) responde `403` con "Las recetas comunes son de solo lectura". `POST /recipes` sigue creando recetas privadas del nutricionista del token.
+  - La respuesta de una receta trae `own` (`false` en las comunes) en lugar del dueño.
+  - Una receta común solo lleva alimentos comunes: `recipe.service.upsertCommon` (sin ruta HTTP) rechaza un ingrediente privado o inexistente con `400` en `details.fields.ingredients`.
+  - El plan y la generación ven las recetas comunes como candidatas, porque leen el mismo listado.
+  - Seed: 17 recetas básicas con origen V (`scripts/seed-data/recipes.js`): 7 de desayuno y merienda y 10 de almuerzo y cena, 6 sin cocción. Se cargan por el servicio, se ponen al día por nombre y no se borran (un plan puede referenciarlas). Las recetas privadas de ejemplo se siguen reemplazando por nutricionista. `scripts/seed.js` usa el cliente de Prisma de `src/lib/prisma`.
+  - `scripts/seed-data/recipes.test.js`: controla los datos de las recetas (ingredientes del catálogo común sin repetir, sin sal, azúcar, dulces, caldo, salsa de soja ni fiambres, al menos 2 recetas y 2 sin cocción por tipo de comida, y la composición esperada de cada comida).
 - Catálogo base de alimentos (T28; RF-24, RF-25; DA-21 y DA-32). El seed pasa de 15 grupos y 31 alimentos a 12 grupos raíz, 32 subgrupos y 231 alimentos comunes, todos con origen V (propuesta del desarrollador a partir de las GAPA, pendiente de validación con la nutricionista). Origen, criterios y pendientes en `docs/catalogo-de-alimentos.md` del repo raíz.
   - Categoría `complementary` en `food_category_type` (migración `agrega_categoria_complementary`) para los 38 alimentos sin aporte a la composición: azúcares, dulces, condimentos, grasas sólidas y agua. La composición esperada no la exige en ninguna comida.
   - `scripts/seed-data/catalogs.test.js`: prueba de los datos del seed (nombres únicos sin distinguir mayúsculas, grupos existentes y hoja, categorías válidas).

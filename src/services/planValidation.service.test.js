@@ -56,7 +56,7 @@ function setup({ conditions = [LACTOSE_INTOLERANCE] } = {}) {
   const planRepository = createFakePlanRepository();
   const patientConditionRepository = { findAllForPatient: vi.fn(async () => conditions) };
   const foodRepository = { findAllVisible: vi.fn(async () => FOODS) };
-  const recipeRepository = { findAllForNutritionist: vi.fn(async () => []) };
+  const recipeRepository = { findVisible: vi.fn(async () => []) };
   const service = createPlanValidationService({
     planRepository,
     patientConditionRepository,
@@ -88,7 +88,7 @@ describe('planValidation.service.revalidate (RF-46)', () => {
     await service.revalidate('p-1', 'plan-1', 'nutri-1');
 
     expect(foodRepository.findAllVisible).toHaveBeenCalledWith('nutri-1');
-    expect(recipeRepository.findAllForNutritionist).toHaveBeenCalledWith('nutri-1', { includeUnavailable: true });
+    expect(recipeRepository.findVisible).toHaveBeenCalledWith('nutri-1', { includeUnavailable: true });
   });
 
   it('revalidar reemplaza los hallazgos, no los acumula', async () => {

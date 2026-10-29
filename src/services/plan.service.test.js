@@ -54,7 +54,7 @@ function setup({ conditions = [] } = {}) {
     patientConditionRepository: { findAllForPatient: async () => conditions },
     foodRepository: { findAllVisible: async () => FOODS },
     foodGroupRepository: { findAll: async () => GROUPS },
-    recipeRepository: { findAllForNutritionist: async () => RECIPES },
+    recipeRepository: { findVisible: async () => RECIPES },
   });
   const patientRepository = {
     findByIdForNutritionist: async (id, nutritionistId) => (id === 'p-1' && nutritionistId === 'nutri-1' ? { id } : null),

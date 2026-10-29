@@ -1,9 +1,9 @@
 const { serializeRecipe } = require('./recipe.serializer');
 
+const ingredients = [{ order: 1, quantityDescription: '1 taza', food: { id: 'arroz', name: 'Arroz', active: true, foodGroupId: 'g' } }];
+
 describe('recipe.serializer', () => {
   it('aplana los tipos de comida y no expone el dueño', () => {
-    const ingredients = [{ order: 1, quantityDescription: '1 taza', food: { id: 'arroz', name: 'Arroz', active: true, foodGroupId: 'g' } }];
-
     const result = serializeRecipe({
       id: 'r-1',
       name: 'Ensalada',
@@ -19,8 +19,16 @@ describe('recipe.serializer', () => {
       name: 'Ensalada',
       origin: 'professional',
       availableInCatalog: true,
+      own: true,
       ingredients,
       mealTypes: ['lunch', 'dinner'],
     });
+  });
+
+  it('marca una receta básica común como no propia (T30)', () => {
+    const result = serializeRecipe({ id: 'r-2', name: 'Licuado', nutritionistId: null, ingredients, mealTypes: [] });
+
+    expect(result.own).toBe(false);
+    expect(result).not.toHaveProperty('nutritionistId');
   });
 });

@@ -51,7 +51,7 @@ function createPlanValidationService({
       patientConditions.findAllForPatient(patientId, nutritionistId),
       foods.findAllVisible(nutritionistId),
       groups.findAll(),
-      recipes.findAllForNutritionist(nutritionistId, { includeUnavailable: true }),
+      recipes.findVisible(nutritionistId, { includeUnavailable: true }),
     ]);
     return { conditions, catalog: { foods: allFoods, groups: allGroups, recipes: allRecipes } };
   }
