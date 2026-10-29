@@ -105,4 +105,4 @@ function validationResult(findings) {
   return AiValidationResult.no_findings;
 }
 
-module.exports = { validatePlan, validationResult };
+module.exports = { validatePlan, validationResult, MEAL_LABELS };

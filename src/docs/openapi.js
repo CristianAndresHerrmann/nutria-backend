@@ -62,6 +62,13 @@ const openapiSpec = swaggerJsdoc({
           'de solo lectura, y las suyas privadas, que crea, edita y da de baja lógicamente. Las ' +
           'recomendaciones de hábitos de cada paciente no van acá (RF-31).',
       },
+      {
+        name: 'Planes',
+        description:
+          'Planes alimentarios de los pacientes: generación asistida por IA del borrador, lectura y ' +
+          'edición. Todo borrador se valida con el motor de reglas determinístico al guardarlo y al ' +
+          'abrirlo; la propuesta de la IA es siempre editable por el profesional.',
+      },
     ],
     components,
   },

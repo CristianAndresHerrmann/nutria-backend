@@ -11,6 +11,7 @@ const foodRoutes = require('./food.routes');
 const pathologyRoutes = require('./pathology.routes');
 const recipeRoutes = require('./recipe.routes');
 const recommendationRoutes = require('./recommendation.routes');
+const planRoutes = require('./plan.routes');
 const adminRoutes = require('./admin.routes');
 
 function createRouter(nodeEnv) {
@@ -27,6 +28,7 @@ function createRouter(nodeEnv) {
   router.use(pathologyRoutes);
   router.use(recipeRoutes);
   router.use(recommendationRoutes);
+  router.use(planRoutes);
   router.use(adminRoutes);
 
   // La documentación interactiva es una herramienta de desarrollo, no parte de la
