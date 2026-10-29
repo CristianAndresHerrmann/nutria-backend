@@ -348,6 +348,9 @@ enum FoodCategoryType {
   vegetable
   healthy_fat
   infusion
+  // Alimentos sin aporte a la composición esperada: azúcar, sal, condimentos,
+  // grasas sólidas, agua (DA-32). Nunca es una categoría que una comida exija.
+  complementary
 
   @@map("food_category_type")
 }

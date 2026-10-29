@@ -28,7 +28,7 @@ const SEED_PASSWORD =
 const SEED_DATA = [
   {
     nutritionist: { name: 'Camila Ríos', email: 'nutricionista@nutria.com' },
-    privateFoods: [{ name: 'Kéfir', group: 'Lácteos', categories: ['protein'] }],
+    privateFoods: [{ name: 'Kéfir', group: 'Leches y yogures', categories: ['protein'] }],
     privateRecommendations: [
       { pathology: 'Celiaquía', title: 'Ejemplo ficticio: recomendación propia de Camila', text: RECOMMENDATION_TEXT },
       {
@@ -326,7 +326,7 @@ function toDate(value) {
 async function seedCatalogs() {
   const groupIds = {};
   for (const { name, parent } of FOOD_GROUPS) {
-    const parentId = parent ? groupIds[parent] : null;
+    const parentId = parent ? requireId(groupIds, parent, 'grupo padre') : null;
     const group = await prisma.foodGroup.upsert({
       where: { name },
       update: { parentId },
@@ -340,7 +340,7 @@ async function seedCatalogs() {
   const foodIds = {};
   for (const { name, group, categories } of FOODS) {
     const existing = await prisma.food.findFirst({ where: { name, nutritionistId: null } });
-    const data = { foodGroupId: groupIds[group], active: true };
+    const data = { foodGroupId: requireId(groupIds, group, 'grupo'), active: true };
     const food = existing
       ? await prisma.food.update({ where: { id: existing.id }, data })
       : await prisma.food.create({ data: { ...data, name } });

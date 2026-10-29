@@ -74,7 +74,10 @@ const foodCategoriesField = {
   minItems: 1,
   uniqueItems: true,
   description: 'Categorías nutricionales (RF-25): una o más, sin repetir.',
-  items: { type: 'string', enum: ['protein', 'carbohydrate', 'fiber', 'vegetable', 'healthy_fat', 'infusion'] },
+  items: {
+    type: 'string',
+    enum: ['protein', 'carbohydrate', 'fiber', 'vegetable', 'healthy_fat', 'infusion', 'complementary'],
+  },
   example: ['protein', 'healthy_fat'],
 };
 
@@ -924,7 +927,7 @@ const schemas = {
                           type: 'array',
                           items: {
                             type: 'string',
-                            enum: ['protein', 'carbohydrate', 'fiber', 'vegetable', 'healthy_fat', 'infusion'],
+                            enum: ['protein', 'carbohydrate', 'fiber', 'vegetable', 'healthy_fat', 'infusion', 'complementary'],
                           },
                         },
                         foodGroupId: { type: 'string', format: 'uuid', nullable: true },
