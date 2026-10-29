@@ -14,7 +14,7 @@ RUN npx prisma generate
 
 COPY src ./src
 COPY scripts ./scripts
-COPY vitest.config.js ./
+COPY vitest*.config.js ./
 
 EXPOSE 3000
 

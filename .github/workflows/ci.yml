@@ -81,3 +81,8 @@ jobs:
       # Sin push: solo valida que el Dockerfile construye.
       - name: Build de la imagen
         run: docker build -t nutria-backend:ci .
+
+      # La misma suite que Compose en local; deriva nutria_test desde DATABASE_URL.
+      # host permite llegar al servicio Postgres publicado por el runner Linux.
+      - name: Integración contra Postgres (Docker)
+        run: docker run --rm --network host -e DATABASE_URL nutria-backend:ci npm run test:integration

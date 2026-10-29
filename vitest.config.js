@@ -4,6 +4,7 @@ module.exports = defineConfig({
   test: {
     environment: 'node',
     globals: true,
+    exclude: ['**/node_modules/**', '**/.git/**', '**/*.int.test.js'],
     env: {
       JWT_SECRET: 'test-secret',
       JWT_EXPIRES_IN: '1h',
@@ -22,6 +23,7 @@ module.exports = defineConfig({
         // unitaria (requerirían una base/servidor real para decir algo útil).
         'src/server.js',
         'src/lib/**',
+        'src/test/**',
       ],
     },
   },

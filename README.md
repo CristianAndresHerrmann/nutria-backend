@@ -139,6 +139,7 @@ Para bajar el stack: `npm run docker:down` (equivalente a `docker compose down`)
 | `npm run create-admin` | `node scripts/create-admin.js` | Crea o pone al día la cuenta de administrador con `ADMIN_EMAIL` y `ADMIN_PASSWORD`. |
 | `npm run studio` | `prisma studio` | Abre Prisma Studio para inspeccionar los datos. |
 | `npm run test` | `vitest run` | Corre la suite de tests una vez. |
+| `npm run test:integration` | `node scripts/run-integration-tests.js` | Recrea solo `nutria_test` con las migraciones, sin seed, y ejecuta `*.int.test.js` en serie contra Postgres real. Desde `nutria/`: `npm run test:backend:integration` (Docker). |
 | `npm run test:watch` | `vitest` | Modo watch, para iterar mientras se escribe un test. |
 | `npm run test:coverage` | `vitest run --coverage` | Tests + reporte de cobertura (terminal, `coverage/index.html` y `coverage/lcov.info`). |
 
@@ -198,6 +199,13 @@ Compose; o con el script equivalente desde la carpeta raíz `nutria/`):
 | `npm test` | `npm run test:backend` desde `nutria/`. |
 | `npm audit --audit-level=high` | `docker compose run --build --rm --no-deps backend npm audit --audit-level=high` |
 | `docker build` (sin push) | `docker compose build backend` |
+| Integración contra Postgres dentro de la imagen | `npm run test:backend:integration` desde `nutria/`. |
+
+La integración deriva una conexión a `nutria_test` desde `DATABASE_URL`, o acepta
+`TEST_DATABASE_URL` si apunta a esa misma base y al schema `public`. El runner
+valida el destino antes de ejecutar `prisma migrate reset --force --skip-seed`.
+Cada test limpia las tablas y crea sus fixtures ficticias; el seed se verifica en
+una prueba aparte. La suite unitaria sigue sin necesitar Postgres.
 
 ## Staging
 
