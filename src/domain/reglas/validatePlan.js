@@ -33,6 +33,7 @@ const CATEGORY_LABELS = {
   vegetable: 'verdura',
   healthy_fat: 'grasa saludable',
   infusion: 'infusión',
+  complementary: 'complementario',
 };
 
 const byOrder = (a, b) => a.order - b.order;

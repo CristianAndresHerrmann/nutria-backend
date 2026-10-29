@@ -6,6 +6,11 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ### Added
 
+- Catálogo base de alimentos (T28; RF-24, RF-25; DA-21 y DA-32). El seed pasa de 15 grupos y 31 alimentos a 12 grupos raíz, 32 subgrupos y 231 alimentos comunes, todos con origen V (propuesta del desarrollador a partir de las GAPA, pendiente de validación con la nutricionista). Origen, criterios y pendientes en `docs/catalogo-de-alimentos.md` del repo raíz.
+  - Categoría `complementary` en `food_category_type` (migración `agrega_categoria_complementary`) para los 38 alimentos sin aporte a la composición: azúcares, dulces, condimentos, grasas sólidas y agua. La composición esperada no la exige en ninguna comida.
+  - `scripts/seed-data/catalogs.test.js`: prueba de los datos del seed (nombres únicos sin distinguir mayúsculas, grupos existentes y hoja, categorías válidas).
+  - `scripts/seed.js` falla con un mensaje claro si un alimento o un grupo referencia un grupo que no existe, en vez de guardarlo sin grupo.
+  - Kéfir, el alimento privado de ejemplo, pasa al grupo `Leches y yogures`.
 - Modelo de datos del Incremento 2 (T14), en la migración `20261014203321_agrega_datos_clinicos_consultas_y_catalogos`. `schema.prisma` pasa a ser el modelo lógico vigente de los Incrementos 1 y 2. Lo que se agrega:
   - **Paciente**, con todas las columnas nuevas opcionales (RNF-03, RNF-09): antecedentes y medicación (RF-04); tratamiento externo (RF-05); hábitos en cinco campos (actividad física, tabaco, alcohol, horarios de comida y de sueño, RF-06); contexto de cocina, con `cooks` agregado al Anexo A (RF-08); comidas y equipamiento fuera del hogar (RF-09); ocupación y contexto laboral (RF-10); patrones de ingesta (RF-14).
   - **Pacientes y consultas**: `pathology`, `patient_condition`, `consultation`, `measurement` (antropometría y laboratorio en una sola tabla, con `detail` para precisar el tipo) y `prescribed_habit` (consulta que lo establece y consulta que lo evalúa).
