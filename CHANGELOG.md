@@ -6,6 +6,8 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ### Added
 
+- AUD-005: los cuerpos de request de OpenAPI se generan desde los schemas Zod de las rutas, conservando OpenAPI 3.0, los nombres de componentes, las descripciones y los ejemplos. El adaptador contempla los opcionales normalizados a null y los límites aplicados después de normalizar texto. Las reglas cruzadas siguen descritas explícitamente. Las respuestas, errores y parámetros conservan sus definiciones.
+
 - AUD-004: test de contrato backend ↔ IA contra una copia versionada del OpenAPI de `nutria-ia`. Compara los enums de Prisma, los campos y límites de la propuesta Zod, y los topes del catálogo y textos de contexto enviados. Corre en la suite unitaria sin necesitar el servicio de IA ni el otro repo.
 
 - Recetas básicas comunes (T30; RF-27, RF-28; DA-34, modifica DA-15), con el mismo criterio que las recomendaciones comunes. Origen, criterios y pendientes en `docs/recetas-basicas.md` y `docs/decisiones/recetas-comunes.md` del repo raíz.

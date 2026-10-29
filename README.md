@@ -214,6 +214,16 @@ los topes del catálogo y los textos de contexto enviados. Ante un cambio
 intencional del contrato, ejecutar `npm run contract:ia:update` desde `nutria/`
 y revisar las pruebas de ambos repos; el test no actualiza la copia solo.
 
+Los cuerpos de entrada de OpenAPI se generan al cargar la documentación desde
+los validadores Zod (`src/docs/requestSchemas.js`, AUD-005). Al agregar uno,
+registrarlo en ese módulo y referenciar su nombre desde la ruta. Las descripciones,
+ejemplos, formatos de presentación y restricciones personalizadas no inferibles
+viven en `requestAnnotations.json`; los tipos, campos, enums y límites se derivan
+de Zod. Los topes de texto describen el valor después de normalizar espacios.
+Las reglas cruzadas, las fechas no futuras y el límite de contraseña en bytes se
+documentan en texto y se verifican con los tests de los validadores. Las respuestas,
+errores y parámetros siguen en `src/docs/components.js`.
+
 ## Staging
 
 Staging corre en una VM de OCI (Always Free, ARM) con este mismo compose más
