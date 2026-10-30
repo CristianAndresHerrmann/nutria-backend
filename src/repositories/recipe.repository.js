@@ -101,6 +101,19 @@ function createRecipeRepository({ prisma: client }) {
     });
   }
 
+  // Solo escribe la disponibilidad; no reemplaza ingredientes ni tipos de comida.
+  function setAvailabilityOwn(id, nutritionistId, availableInCatalog) {
+    assertNutritionistId(nutritionistId);
+    return client.$transaction(async (tx) => {
+      const { count } = await tx.recipe.updateMany({
+        where: { id, nutritionistId },
+        data: { availableInCatalog },
+      });
+      if (count === 0) return null;
+      return findVisibleById(id, nutritionistId, tx);
+    });
+  }
+
   // Receta básica común (T30): la carga el seed. Sin único en la base (null no
   // choca en un único), se busca por nombre como los alimentos y las
   // recomendaciones comunes. Nunca se borra: un plan puede referenciarla.
@@ -124,7 +137,7 @@ function createRecipeRepository({ prisma: client }) {
     });
   }
 
-  return { findVisible, findVisibleById, create, updateOwn, upsertCommon };
+  return { findVisible, findVisibleById, create, updateOwn, setAvailabilityOwn, upsertCommon };
 }
 
 module.exports = createRecipeRepository({ prisma });

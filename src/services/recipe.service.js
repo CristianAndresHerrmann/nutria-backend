@@ -21,7 +21,7 @@ function ingredientsError(message) {
 // da de alta solo privadas y edita o da de baja solo las suyas (T30, mismo
 // criterio que las recomendaciones). Una privada de otro da el mismo 404 que
 // una inexistente; una común sí la ve, así que editarla da 403. No hay borrado:
-// la baja es lógica (availableInCatalog = false) y se hace con el PUT. El
+// la baja es lógica (availableInCatalog = false), por PATCH o al editar con PUT. El
 // origen es siempre professional en este incremento; ai_generated llega con
 // RF-39.
 function createRecipeService({
@@ -98,6 +98,15 @@ function createRecipeService({
 
       const fields = availableInCatalog === undefined ? data : { ...data, availableInCatalog };
       const updated = await repository.updateOwn(id, nutritionistId, fields, ingredients, mealTypes);
+      if (!updated) throw new AppError(404, RECIPE_NOT_FOUND_MESSAGE);
+      return updated;
+    },
+
+    async setAvailability(id, nutritionistId, { availableInCatalog }) {
+      const previous = await findVisible(id, nutritionistId);
+      if (previous.nutritionistId === null) throw new AppError(403, COMMON_READ_ONLY_MESSAGE);
+
+      const updated = await repository.setAvailabilityOwn(id, nutritionistId, availableInCatalog);
       if (!updated) throw new AppError(404, RECIPE_NOT_FOUND_MESSAGE);
       return updated;
     },

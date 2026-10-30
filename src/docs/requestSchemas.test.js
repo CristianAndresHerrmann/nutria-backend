@@ -105,6 +105,14 @@ describe('cuerpos OpenAPI derivados de Zod (AUD-005)', () => {
     }
   });
 
+  it('el PATCH de receta documenta solo la disponibilidad obligatoria y sin campos extra', () => {
+    expect(requestSchemas.RecipeAvailabilityInput).toMatchObject({
+      type: 'object', additionalProperties: false, required: ['availableInCatalog'],
+      properties: { availableInCatalog: { type: 'boolean' } },
+    });
+    expect(Object.keys(requestSchemas.RecipeAvailabilityInput.properties)).toEqual(['availableInCatalog']);
+  });
+
   it('todas las operaciones con body referencian un schema generado', () => {
     let bodies = 0;
     for (const operations of Object.values(spec.paths)) {

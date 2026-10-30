@@ -3,7 +3,7 @@ const recipeController = require('../controllers/recipe.controller');
 const { requireNutritionist } = require('../middlewares/auth');
 const validate = require('../middlewares/validate');
 const { emptyQuerySchema, catalogIdParamsSchema } = require('../schemas/common.schema');
-const { createRecipeSchema, updateRecipeSchema, listRecipesQuerySchema } = require('../schemas/recipe.schema');
+const { createRecipeSchema, updateRecipeSchema, setRecipeAvailabilitySchema, listRecipesQuerySchema } = require('../schemas/recipe.schema');
 const { RECIPE_NOT_FOUND_MESSAGE } = require('../services/recipe.service');
 
 const router = Router();
@@ -12,7 +12,7 @@ const router = Router();
 // otro nutricionista.
 const byId = { notFoundOnInvalidParams: RECIPE_NOT_FOUND_MESSAGE };
 
-// No hay DELETE: la baja es lógica, con availableInCatalog = false en el PUT. Las
+// No hay DELETE: la baja es lógica, con availableInCatalog = false en PATCH o PUT. Las
 // recetas básicas comunes (T30) se leen, pero no se editan ni se dan de baja.
 
 /**
@@ -167,6 +167,45 @@ router.put(
   requireNutritionist,
   validate({ params: catalogIdParamsSchema, query: emptyQuerySchema, body: updateRecipeSchema }, byId),
   recipeController.updateRecipe,
+);
+
+/**
+ * @openapi
+ * /recipes/{id}:
+ *   patch:
+ *     tags: [Recetas]
+ *     summary: Cambia la disponibilidad de una receta propia
+ *     description: >
+ *       `availableInCatalog: false` la da de baja y `true` la reactiva. Solo cambia
+ *       la disponibilidad: conserva los datos, ingredientes y tipos de comida actuales,
+ *       aunque el listado del cliente esté desactualizado. Una receta común responde
+ *       403; una privada de otro nutricionista o inexistente, 404.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/RecipeId'
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema: { $ref: '#/components/schemas/RecipeAvailabilityInput' }
+ *     responses:
+ *       '200':
+ *         description: Receta con su disponibilidad actualizada
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Recipe' }
+ *       '400': { $ref: '#/components/responses/ValidationError' }
+ *       '401': { $ref: '#/components/responses/UnauthorizedError' }
+ *       '403': { $ref: '#/components/responses/CommonRecipeReadOnly' }
+ *       '404': { $ref: '#/components/responses/RecipeNotFound' }
+ *       '500': { $ref: '#/components/responses/InternalError' }
+ */
+router.patch(
+  '/recipes/:id',
+  requireNutritionist,
+  validate({ params: catalogIdParamsSchema, query: emptyQuerySchema, body: setRecipeAvailabilitySchema }, byId),
+  recipeController.setRecipeAvailability,
 );
 
 module.exports = router;

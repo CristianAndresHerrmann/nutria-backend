@@ -424,6 +424,7 @@ describe('rutas de recetas — autenticación, aislamiento y validación de punt
       get: vi.spyOn(recipeService, 'get').mockImplementation(async (_id, n) => fakeRecipe(n)),
       create: vi.spyOn(recipeService, 'create').mockImplementation(async (n) => fakeRecipe(n)),
       update: vi.spyOn(recipeService, 'update').mockImplementation(async (_id, n) => fakeRecipe(n)),
+      setAvailability: vi.spyOn(recipeService, 'setAvailability').mockImplementation(async (_id, n, data) => ({ ...fakeRecipe(n), ...data })),
     };
   }
 
@@ -432,6 +433,7 @@ describe('rutas de recetas — autenticación, aislamiento y validación de punt
     ['GET', `/recipes/${RECIPE_ID}`],
     ['POST', '/recipes'],
     ['PUT', `/recipes/${RECIPE_ID}`],
+    ['PATCH', `/recipes/${RECIPE_ID}`],
   ])('%s %s sin token responde 401 y no llega al servicio', async (method, path) => {
     const spies = spyOnRecipeService();
 
@@ -449,11 +451,16 @@ describe('rutas de recetas — autenticación, aislamiento y validación de punt
     await request(`/recipes/${RECIPE_ID}`, { token });
     const alta = await request('/recipes', { method: 'POST', token, body });
     await request(`/recipes/${RECIPE_ID}`, { method: 'PUT', token, body: { ...body, availableInCatalog: false } });
+    const availability = await request(`/recipes/${RECIPE_ID}`, { method: 'PATCH', token, body: { availableInCatalog: false } });
 
     expect(spies.list).toHaveBeenCalledWith(nutritionistId, { mealType: 'lunch', includeUnavailable: true, patientId: PATIENT_ID });
     expect(spies.get).toHaveBeenCalledWith(RECIPE_ID, nutritionistId);
     expect(spies.create).toHaveBeenCalledWith(nutritionistId, parsedBody);
     expect(spies.update).toHaveBeenCalledWith(RECIPE_ID, nutritionistId, { ...parsedBody, availableInCatalog: false });
+    expect(spies.setAvailability).toHaveBeenCalledWith(RECIPE_ID, nutritionistId, { availableInCatalog: false });
+    expect(availability.status).toBe(200);
+    expect(availability.json).toMatchObject({ availableInCatalog: false, own: true, mealTypes: ['lunch', 'dinner'] });
+    expect(availability.json).not.toHaveProperty('nutritionistId');
     expect(alta.status).toBe(201);
   });
 
@@ -520,6 +527,7 @@ describe('rutas de recetas — autenticación, aislamiento y validación de punt
   it.each([
     ['GET', '/recipes/no-es-un-uuid'],
     ['PUT', '/recipes/no-es-un-uuid'],
+    ['PATCH', '/recipes/no-es-un-uuid'],
   ])('%s %s responde 404, igual que una receta ajena', async (method, path) => {
     const spies = spyOnRecipeService();
 

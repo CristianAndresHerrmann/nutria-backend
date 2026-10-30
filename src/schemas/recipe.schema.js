@@ -75,6 +75,11 @@ const updateRecipeSchema = z.strictObject({
   availableInCatalog: z.boolean('Debe ser verdadero o falso').optional(),
 });
 
+// PATCH: solo disponibilidad, sin reconstruir el contenido de la receta.
+const setRecipeAvailabilitySchema = z.strictObject({
+  availableInCatalog: z.boolean('Debe ser verdadero o falso'),
+});
+
 // Query del listado. Sin includeUnavailable, solo las disponibles. patientId
 // aplica el filtro por condiciones del paciente (RF-28).
 const listRecipesQuerySchema = z.strictObject({
@@ -85,4 +90,4 @@ const listRecipesQuerySchema = z.strictObject({
   patientId: optionalField(z.guid('El paciente no es válido')),
 });
 
-module.exports = { createRecipeSchema, updateRecipeSchema, listRecipesQuerySchema };
+module.exports = { createRecipeSchema, updateRecipeSchema, setRecipeAvailabilitySchema, listRecipesQuerySchema };

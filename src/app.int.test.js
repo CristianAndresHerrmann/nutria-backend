@@ -132,3 +132,72 @@ it('las recetas comunes siguen visibles y las privadas quedan limitadas a su due
   expect(await recipes.updateOwn(common.id, owner.nutritionist.id, { name: 'No debe persistir' }, [], [])).toBeNull();
   expect(await snapshotDatabase()).toEqual(before);
 });
+
+describe('PATCH de disponibilidad de recetas — API real + Postgres (AUD-008)', () => {
+  it('una baja desde un listado desactualizado preserva la edición y todos los hijos actuales', async () => {
+    const path = `/recipes/${records.recipe.id}`;
+    const staleRow = (await request(path)).body;
+    const secondFood = await prisma.food.create({ data: { name: 'Segundo alimento ficticio', foodGroupId: catalog.group.id } });
+    const edit = await request(path, owner.nutritionist, 'PUT', {
+      name: 'Receta editada en otra pestaña', preparation: 'Preparación nueva', finalNote: 'Nota nueva',
+      cookingMethod: 'no_cooking', timeMinutes: 15, purchasePlace: 'Lugar ficticio',
+      ingredients: [{ foodId: secondFood.id, quantityDescription: '2 unidades' }, { foodId: catalog.food.id, quantityDescription: '1 taza' }],
+      mealTypes: ['dinner', 'lunch'],
+    });
+    expect(edit.status).toBe(200);
+    expect(edit.body.name).not.toBe(staleRow.name);
+    // La baja se decide desde la copia vieja; ningún otro campo de esa fila viaja.
+    const current = await recipes.findVisibleById(records.recipe.id, owner.nutritionist.id);
+    const before = await snapshotDatabase();
+    const patched = await request(path, owner.nutritionist, 'PATCH', { availableInCatalog: !staleRow.availableInCatalog });
+    expect(patched.status).toBe(200);
+    expect(patched.body).toEqual({ ...edit.body, availableInCatalog: false, updatedAt: expect.any(String) });
+    expect(await recipes.findVisibleById(records.recipe.id, owner.nutritionist.id))
+      .toEqual({ ...current, availableInCatalog: false, updatedAt: expect.any(Date) });
+    const after = await snapshotDatabase();
+    expect(after).toEqual({
+      ...before,
+      Recipe: before.Recipe.map((row) => ({ ...row, availableInCatalog: false, updatedAt: expect.any(Date) })),
+    });
+    expect((await request('/recipes')).body.map(({ id }) => id)).not.toContain(records.recipe.id);
+    expect((await request('/recipes?includeUnavailable=true')).body.map(({ id }) => id)).toContain(records.recipe.id);
+    // La misma baja se puede repetir y la reactivación conserva la edición.
+    expect((await request(path, owner.nutritionist, 'PATCH', { availableInCatalog: false })).status).toBe(200);
+    const restored = await request(path, owner.nutritionist, 'PATCH', { availableInCatalog: true });
+    expect(restored.status).toBe(200);
+    expect(restored.body).toEqual({ ...edit.body, availableInCatalog: true, updatedAt: expect.any(String) });
+    expect((await request('/recipes')).body.map(({ id }) => id)).toContain(records.recipe.id);
+  });
+
+  it('rechaza accesos ajenos, comunes y sin autorización sin cambiar ninguna tabla', async () => {
+    const common = await recipes.upsertCommon({ name: 'Receta común ficticia' }, [{ foodId: catalog.food.id }], ['lunch']);
+    const admin = await prisma.nutritionist.create({ data: { name: 'Administrador ficticio', email: 'admin@example.test', passwordHash: 'unused', role: 'admin' } });
+    const before = await snapshotDatabase();
+    const body = { availableInCatalog: false };
+    const path = `/recipes/${records.recipe.id}`;
+    const foreign = await request(path, other.nutritionist, 'PATCH', body);
+    const missing = await request('/recipes/00000000-0000-4000-8000-000000000099', owner.nutritionist, 'PATCH', body);
+    expect(foreign.status).toBe(404);
+    expect(missing).toEqual(foreign);
+    expect((await request(`/recipes/${common.id}`, owner.nutritionist, 'PATCH', body)).status).toBe(403);
+    expect((await request(path, null, 'PATCH', body)).status).toBe(401);
+    expect((await request(path, admin, 'PATCH', body)).status).toBe(403);
+    // Defensa del repositorio incluso si alguien omite el control del servicio.
+    expect(await recipes.setAvailabilityOwn(records.recipe.id, other.nutritionist.id, false)).toBeNull();
+    expect(await recipes.setAvailabilityOwn(common.id, owner.nutritionist.id, false)).toBeNull();
+    expect(await snapshotDatabase()).toEqual(before);
+  });
+
+  it('rechaza bodies mal tipados, campos de reemplazo y queries desconocidas sin escribir', async () => {
+    const path = `/recipes/${records.recipe.id}`;
+    const before = await snapshotDatabase();
+    for (const body of [{}, { availableInCatalog: 'false' }, { availableInCatalog: false, name: 'Copia vieja' },
+      { availableInCatalog: false, ingredients: [] }, { availableInCatalog: false, nutritionistId: other.nutritionist.id }]) {
+      const response = await request(path, owner.nutritionist, 'PATCH', body);
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    }
+    expect((await request(`${path}?unexpected=true`, owner.nutritionist, 'PATCH', { availableInCatalog: false })).status).toBe(400);
+    expect(await snapshotDatabase()).toEqual(before);
+  });
+});

@@ -67,6 +67,12 @@ function createFakeRecipeRepository() {
       store[index] = build(id, nutritionistId, data, ingredients, mealTypes, store[index]);
       return store[index];
     },
+    async setAvailabilityOwn(id, nutritionistId, availableInCatalog) {
+      const index = store.findIndex((recipe) => recipe.id === id && recipe.nutritionistId === nutritionistId);
+      if (index === -1) return null;
+      store[index] = { ...store[index], availableInCatalog };
+      return store[index];
+    },
     upsertCommon: vi.fn(async (data, ingredients, mealTypes) => {
       const recipe = build(`comun-${nextId++}`, null, data, ingredients, mealTypes);
       store.push(recipe);
@@ -225,11 +231,43 @@ describe('recipe.service — aislamiento por nutricionista (RNF-05)', () => {
   it('el servicio no expone borrado: la baja es lógica', () => {
     const { service } = buildService();
 
-    expect(Object.keys(service).sort()).toEqual(['create', 'get', 'list', 'update', 'upsertCommon']);
+    expect(Object.keys(service).sort()).toEqual(['create', 'get', 'list', 'setAvailability', 'update', 'upsertCommon']);
   });
 });
 
 describe('recipe.service — baja lógica y listado', () => {
+  it('cambia solo disponibilidad por PATCH y admite repetir la baja o reactivar', async () => {
+    const { service } = buildService();
+    const created = await service.create('nutri-1', ensalada);
+    const updated = await service.update(created.id, 'nutri-1', { ...ensalada, name: 'Edición más reciente' });
+
+    for (const availableInCatalog of [false, false, true]) {
+      expect(await service.setAvailability(created.id, 'nutri-1', { availableInCatalog }))
+        .toEqual({ ...updated, availableInCatalog });
+      expect(await service.list('nutri-1')).toHaveLength(availableInCatalog ? 1 : 0);
+    }
+  });
+
+  it('no cambia disponibilidad de una común, ajena o inexistente', async () => {
+    const { service, recipeRepository } = buildService();
+    const own = await service.create('nutri-1', ensalada);
+    const common = await service.upsertCommon(ensalada);
+    const before = structuredClone(recipeRepository.store);
+
+    await expect(service.setAvailability(own.id, 'nutri-2', { availableInCatalog: false })).rejects.toMatchObject({ status: 404 });
+    await expect(service.setAvailability('no-existe', 'nutri-1', { availableInCatalog: false })).rejects.toMatchObject({ status: 404 });
+    await expect(service.setAvailability(common.id, 'nutri-1', { availableInCatalog: false })).rejects.toMatchObject({ status: 403 });
+    expect(recipeRepository.store).toEqual(before);
+  });
+
+  it('responde 404 si la receta deja de ser propia antes de escribir', async () => {
+    const { service, recipeRepository } = buildService();
+    const own = await service.create('nutri-1', ensalada);
+    vi.spyOn(recipeRepository, 'setAvailabilityOwn').mockResolvedValue(null);
+
+    await expect(service.setAvailability(own.id, 'nutri-1', { availableInCatalog: false })).rejects.toMatchObject({ status: 404 });
+  });
+
   it('la baja por PUT oculta la receta del listado, salvo includeUnavailable, y se puede reactivar', async () => {
     const { service } = buildService();
     const created = await service.create('nutri-1', ensalada);

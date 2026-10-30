@@ -3,7 +3,7 @@ const { loginSchema } = require('../schemas/auth.schema');
 const { createNutritionistSchema, setNutritionistActiveSchema, resetNutritionistPasswordSchema } = require('../schemas/adminNutritionist.schema');
 const { createPatientSchema } = require('../schemas/patient.schema');
 const { createFoodSchema } = require('../schemas/food.schema');
-const { createRecipeSchema, updateRecipeSchema } = require('../schemas/recipe.schema');
+const { createRecipeSchema, updateRecipeSchema, setRecipeAvailabilitySchema } = require('../schemas/recipe.schema');
 const { createRecommendationSchema, updateRecommendationSchema } = require('../schemas/recommendation.schema');
 const { patientConditionSchema } = require('../schemas/patientCondition.schema');
 const { consultationSchema, createConsultationSchema } = require('../schemas/consultation.schema');
@@ -22,6 +22,7 @@ const requestValidators = {
   FoodInput: createFoodSchema,
   RecipeInput: createRecipeSchema,
   RecipeUpdateInput: updateRecipeSchema,
+  RecipeAvailabilityInput: setRecipeAvailabilitySchema,
   ClinicalRecommendationInput: createRecommendationSchema,
   ClinicalRecommendationUpdateInput: updateRecommendationSchema,
   PatientConditionInput: patientConditionSchema,
