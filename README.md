@@ -49,6 +49,8 @@ Organizado por capas:
 
 ## Variables de entorno
 
+El backend requiere un `JWT_SECRET` con contenido al arrancar: si falta, está vacío o contiene solo espacios, termina con un error de configuración antes de escuchar conexiones. La excepción es `NODE_ENV=test`; no se agrega una clave por defecto.
+
 Cada repositorio tiene su propio `.env.example`, sin valores reales. Antes de ejecutar, copiar a `.env`:
 
 ```bash
@@ -57,7 +59,7 @@ cp ../nutria-frontend/.env.example ../nutria-frontend/.env
 cp ../nutria-ia/.env.example ../nutria-ia/.env
 ```
 
-Completar `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` y `JWT_SECRET` con valores propios del entorno local. `CORS_ORIGIN` trae un valor por defecto (dominio de Docker Compose, puerto de Vite en local y dominio de la documentación interactiva) que alcanza para desarrollo; solo hace falta tocarlo si el frontend corre en otro origen. `IA_SERVICE_URL` es el hostname interno de Docker con el que el backend alcanza al servicio de IA; ningún navegador lo usa. `IA_TIMEOUT_MS` (opcional: si no se define vale 3000; el `.env.example` trae 5000) es cuánto espera el backend al servicio de IA antes de darlo por no disponible. `IA_GENERATION_TIMEOUT_MS` (opcional: si no se define vale 30000) es lo mismo para la generación de un plan, que tarda más; tiene que superar el `AI_PROVIDER_TIMEOUT_SECONDS` de nutria-ia (25 s por defecto). Ninguno de los `.env` se versiona (están excluidos en el `.gitignore` de cada repo); solo se versiona el `.env.example` correspondiente.
+Completar `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` y `JWT_SECRET` con valores propios del entorno local. `CORS_ORIGIN` trae un valor por defecto (dominio de Docker Compose, puerto de Vite en local y dominio de la documentación interactiva) que alcanza para desarrollo; solo hace falta tocarlo si el frontend corre en otro origen. `IA_SERVICE_URL` es el hostname interno de Docker con el que el backend alcanza al servicio de IA; ningún navegador lo usa. `IA_TIMEOUT_MS` (opcional: por defecto 3000, igual que en `.env.example`) es cuánto espera el backend al servicio de IA antes de darlo por no disponible. `IA_GENERATION_TIMEOUT_MS` (opcional: si no se define vale 30000) es lo mismo para la generación de un plan, que tarda más; tiene que superar el `AI_PROVIDER_TIMEOUT_SECONDS` de nutria-ia (25 s por defecto). Ninguno de los `.env` se versiona (están excluidos en el `.gitignore` de cada repo); solo se versiona el `.env.example` correspondiente.
 
 `LOGIN_RATE_LIMIT_MAX` y `LOGIN_RATE_LIMIT_WINDOW_MS` son opcionales: cuántos intentos de login fallidos se aceptan por IP y en qué ventana (por defecto, 10 cada 15 minutos).
 

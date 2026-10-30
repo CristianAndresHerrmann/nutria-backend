@@ -396,6 +396,8 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ### Fixed
 
+- AUD-009: el backend rechaza al arrancar un `JWT_SECRET` ausente, vacío o compuesto solo por espacios, salvo con `NODE_ENV=test`. Conserva la clave configurada sin recortarla. El ejemplo de `IA_TIMEOUT_MS` se alinea con el default de 3000 ms; los valores explícitos conservan prioridad.
+
 - Traefik pasa de `v3.1` a `v3.7` (T-): con Docker Engine 29+, el de la VM de staging, `v3.1` no veía ningún contenedor y respondía 404 a todo, aunque los servicios estuvieran arriba.
 - Swagger (T23): 15 operaciones GET y DELETE no documentaban el `400`, que igual devuelven ante un parámetro de query desconocido, porque todas las rutas validan la query.
   - Ahora lo documentan con la respuesta nueva `UnknownQueryParam`.

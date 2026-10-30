@@ -1,10 +1,12 @@
 const { execFileSync } = require('node:child_process');
 const { prisma } = require('../src/test/integration');
 
-it('el seed corre sobre base vacía y carga catálogo y dos cuentas con pacientes ficticios', async () => {
+it('el seed corre sobre base vacía sin JWT_SECRET y carga catálogo y dos cuentas con pacientes ficticios', async () => {
   expect(await prisma.nutritionist.count()).toBe(0);
+  const seedEnv = { ...process.env, NODE_ENV: 'development', SEED_PASSWORD: 'Integration-ficticia-123!' };
+  delete seedEnv.JWT_SECRET;
   execFileSync(process.execPath, ['scripts/seed.js'], {
-    env: { ...process.env, NODE_ENV: 'test', SEED_PASSWORD: 'Integration-ficticia-123!' },
+    env: seedEnv,
     stdio: 'pipe',
     timeout: 15000,
   });
