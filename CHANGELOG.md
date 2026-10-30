@@ -396,6 +396,8 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ### Fixed
 
+- AUD-016: restablecer la contraseña invalida todos los JWT anteriores de esa cuenta en la siguiente request, sin esperar su vencimiento. `nutritionist.token_version` (migración `agrega_version_de_tokens`) se incrementa atómicamente junto con el hash y se compara con el claim `tokenVersion` al autorizar. Evita la ambigüedad de cambios dentro del mismo segundo; los tokens previos al cambio de formato siguen válidos como versión cero hasta el primer restablecimiento. Las rotaciones de `create-admin` y del seed aplican la misma revocación. La respuesta pública de la cuenta no agrega campos. Decisión DA-35 en el repo raíz.
+
 - AUD-009: el backend rechaza al arrancar un `JWT_SECRET` ausente, vacío o compuesto solo por espacios, salvo con `NODE_ENV=test`. Conserva la clave configurada sin recortarla. El ejemplo de `IA_TIMEOUT_MS` se alinea con el default de 3000 ms; los valores explícitos conservan prioridad.
 
 - Traefik pasa de `v3.1` a `v3.7` (T-): con Docker Engine 29+, el de la VM de staging, `v3.1` no veía ningún contenedor y respondía 404 a todo, aunque los servicios estuvieran arriba.

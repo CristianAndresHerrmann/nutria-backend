@@ -8,8 +8,8 @@ const { accountEmail, accountPassword } = require('../src/schemas/common.schema'
 // repo, y staging es público. Acá las credenciales solo existen en el entorno
 // de quien lo corre (RNF-06), y el script nunca las imprime.
 //
-// Idempotente: correrlo de nuevo con la misma cuenta deja todo igual, y con
-// otra contraseña la rota. Un email que ya es de una nutricionista no se
+// No duplica la cuenta: volver a ejecutarlo restablece la contraseña y revoca
+// sus tokens anteriores. Un email que ya es de una nutricionista no se
 // promueve a administrador: falla y no toca nada.
 
 const adminEnvSchema = z.object({
@@ -32,7 +32,10 @@ async function ensureAdmin(client, { email, password, name }) {
   const passwordHash = await bcrypt.hash(password, 10);
 
   if (existing) {
-    await client.nutritionist.update({ where: { id: existing.id }, data: { passwordHash, active: true } });
+    await client.nutritionist.update({
+      where: { id: existing.id },
+      data: { passwordHash, active: true, tokenVersion: { increment: 1 } },
+    });
     return 'updated';
   }
 

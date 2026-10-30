@@ -487,7 +487,7 @@ async function main() {
   for (const { nutritionist: data, patients, recipes, privateFoods = [], privateRecommendations = [] } of SEED_DATA) {
     const nutritionist = await prisma.nutritionist.upsert({
       where: { email: data.email },
-      update: { passwordHash },
+      update: { passwordHash, tokenVersion: { increment: 1 } },
       create: { ...data, passwordHash },
     });
 

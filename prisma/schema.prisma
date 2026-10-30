@@ -40,6 +40,9 @@ model Nutritionist {
   name         String
   email        String      @unique
   passwordHash String      @map("password_hash")
+  // AUD-016: cambia junto con el hash al restablecer la contraseña. Los JWT
+  // anteriores quedan inválidos, incluso si se emitieron en el mismo segundo.
+  tokenVersion Int         @default(0) @map("token_version")
   role         AccountRole @default(nutritionist)
   active       Boolean     @default(true)
   createdAt    DateTime    @default(now()) @map("created_at")

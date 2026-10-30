@@ -29,9 +29,9 @@ const ADMIN_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
 const INACTIVE_ID = 'bbbbbbbb-0000-4000-8000-000000000002';
 
 function fakeAuthState(id) {
-  if (id === INACTIVE_ID) return { role: 'nutritionist', active: false };
-  if (id === ADMIN_ID) return { role: 'admin', active: true };
-  return { role: 'nutritionist', active: true };
+  if (id === INACTIVE_ID) return { role: 'nutritionist', active: false, tokenVersion: 0 };
+  if (id === ADMIN_ID) return { role: 'admin', active: true, tokenVersion: 0 };
+  return { role: 'nutritionist', active: true, tokenVersion: 0 };
 }
 
 // Se guarda antes de cualquier stub: los tests que simulan la IA caída

@@ -15,7 +15,7 @@ const securitySchemes = {
     bearerFormat: 'JWT',
     description:
       'Token devuelto por `POST /auth/login`. Se manda como `Authorization: Bearer <token>` ' +
-      'y expira a las 2 horas por defecto (`JWT_EXPIRES_IN`). Si la cuenta se desactiva, el ' +
+      'y expira a las 2 horas por defecto (`JWT_EXPIRES_IN`). Si la cuenta se desactiva o se restablece su contraseña, el ' +
       'token deja de servir en la siguiente request. Las rutas clínicas y de catálogo son de ' +
       'nutricionista y las de `/admin`, de administrador: con el otro rol responden 403.',
   },
@@ -181,7 +181,8 @@ const schemas = {
       token: {
         type: 'string',
         description:
-          'JWT firmado con HS256. El id de la cuenta viaja en el claim `sub` y su rol en `role`.',
+          'JWT firmado con HS256. El id de la cuenta viaja en el claim `sub`, su rol en `role` y ' +
+          'la versión interna de revocación en `tokenVersion`.',
         example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
       },
       nutritionist: {
