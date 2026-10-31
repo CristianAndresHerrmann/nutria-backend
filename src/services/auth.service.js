@@ -27,7 +27,7 @@ function createAuthService({ nutritionistRepository: repository, jwtSecret, jwtE
 
       // El rol viaja en el token para que el frontend sepa a qué inicio
       // llevar. El backend no lo usa para autorizar: requireAuth lo lee de la base.
-      const token = jwt.sign({ sub: nutritionist.id, role: nutritionist.role }, jwtSecret, {
+      const token = jwt.sign({ sub: nutritionist.id, role: nutritionist.role, tokenVersion: nutritionist.tokenVersion }, jwtSecret, {
         expiresIn: jwtExpiresIn,
       });
 

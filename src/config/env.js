@@ -1,7 +1,14 @@
+const nodeEnv = process.env.NODE_ENV || 'development';
+const jwtSecret = process.env.JWT_SECRET;
+
+if (nodeEnv !== 'test' && (!jwtSecret || jwtSecret.trim().length === 0)) {
+  throw new Error('Configuración inválida: JWT_SECRET es obligatorio y no puede estar vacío');
+}
+
 const config = {
   port: process.env.PORT || 3000,
-  nodeEnv: process.env.NODE_ENV || 'development',
-  jwtSecret: process.env.JWT_SECRET,
+  nodeEnv,
+  jwtSecret,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '2h',
   // Intentos de login fallidos que se aceptan por IP dentro de la ventana; el
   // siguiente responde 429.

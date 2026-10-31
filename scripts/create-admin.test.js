@@ -42,6 +42,9 @@ describe('create-admin — cuenta de administrador desde variables de entorno', 
     expect(prisma.store).toHaveLength(1);
     expect(prisma.store[0].active).toBe(true);
     expect(await bcrypt.compare('otra-clave-de-prueba', prisma.store[0].passwordHash)).toBe(true);
+    expect(prisma.nutritionist.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ tokenVersion: { increment: 1 } }),
+    }));
   });
 
   it('no convierte en administrador a una cuenta de nutricionista', async () => {

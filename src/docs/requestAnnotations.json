@@ -1,0 +1,511 @@
+{
+  "LoginRequest": {
+    "properties": {
+      "email": {
+        "example": "nutricionista@nutria.com"
+      },
+      "password": {
+        "example": "123456aA!",
+        "format": "password"
+      }
+    }
+  },
+  "NutritionistAccountInput": {
+    "description": "El rol y el estado no se eligen: la cuenta nace de nutricionista y activa.",
+    "properties": {
+      "name": {
+        "example": "Lic. Ejemplo Ficticio"
+      },
+      "email": {
+        "description": "Se guarda sin espacios y en minúsculas.",
+        "example": "ejemplo@nutria.test"
+      },
+      "password": {
+        "description": "Contraseña inicial: al menos 8 caracteres y hasta 72 bytes.",
+        "format": "password"
+      }
+    }
+  },
+  "NutritionistActiveInput": {
+    "properties": {
+      "active": {
+        "description": "`false` desactiva la cuenta; `true` la reactiva.",
+        "example": false
+      }
+    }
+  },
+  "NutritionistPasswordInput": {
+    "properties": {
+      "password": {
+        "description": "Contraseña nueva: al menos 8 caracteres y hasta 72 bytes.",
+        "format": "password"
+      }
+    }
+  },
+  "PatientInput": {
+    "description": "Body de alta y de edición: comparten schema porque el formulario es el mismo y ambos mandan el objeto completo, no un diff de campos.\n\n**Regla cruzada que no se puede expresar en JSON Schema:** si `birthDate` corresponde a un menor de 18 años, `guardianName`, `guardianRelationship`, `guardianContact` y `attendsAccompanied` pasan a ser obligatorios y su ausencia devuelve 400 con los cuatro campos en `details.fields`.\n\nLos campos opcionales aceptan el valor, `\"\"`, `null` o su ausencia; las tres últimas formas se guardan como `null`. Eso permite dar de alta un paciente con solo nombre y apellido y completar el resto después.\n\nLos datos clínicos y contextuales (`medicalHistory` a `intakePatterns`) son todos opcionales. Como la edición reemplaza el objeto completo, un campo que no se manda en el `PUT` queda en `null`.",
+    "properties": {
+      "firstName": {
+        "example": "Lucía"
+      },
+      "lastName": {
+        "example": "Fernández"
+      },
+      "phone": {
+        "example": "+54 342 555-0101"
+      },
+      "email": {
+        "example": "lucia.fernandez@example.com"
+      },
+      "livesWith": {
+        "example": "Pareja"
+      },
+      "goal": {
+        "example": "Bajar de peso"
+      },
+      "referenceWeight": {
+        "description": "Peso de referencia subjetivo en kilogramos. Decimal(5,2) en la base.",
+        "example": 68.5
+      },
+      "guardianName": {
+        "example": "María Gómez"
+      },
+      "guardianRelationship": {
+        "example": "Madre"
+      },
+      "guardianContact": {
+        "example": "+54 342 555-0202"
+      },
+      "attendsAccompanied": {
+        "example": true
+      },
+      "medicalHistory": {
+        "example": "Sin antecedentes relevantes."
+      },
+      "medication": {
+        "example": null
+      },
+      "externalTreatment": {
+        "example": null
+      },
+      "physicalActivity": {
+        "example": "Camina 30 minutos, dos veces por semana"
+      },
+      "smoking": {
+        "example": "No fuma"
+      },
+      "alcohol": {
+        "example": "Ocasional, fines de semana"
+      },
+      "mealSchedule": {
+        "example": "Desayuno 7 h, almuerzo 13 h, cena 21 h"
+      },
+      "sleepSchedule": {
+        "example": "De 23 h a 6:30 h"
+      },
+      "cooks": {
+        "example": true
+      },
+      "likesCooking": {
+        "example": true
+      },
+      "cookingTime": {
+        "example": "30 minutos por día"
+      },
+      "homeEquipment": {
+        "example": "Horno, anafe y microondas"
+      },
+      "usualShoppingPlace": {
+        "example": "Supermercado y verdulería del barrio"
+      },
+      "mealsOutsideHome": {
+        "example": "Almuerzo de lunes a viernes"
+      },
+      "outsideEquipment": {
+        "example": "Heladera y microondas en la oficina"
+      },
+      "occupation": {
+        "example": "Administrativa"
+      },
+      "workContext": {
+        "example": "Oficina, de 8 a 16 h, horario regular"
+      },
+      "intakePatterns": {
+        "example": "Picoteo por la tarde"
+      },
+      "birthDate": {
+        "description": "Fecha de nacimiento en formato `AAAA-MM-DD`. Tiene que ser una fecha que exista (`2023-02-30` da 400) y no puede ser posterior a hoy (UTC).",
+        "example": "1992-03-14"
+      },
+      "registrationComplete": {
+        "description": "Marca el registro como completo. La primera vez que pasa de `false` a `true` el servidor sella `dataCompletedAt`; ese sello no se borra si después se vuelve a marcar como incompleto."
+      }
+    }
+  },
+  "FoodInput": {
+    "description": "Alta de un alimento privado. El nombre se guarda sin espacios de más. El dueño no se manda: sale del token.",
+    "properties": {
+      "name": {
+        "example": "Caballa"
+      },
+      "categories": {
+        "description": "Categorías nutricionales (RF-25): una o más, sin repetir.",
+        "example": [
+          "protein",
+          "healthy_fat"
+        ],
+        "uniqueItems": true
+      }
+    }
+  },
+  "RecipeInput": {
+    "description": "Alta de una receta. El dueño y el origen no se mandan: salen del token y del servidor. Un string vacío en un campo opcional cuenta como ausencia del dato.",
+    "properties": {
+      "name": {
+        "example": "Ensalada de arroz y atún"
+      },
+      "preparation": {
+        "example": "1. Hervir el arroz.\n2. Mezclar con el atún."
+      },
+      "finalNote": {
+        "example": "Se conserva en heladera hasta el día siguiente."
+      },
+      "timeMinutes": {
+        "example": 25
+      },
+      "purchasePlace": {
+        "example": "Supermercado"
+      },
+      "mealTypes": {
+        "description": "Uno o más tipos de comida, sin repetir.",
+        "example": [
+          "lunch",
+          "dinner"
+        ],
+        "uniqueItems": true
+      },
+      "ingredients": {
+        "description": "Uno o más alimentos del catálogo, nunca texto libre, sin repetir un alimento. El orden es la posición en la lista. Un error en cualquier ingrediente se informa en `details.fields.ingredients`.",
+        "items": {
+          "properties": {
+            "foodId": {
+              "description": "Alimento común o privado propio, vigente. Uno inexistente o privado de otro da 400."
+            },
+            "quantityDescription": {
+              "example": "1 taza cocida"
+            }
+          }
+        }
+      }
+    }
+  },
+  "RecipeUpdateInput": {
+    "description": "Reemplazo completo de la receta, más la baja lógica.",
+    "properties": {
+      "name": {
+        "example": "Ensalada de arroz y atún"
+      },
+      "preparation": {
+        "example": "1. Hervir el arroz.\n2. Mezclar con el atún."
+      },
+      "finalNote": {
+        "example": "Se conserva en heladera hasta el día siguiente."
+      },
+      "timeMinutes": {
+        "example": 25
+      },
+      "purchasePlace": {
+        "example": "Supermercado"
+      },
+      "mealTypes": {
+        "description": "Uno o más tipos de comida, sin repetir.",
+        "example": [
+          "lunch",
+          "dinner"
+        ],
+        "uniqueItems": true
+      },
+      "ingredients": {
+        "description": "Uno o más alimentos del catálogo, nunca texto libre, sin repetir un alimento. El orden es la posición en la lista. Un error en cualquier ingrediente se informa en `details.fields.ingredients`.",
+        "items": {
+          "properties": {
+            "foodId": {
+              "description": "Alimento común o privado propio, vigente. Uno inexistente o privado de otro da 400."
+            },
+            "quantityDescription": {
+              "example": "1 taza cocida"
+            }
+          }
+        }
+      },
+      "availableInCatalog": {
+        "description": "`false` da de baja la receta y `true` la reactiva. Omitido, conserva el valor que tenía."
+      }
+    }
+  },
+  "ClinicalRecommendationInput": {
+    "description": "Alta de una recomendación privada. El dueño no se manda: sale del token. El título se guarda sin espacios de más; el texto, sin espacios en los extremos.",
+    "properties": {
+      "pathologyId": {
+        "description": "Patología del catálogo. Una inexistente da 400 en `details.fields.pathologyId`."
+      },
+      "title": {
+        "example": "Ejemplo ficticio: recomendación de prueba"
+      },
+      "text": {
+        "example": "Texto de ejemplo ficticio."
+      }
+    }
+  },
+  "ClinicalRecommendationUpdateInput": {
+    "description": "Reemplazo completo de una recomendación propia, más la baja lógica.",
+    "properties": {
+      "pathologyId": {
+        "description": "Patología del catálogo. Una inexistente da 400 en `details.fields.pathologyId`."
+      },
+      "title": {
+        "example": "Ejemplo ficticio: recomendación de prueba"
+      },
+      "text": {
+        "example": "Texto de ejemplo ficticio."
+      },
+      "active": {
+        "description": "`false` la da de baja y `true` la reactiva. Omitido, conserva el valor que tenía."
+      }
+    }
+  },
+  "PatientConditionInput": {
+    "description": "Una `pathology` exige `pathologyId` y no referencia alimentos. Los demás tipos exigen exactamente uno entre `foodId` y `foodGroupId`, y no llevan `pathologyId`. Cualquier otra combinación da 400 `VALIDATION_ERROR` con el campo en `details.fields`. Un string vacío cuenta como ausencia del dato. El paciente sale de la ruta y el nutricionista del token.",
+    "properties": {
+      "foodId": {
+        "description": "Alimento común o privado propio, vigente. Uno inexistente o privado de otro da 400."
+      },
+      "registeredAt": {
+        "description": "AAAA-MM-DD, no futura. Si no viene: en el alta, la fecha del día; en la edición, la que tenía.",
+        "format": "date"
+      },
+      "observations": {
+        "example": "Le cae mal en cantidad"
+      }
+    }
+  },
+  "ConsultationInput": {
+    "description": "Campos de la consulta. Fecha y tipo son obligatorios; el resto es opcional y un string vacío cuenta como ausencia del dato (RNF-09). En el `PUT` es un reemplazo completo: un campo omitido queda en `null`. El paciente sale de la ruta y el nutricionista del token.",
+    "properties": {
+      "date": {
+        "description": "AAAA-MM-DD, no futura.",
+        "example": "2026-10-19",
+        "format": "date"
+      },
+      "type": {
+        "description": "`first` = primera, `follow_up` = seguimiento."
+      },
+      "motivation": {
+        "description": "Motivación (RF-13).",
+        "example": "Sentirse con más energía"
+      },
+      "decisionOrigin": {
+        "description": "Origen de la decisión de cambio (RF-13).",
+        "example": "Propia"
+      },
+      "perceivedObstacle": {
+        "description": "Obstáculo percibido (RF-13).",
+        "example": "Falta de tiempo para cocinar"
+      },
+      "mainHabit": {
+        "description": "Hábito principal a modificar (RF-13).",
+        "example": "Picoteo por la tarde"
+      },
+      "observations": {
+        "description": "Observaciones libres (RF-18).",
+        "example": "Buena adherencia a la caminata."
+      }
+    }
+  },
+  "ConsultationCreateInput": {
+    "description": "Los campos de `ConsultationInput` más los hábitos pautados al cierre de la consulta y las mediciones tomadas en ella.",
+    "properties": {
+      "date": {
+        "description": "AAAA-MM-DD, no futura.",
+        "example": "2026-10-19",
+        "format": "date"
+      },
+      "type": {
+        "description": "`first` = primera, `follow_up` = seguimiento."
+      },
+      "motivation": {
+        "description": "Motivación (RF-13).",
+        "example": "Sentirse con más energía"
+      },
+      "decisionOrigin": {
+        "description": "Origen de la decisión de cambio (RF-13).",
+        "example": "Propia"
+      },
+      "perceivedObstacle": {
+        "description": "Obstáculo percibido (RF-13).",
+        "example": "Falta de tiempo para cocinar"
+      },
+      "mainHabit": {
+        "description": "Hábito principal a modificar (RF-13).",
+        "example": "Picoteo por la tarde"
+      },
+      "observations": {
+        "description": "Observaciones libres (RF-18).",
+        "example": "Buena adherencia a la caminata."
+      },
+      "habits": {
+        "description": "Hábitos pautados (RF-22), redactados por el profesional, sin catálogo. Opcional: sin hábitos la consulta se guarda igual. Nacen con `compliance: pending`. No se editan con el `PUT`. Un error en cualquiera de ellos viene en `details.fields.habits`.",
+        "items": {
+          "properties": {
+            "description": {
+              "example": "Caminar 30 minutos tres veces por semana"
+            }
+          }
+        }
+      },
+      "measurements": {
+        "description": "Mediciones y laboratorio tomados en la consulta (RF-11, RF-12). Opcional. Se crean en la misma operación, con la fecha de la consulta, y después se leen y editan por `/patients/{id}/measurements`. No se aceptan en el `PUT`. Un error en cualquiera de ellas viene en `details.fields.measurements`.",
+        "items": {
+          "description": "Una medición antropométrica o de laboratorio. Solo validaciones técnicas: valor mayor a cero, tipo válido y `detail` obligatorio para `skinfold`, `circumference` y `other`. Sin umbrales clínicos. Ningún tipo es obligatorio.",
+          "properties": {
+            "type": {
+              "description": "Antropometría: `weight`, `height`, `skinfold`, `circumference`. Laboratorio: `cholesterol`, `triglycerides`, `glucose`, `other`.",
+              "example": "weight"
+            },
+            "detail": {
+              "description": "Qué se midió (qué pliegue, qué circunferencia, qué parámetro). Obligatorio para `skinfold`, `circumference` y `other`.",
+              "example": null
+            },
+            "value": {
+              "example": 68.4
+            },
+            "unit": {
+              "description": "Fija según el tipo: `weight` kg, `height` cm, `skinfold` mm, `circumference` cm, `cholesterol`, `triglycerides` y `glucose` mg/dL. Si no viene se completa, y otra distinta da 400. En `other` es opcional y se elige de una lista: %, g/dL, mg/dL, mg/L, µg/dL, ng/mL, pg/mL, mmol/L, mEq/L, UI/L, µUI/mL; otra da 400.",
+              "example": "kg"
+            }
+          }
+        }
+      }
+    }
+  },
+  "ConsultationMeasurementInput": {
+    "description": "Una medición antropométrica o de laboratorio. Solo validaciones técnicas: valor mayor a cero, tipo válido y `detail` obligatorio para `skinfold`, `circumference` y `other`. Sin umbrales clínicos. Ningún tipo es obligatorio.",
+    "properties": {
+      "type": {
+        "description": "Antropometría: `weight`, `height`, `skinfold`, `circumference`. Laboratorio: `cholesterol`, `triglycerides`, `glucose`, `other`.",
+        "example": "weight"
+      },
+      "detail": {
+        "description": "Qué se midió (qué pliegue, qué circunferencia, qué parámetro). Obligatorio para `skinfold`, `circumference` y `other`.",
+        "example": null
+      },
+      "value": {
+        "example": 68.4
+      },
+      "unit": {
+        "description": "Fija según el tipo: `weight` kg, `height` cm, `skinfold` mm, `circumference` cm, `cholesterol`, `triglycerides` y `glucose` mg/dL. Si no viene se completa, y otra distinta da 400. En `other` es opcional y se elige de una lista: %, g/dL, mg/dL, mg/L, µg/dL, ng/mL, pg/mL, mmol/L, mEq/L, UI/L, µUI/mL; otra da 400.",
+        "example": "kg"
+      }
+    }
+  },
+  "MeasurementInput": {
+    "description": "Los campos de `ConsultationMeasurementInput` más la fecha y, opcionalmente, la consulta. En el `PUT` es un reemplazo completo: un opcional omitido queda en `null`.",
+    "properties": {
+      "type": {
+        "description": "Antropometría: `weight`, `height`, `skinfold`, `circumference`. Laboratorio: `cholesterol`, `triglycerides`, `glucose`, `other`.",
+        "example": "weight"
+      },
+      "detail": {
+        "description": "Qué se midió (qué pliegue, qué circunferencia, qué parámetro). Obligatorio para `skinfold`, `circumference` y `other`.",
+        "example": null
+      },
+      "value": {
+        "example": 68.4
+      },
+      "unit": {
+        "description": "Fija según el tipo: `weight` kg, `height` cm, `skinfold` mm, `circumference` cm, `cholesterol`, `triglycerides` y `glucose` mg/dL. Si no viene se completa, y otra distinta da 400. En `other` es opcional y se elige de una lista: %, g/dL, mg/dL, mg/L, µg/dL, ng/mL, pg/mL, mmol/L, mEq/L, UI/L, µUI/mL; otra da 400.",
+        "example": "kg"
+      },
+      "date": {
+        "description": "AAAA-MM-DD, no futura.",
+        "example": "2026-10-19",
+        "format": "date"
+      },
+      "consultationId": {
+        "description": "Consulta en la que se tomó. Opcional: una medición puede cargarse fuera de una consulta. Tiene que ser del mismo paciente; si no, `400` en `details.fields.consultationId`."
+      }
+    }
+  },
+  "GeneratePlanInput": {
+    "description": "Opcional. Sin body (o sin `mealTypes`) se piden las cuatro comidas.",
+    "properties": {
+      "mealTypes": {
+        "example": [
+          "breakfast",
+          "lunch",
+          "afternoon_snack",
+          "dinner"
+        ],
+        "uniqueItems": true
+      }
+    }
+  },
+  "PlanInput": {
+    "description": "Reemplazo completo del borrador. Un texto omitido o vacío se guarda como `null`. Se admiten comidas sin opciones y opciones sin ítems (guardado parcial).",
+    "properties": {
+      "situationalDiagnosis": {
+        "description": "Diagnóstico situacional.",
+        "example": "Texto de ejemplo ficticio."
+      },
+      "introduction": {
+        "description": "Introducción dirigida al paciente.",
+        "example": "Texto de ejemplo ficticio."
+      },
+      "objectives": {
+        "description": "Objetivos del plan.",
+        "example": "Texto de ejemplo ficticio."
+      },
+      "generalRecommendations": {
+        "description": "Recomendaciones generales.",
+        "example": "Texto de ejemplo ficticio."
+      },
+      "contextualRecommendations": {
+        "description": "Recomendaciones contextuales.",
+        "example": "Texto de ejemplo ficticio."
+      },
+      "clinicalRecommendations": {
+        "description": "Recomendaciones clínicas. No las redacta la IA: el profesional copia las del catálogo (DA-16, DA-28). Un plan generado nace con `null`.",
+        "example": null
+      },
+      "thematicRecommendations": {
+        "description": "Recomendaciones temáticas.",
+        "example": "Texto de ejemplo ficticio."
+      },
+      "meals": {
+        "description": "Una por tipo de comida, sin repetir. El orden de opciones e ítems es su posición en la lista.",
+        "items": {
+          "properties": {
+            "instructions": {
+              "description": "Indicación de fraccionamiento para el paciente (RF-36)."
+            },
+            "options": {
+              "items": {
+                "properties": {
+                  "items": {
+                    "items": {
+                      "description": "Ítem de una opción. Cada tipo manda solo su referencia: `food` → `foodId`, `food_group` → `foodGroupId`, `recipe` → `recipeId`, `unrecognized` → `originalText`, con el límite indicado en ese campo. La copia del nombre y las categorías la arma el servidor.",
+                      "example": {
+                        "type": "food",
+                        "foodId": "6f1c2a5e-0000-4000-8000-000000000001"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

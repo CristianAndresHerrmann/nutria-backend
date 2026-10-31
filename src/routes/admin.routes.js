@@ -130,7 +130,8 @@ router.patch(
  *     summary: Restablece la contraseña de una cuenta de nutricionista
  *     description: >
  *       Solo administradores. Reemplaza la contraseña por la que define el administrador; la
- *       anterior deja de servir para iniciar sesión. No cambia el estado de la cuenta.
+ *       anterior deja de servir para iniciar sesión y todos sus tokens anteriores quedan inválidos
+ *       en la siguiente request. No cambia el estado de la cuenta.
  *     security:
  *       - bearerAuth: []
  *     parameters:

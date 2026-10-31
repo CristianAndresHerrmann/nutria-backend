@@ -8,8 +8,8 @@ const FORBIDDEN_ROLE_MESSAGE = 'No tenés permiso para acceder a este recurso';
 
 // Además de verificar la firma, lee la cuenta en cada request: una cuenta
 // desactivada (o borrada) deja de operar en la siguiente request, sin esperar a
-// que venza su token. El rol que autoriza también sale de la base y no del
-// token, así que no depende de cuándo se emitió.
+// que venza su token. Restablecer su contraseña invalida la versión anterior
+// del token. El rol que autoriza también sale de la base y no del token.
 function createRequireAuth({ nutritionistRepository: repository, jwtSecret }) {
   return async function requireAuth(req, res, next) {
     const header = req.headers.authorization || '';
@@ -32,6 +32,13 @@ function createRequireAuth({ nutritionistRepository: repository, jwtSecret }) {
       return next(new AppError(401, INVALID_TOKEN_MESSAGE));
     }
 
+    // Compatibilidad con JWT emitidos antes de AUD-016: sin claim son versión
+    // cero y dejan de servir al primer restablecimiento de esa cuenta.
+    const tokenVersion = payload.tokenVersion === undefined ? 0 : payload.tokenVersion;
+    if (!Number.isInteger(tokenVersion) || tokenVersion < 0) {
+      return next(new AppError(401, INVALID_TOKEN_MESSAGE));
+    }
+
     let account;
     try {
       account = await repository.findAuthState(payload.sub);
@@ -39,7 +46,7 @@ function createRequireAuth({ nutritionistRepository: repository, jwtSecret }) {
       return next(error);
     }
 
-    if (!account || !account.active) {
+    if (!account || !account.active || tokenVersion !== account.tokenVersion) {
       return next(new AppError(401, INVALID_TOKEN_MESSAGE));
     }
 

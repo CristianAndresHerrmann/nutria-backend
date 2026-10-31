@@ -6,6 +6,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ### Added
 
+- AUD-005: los cuerpos de request de OpenAPI se generan desde los schemas Zod de las rutas, conservando OpenAPI 3.0, los nombres de componentes, las descripciones y los ejemplos. El adaptador contempla los opcionales normalizados a null y los límites aplicados después de normalizar texto. Las reglas cruzadas siguen descritas explícitamente. Las respuestas, errores y parámetros conservan sus definiciones.
+
+- AUD-004: test de contrato backend ↔ IA contra una copia versionada del OpenAPI de `nutria-ia`. Compara los enums de Prisma, los campos y límites de la propuesta Zod, y los topes del catálogo y textos de contexto enviados. Corre en la suite unitaria sin necesitar el servicio de IA ni el otro repo.
+
 - Recetas básicas comunes (T30; RF-27, RF-28; DA-34, modifica DA-15), con el mismo criterio que las recomendaciones comunes. Origen, criterios y pendientes en `docs/recetas-basicas.md` y `docs/decisiones/recetas-comunes.md` del repo raíz.
   - Migración `recetas_comunes`: `recipe.nutritionist_id` pasa a nullable (null = común). La FK queda en `RESTRICT`, explícito en el schema.
   - `GET /recipes` devuelve las comunes y las propias, con los filtros por tipo de comida y por condiciones del paciente (RF-28) aplicados igual a las dos. `GET /recipes/:id` muestra una común; una privada de otro nutricionista sigue dando `404`.
@@ -391,6 +395,18 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
   - `validatePlan.js` exporta `MEAL_LABELS`.
 
 ### Fixed
+
+- AUD-015: `replaceFindings` bloquea la fila del borrador con `SELECT FOR UPDATE`, filtrando por plan, nutricionista y estado `draft`, antes de borrar e insertar hallazgos. Dos revalidaciones del mismo plan ya no acumulan duplicados; planes distintos siguen ejecutándose en paralelo y `updatedAt` se conserva. La prueba contra Postgres reprodujo dos hallazgos antes de la corrección y verifica un solo juego después, además del rollback ante una FK inválida. El esquema actual sigue teniendo únicamente el estado `draft`; el flujo de aprobación pertenece al Incremento 4.
+
+- AUD-013: el README describe los orígenes CORS por defecto y el uso de un servidor relativo por Swagger. El comentario de cobertura referencia el compose normal y la limpieza previa al montaje, sin mencionar un `docker-compose.test.yml` inexistente. El comentario del cliente de recetas ya se había actualizado con AUD-008.
+
+- AUD-010: la imagen instala desde el lockfile con `npm ci` y construye y ejecuta como `node` (UID/GID 1000). Los archivos de la aplicación pertenecen a ese usuario para permitir las escrituras de Prisma y Vitest. Se conserva la imagen compartida para runtime y pruebas. El comando raíz de cobertura limpia el reporte generado anterior y recrea el directorio con el usuario del host antes de montarlo; se documentan los permisos necesarios para montajes en Linux.
+
+- AUD-008: `PATCH /recipes/:id` acepta únicamente `{ availableInCatalog }` y cambia la disponibilidad de una receta propia sin reemplazar sus datos, ingredientes ni tipos de comida. Una fila desactualizada del listado ya no sobrescribe una edición posterior. Mantiene el PUT completo, el 403 de recetas comunes y el 404 de privadas ajenas. OpenAPI deriva el nuevo cuerpo del schema Zod. El estado de recomendaciones sigue en su formulario de edición completa; no hay una acción equivalente desde su listado.
+
+- AUD-016: restablecer la contraseña invalida todos los JWT anteriores de esa cuenta en la siguiente request, sin esperar su vencimiento. `nutritionist.token_version` (migración `agrega_version_de_tokens`) se incrementa atómicamente junto con el hash y se compara con el claim `tokenVersion` al autorizar. Evita la ambigüedad de cambios dentro del mismo segundo; los tokens previos al cambio de formato siguen válidos como versión cero hasta el primer restablecimiento. Las rotaciones de `create-admin` y del seed aplican la misma revocación. La respuesta pública de la cuenta no agrega campos. Decisión DA-35 en el repo raíz.
+
+- AUD-009: el backend rechaza al arrancar un `JWT_SECRET` ausente, vacío o compuesto solo por espacios, salvo con `NODE_ENV=test`. Conserva la clave configurada sin recortarla. El ejemplo de `IA_TIMEOUT_MS` se alinea con el default de 3000 ms; los valores explícitos conservan prioridad.
 
 - Traefik pasa de `v3.1` a `v3.7` (T-): con Docker Engine 29+, el de la VM de staging, `v3.1` no veía ningún contenedor y respondía 404 a todo, aunque los servicios estuvieran arriba.
 - Swagger (T23): 15 operaciones GET y DELETE no documentaban el `400`, que igual devuelven ante un parámetro de query desconocido, porque todas las rutas validan la query.

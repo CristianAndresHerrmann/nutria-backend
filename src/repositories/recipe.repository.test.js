@@ -101,6 +101,31 @@ describe('recipe.repository — aislamiento por nutricionista', () => {
     expect(prisma.recipeMealType.createMany).toHaveBeenCalledWith({ data: [{ mealType: 'lunch', recipeId: 'r-1' }] });
   });
 
+  it('el cambio de disponibilidad filtra por dueño y escribe solo ese campo, sin reemplazar hijos', async () => {
+    const prisma = createFakePrisma();
+    const repository = createRecipeRepository({ prisma });
+
+    await repository.setAvailabilityOwn('r-1', 'nutri-1', false);
+
+    expect(prisma.recipe.updateMany).toHaveBeenCalledWith({
+      where: { id: 'r-1', nutritionistId: 'nutri-1' }, data: { availableInCatalog: false },
+    });
+    expect(prisma.recipeIngredient.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.recipeIngredient.createMany).not.toHaveBeenCalled();
+    expect(prisma.recipeMealType.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.recipeMealType.createMany).not.toHaveBeenCalled();
+  });
+
+  it('el cambio de disponibilidad sin filas propias devuelve null sin releer ni tocar hijos', async () => {
+    const prisma = createFakePrisma({ updatedCount: 0 });
+    const repository = createRecipeRepository({ prisma });
+
+    expect(await repository.setAvailabilityOwn('r-1', 'nutri-2', false)).toBeNull();
+    expect(prisma.recipe.findFirst).not.toHaveBeenCalled();
+    expect(prisma.recipeIngredient.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.recipeMealType.deleteMany).not.toHaveBeenCalled();
+  });
+
   it('una receta común o de otro nutricionista no se edita y sus ingredientes no se tocan', async () => {
     const prisma = createFakePrisma({ updatedCount: 0 });
     const repository = createRecipeRepository({ prisma });
@@ -117,6 +142,7 @@ describe('recipe.repository — aislamiento por nutricionista', () => {
     expect(() => repository.findVisible(nutritionistId)).toThrow(/sin nutritionistId/);
     expect(() => repository.findVisibleById('r-1', nutritionistId)).toThrow(/sin nutritionistId/);
     expect(() => repository.create(nutritionistId, { name: 'X' }, ingredients, ['lunch'])).toThrow(/sin nutritionistId/);
+    expect(() => repository.setAvailabilityOwn('r-1', nutritionistId, false)).toThrow(/sin nutritionistId/);
     expect(() => repository.updateOwn('r-1', nutritionistId, { name: 'X' }, ingredients, ['lunch'])).toThrow(
       /sin nutritionistId/,
     );

@@ -2,10 +2,11 @@
 // @openapi de las rutas con $ref. Van como objeto JS y no como YAML suelto
 // porque las comparten todas las rutas y así quedan requeribles y testeables.
 //
-// Los schemas se escriben a mano en vez de derivarlos de los schemas Zod:
-// z.toJSONSchema no puede representar el superRefine de "menor de edad exige
-// adulto responsable" ni el preprocess/transform de birthDate. Al agregar o
-// cambiar un endpoint hay que actualizar esto junto con el schema Zod.
+// Los cuerpos de entrada se generan desde Zod en requestSchemas.js. Sus
+// descripciones y ejemplos viven en requestAnnotations.json; las respuestas,
+// los errores y los parámetros siguen definidos acá.
+
+const { requestSchemas } = require('./requestSchemas');
 
 const securitySchemes = {
   bearerAuth: {
@@ -14,15 +15,14 @@ const securitySchemes = {
     bearerFormat: 'JWT',
     description:
       'Token devuelto por `POST /auth/login`. Se manda como `Authorization: Bearer <token>` ' +
-      'y expira a las 2 horas por defecto (`JWT_EXPIRES_IN`). Si la cuenta se desactiva, el ' +
+      'y expira a las 2 horas por defecto (`JWT_EXPIRES_IN`). Si la cuenta se desactiva o se restablece su contraseña, el ' +
       'token deja de servir en la siguiente request. Las rutas clínicas y de catálogo son de ' +
       'nutricionista y las de `/admin`, de administrador: con el otro rol responden 403.',
   },
 };
 
-// Campos del paciente que comparten request y respuesta con el mismo tipo.
-// birthDate queda afuera a propósito: entra como AAAA-MM-DD y sale como
-// fecha-hora ISO, así que se declara distinto en cada schema.
+// Campos de la respuesta de paciente. birthDate queda afuera porque se
+// serializa como fecha-hora ISO; su entrada se genera desde Zod.
 const sharedPatientFields = {
   firstName: { type: 'string', minLength: 1, example: 'Lucía' },
   lastName: { type: 'string', minLength: 1, example: 'Fernández' },
@@ -68,7 +68,7 @@ const clinicalPatientFields = {
   intakePatterns: nullableText('Picoteo por la tarde'),
 };
 
-// Categorías de un alimento, compartidas por el alta y la respuesta (T15).
+// Categorías en la respuesta de un alimento (T15).
 const foodCategoriesField = {
   type: 'array',
   minItems: 1,
@@ -92,7 +92,7 @@ function catalogRef(exampleName) {
   };
 }
 
-// Campos de una receta compartidos por el alta, la edición y la respuesta (T21).
+// Campos de la respuesta de una receta (T21).
 const recipeInputProperties = {
   name: { type: 'string', minLength: 1, maxLength: 100, example: 'Ensalada de arroz y atún' },
   preparation: { type: 'string', nullable: true, maxLength: 5000, example: '1. Hervir el arroz.\n2. Mezclar con el atún.' },
@@ -131,8 +131,7 @@ const recipeInputProperties = {
   },
 };
 
-// Campos de una recomendación clínica compartidos por el alta, la edición y la
-// respuesta (T22).
+// Campos de la respuesta de una recomendación clínica (T22).
 const recommendationInputProperties = {
   pathologyId: {
     type: 'string',
@@ -165,25 +164,8 @@ const planTextProperties = {
   thematicRecommendations: planText('Recomendaciones temáticas.', 'Texto de ejemplo ficticio.'),
 };
 
-const optionItemInput = {
-  type: 'object',
-  required: ['type'],
-  additionalProperties: false,
-  description:
-    'Ítem de una opción. Cada tipo manda solo su referencia: `food` → `foodId`, `food_group` → ' +
-    '`foodGroupId`, `recipe` → `recipeId`, `unrecognized` → `originalText` (hasta 300 caracteres). La ' +
-    'copia del nombre y las categorías la arma el servidor.',
-  properties: {
-    type: { type: 'string', enum: ['food', 'food_group', 'recipe', 'unrecognized'] },
-    foodId: { type: 'string', format: 'uuid' },
-    foodGroupId: { type: 'string', format: 'uuid' },
-    recipeId: { type: 'string', format: 'uuid' },
-    originalText: { type: 'string', minLength: 1, maxLength: 300 },
-  },
-  example: { type: 'food', foodId: '6f1c2a5e-0000-4000-8000-000000000001' },
-};
-
 const schemas = {
+  ...requestSchemas,
   Health: {
     type: 'object',
     properties: {
@@ -193,22 +175,14 @@ const schemas = {
     },
   },
 
-  LoginRequest: {
-    type: 'object',
-    required: ['email', 'password'],
-    properties: {
-      email: { type: 'string', format: 'email', example: 'nutricionista@nutria.com' },
-      password: { type: 'string', format: 'password', example: '123456aA!' },
-    },
-  },
-
   LoginResponse: {
     type: 'object',
     properties: {
       token: {
         type: 'string',
         description:
-          'JWT firmado con HS256. El id de la cuenta viaja en el claim `sub` y su rol en `role`.',
+          'JWT firmado con HS256. El id de la cuenta viaja en el claim `sub`, su rol en `role` y ' +
+          'la versión interna de revocación en `tokenVersion`.',
         example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
       },
       nutritionist: {
@@ -236,92 +210,6 @@ const schemas = {
       email: { type: 'string', format: 'email', example: 'ejemplo@nutria.test' },
       active: { type: 'boolean', example: true, description: 'Con `false` la cuenta no inicia sesión.' },
       createdAt: { type: 'string', format: 'date-time', example: '2026-10-26T14:03:11.204Z' },
-    },
-  },
-
-  NutritionistAccountInput: {
-    type: 'object',
-    required: ['name', 'email', 'password'],
-    additionalProperties: false,
-    description: 'El rol y el estado no se eligen: la cuenta nace de nutricionista y activa.',
-    properties: {
-      name: { type: 'string', minLength: 1, maxLength: 100, example: 'Lic. Ejemplo Ficticio' },
-      email: {
-        type: 'string',
-        format: 'email',
-        description: 'Se guarda sin espacios y en minúsculas.',
-        example: 'ejemplo@nutria.test',
-      },
-      password: {
-        type: 'string',
-        format: 'password',
-        minLength: 8,
-        description: 'Contraseña inicial: al menos 8 caracteres y hasta 72 bytes.',
-      },
-    },
-  },
-
-  NutritionistActiveInput: {
-    type: 'object',
-    required: ['active'],
-    additionalProperties: false,
-    properties: {
-      active: { type: 'boolean', example: false, description: '`false` desactiva la cuenta; `true` la reactiva.' },
-    },
-  },
-
-  NutritionistPasswordInput: {
-    type: 'object',
-    required: ['password'],
-    additionalProperties: false,
-    properties: {
-      password: {
-        type: 'string',
-        format: 'password',
-        minLength: 8,
-        description: 'Contraseña nueva: al menos 8 caracteres y hasta 72 bytes.',
-      },
-    },
-  },
-
-  PatientInput: {
-    type: 'object',
-    required: ['firstName', 'lastName'],
-    // Refleja el z.strictObject del schema Zod: una clave desconocida da 400.
-    additionalProperties: false,
-    description:
-      'Body de alta y de edición: comparten schema porque el formulario es el mismo y ambos ' +
-      'mandan el objeto completo, no un diff de campos.\n\n' +
-      '**Regla cruzada que no se puede expresar en JSON Schema:** si `birthDate` corresponde a ' +
-      'un menor de 18 años, `guardianName`, `guardianRelationship`, `guardianContact` y ' +
-      '`attendsAccompanied` pasan a ser obligatorios y su ausencia devuelve 400 con los cuatro ' +
-      'campos en `details.fields`.\n\n' +
-      'Los campos opcionales aceptan el valor, `""`, `null` o su ausencia; las tres últimas ' +
-      'formas se guardan como `null`. Eso permite dar de alta un paciente con solo nombre y ' +
-      'apellido y completar el resto después.\n\n' +
-      'Los datos clínicos y contextuales (`medicalHistory` a `intakePatterns`) son todos ' +
-      'opcionales. Como la edición reemplaza el objeto completo, un campo que no se manda en ' +
-      'el `PUT` queda en `null`.',
-    properties: {
-      ...sharedPatientFields,
-      ...clinicalPatientFields,
-      birthDate: {
-        type: 'string',
-        pattern: '^\\d{4}-\\d{2}-\\d{2}$',
-        nullable: true,
-        description:
-          'Fecha de nacimiento en formato `AAAA-MM-DD`. Tiene que ser una fecha que exista ' +
-          '(`2023-02-30` da 400) y no puede ser posterior a hoy (UTC).',
-        example: '1992-03-14',
-      },
-      registrationComplete: {
-        type: 'boolean',
-        default: false,
-        description:
-          'Marca el registro como completo. La primera vez que pasa de `false` a `true` el ' +
-          'servidor sella `dataCompletedAt`; ese sello no se borra si después se vuelve a ' +
-          'marcar como incompleto.',
-      },
     },
   },
 
@@ -395,20 +283,6 @@ const schemas = {
     },
   },
 
-  FoodInput: {
-    type: 'object',
-    required: ['name', 'foodGroupId', 'categories'],
-    additionalProperties: false,
-    description:
-      'Alta de un alimento privado. El nombre se guarda sin espacios de más. El dueño no se manda: ' +
-      'sale del token.',
-    properties: {
-      name: { type: 'string', minLength: 1, maxLength: 100, example: 'Caballa' },
-      foodGroupId: { type: 'string', format: 'uuid' },
-      categories: foodCategoriesField,
-    },
-  },
-
   Food: {
     type: 'object',
     description:
@@ -441,30 +315,6 @@ const schemas = {
   },
 
   // Recetas (T21; RF-27). Básicas comunes (T30) y propias de cada nutricionista.
-  RecipeInput: {
-    type: 'object',
-    required: ['name', 'mealTypes', 'ingredients'],
-    additionalProperties: false,
-    description:
-      'Alta de una receta. El dueño y el origen no se mandan: salen del token y del servidor. Un ' +
-      'string vacío en un campo opcional cuenta como ausencia del dato.',
-    properties: recipeInputProperties,
-  },
-
-  RecipeUpdateInput: {
-    type: 'object',
-    required: ['name', 'mealTypes', 'ingredients'],
-    additionalProperties: false,
-    description: 'Reemplazo completo de la receta, más la baja lógica.',
-    properties: {
-      ...recipeInputProperties,
-      availableInCatalog: {
-        type: 'boolean',
-        description: '`false` da de baja la receta y `true` la reactiva. Omitido, conserva el valor que tenía.',
-      },
-    },
-  },
-
   Recipe: {
     type: 'object',
     description: 'Receta básica común o propia del nutricionista autenticado. El dueño no viaja: va `own`.',
@@ -513,30 +363,6 @@ const schemas = {
   },
 
   // Recomendaciones clínicas (T22; RF-30). Comunes o privadas del nutricionista.
-  ClinicalRecommendationInput: {
-    type: 'object',
-    required: ['pathologyId', 'title', 'text'],
-    additionalProperties: false,
-    description:
-      'Alta de una recomendación privada. El dueño no se manda: sale del token. El título se guarda ' +
-      'sin espacios de más; el texto, sin espacios en los extremos.',
-    properties: recommendationInputProperties,
-  },
-
-  ClinicalRecommendationUpdateInput: {
-    type: 'object',
-    required: ['pathologyId', 'title', 'text'],
-    additionalProperties: false,
-    description: 'Reemplazo completo de una recomendación propia, más la baja lógica.',
-    properties: {
-      ...recommendationInputProperties,
-      active: {
-        type: 'boolean',
-        description: '`false` la da de baja y `true` la reactiva. Omitido, conserva el valor que tenía.',
-      },
-    },
-  },
-
   ClinicalRecommendation: {
     type: 'object',
     description: 'Recomendación común o privada del nutricionista autenticado. El dueño no viaja.',
@@ -555,35 +381,6 @@ const schemas = {
   },
 
   // Condiciones del paciente (T18; RF-04 patologías, RF-07).
-  PatientConditionInput: {
-    type: 'object',
-    required: ['type'],
-    additionalProperties: false,
-    description:
-      'Una `pathology` exige `pathologyId` y no referencia alimentos. Los demás tipos exigen ' +
-      'exactamente uno entre `foodId` y `foodGroupId`, y no llevan `pathologyId`. Cualquier otra ' +
-      'combinación da 400 `VALIDATION_ERROR` con el campo en `details.fields`. Un string vacío ' +
-      'cuenta como ausencia del dato. El paciente sale de la ruta y el nutricionista del token.',
-    properties: {
-      type: { type: 'string', enum: ['pathology', 'allergy', 'intolerance', 'rejection', 'preference'] },
-      pathologyId: { type: 'string', format: 'uuid', nullable: true },
-      foodId: {
-        type: 'string',
-        format: 'uuid',
-        nullable: true,
-        description: 'Alimento común o privado propio, vigente. Uno inexistente o privado de otro da 400.',
-      },
-      foodGroupId: { type: 'string', format: 'uuid', nullable: true },
-      registeredAt: {
-        type: 'string',
-        format: 'date',
-        nullable: true,
-        description: 'AAAA-MM-DD, no futura. Si no viene: en el alta, la fecha del día; en la edición, la que tenía.',
-      },
-      observations: { type: 'string', nullable: true, maxLength: 1000, example: 'Le cae mal en cantidad' },
-    },
-  },
-
   PatientCondition: {
     type: 'object',
     description: 'Condición registrada, con el nombre de lo que referencia. Solo uno de los tres destinos viene con valor.',
@@ -603,71 +400,6 @@ const schemas = {
   },
 
   // Consultas y hábitos pautados (T19; RF-13, RF-18, RF-22 registro).
-  ConsultationInput: {
-    type: 'object',
-    required: ['date', 'type'],
-    additionalProperties: false,
-    description:
-      'Campos de la consulta. Fecha y tipo son obligatorios; el resto es opcional y un string vacío ' +
-      'cuenta como ausencia del dato (RNF-09). En el `PUT` es un reemplazo completo: un campo ' +
-      'omitido queda en `null`. El paciente sale de la ruta y el nutricionista del token.',
-    properties: {
-      date: { type: 'string', format: 'date', example: '2026-10-19', description: 'AAAA-MM-DD, no futura.' },
-      type: { type: 'string', enum: ['first', 'follow_up'], description: '`first` = primera, `follow_up` = seguimiento.' },
-      motivation: { ...nullableText('Sentirse con más energía'), description: 'Motivación (RF-13).' },
-      decisionOrigin: { ...nullableText('Propia'), description: 'Origen de la decisión de cambio (RF-13).' },
-      perceivedObstacle: { ...nullableText('Falta de tiempo para cocinar'), description: 'Obstáculo percibido (RF-13).' },
-      mainHabit: { ...nullableText('Picoteo por la tarde'), description: 'Hábito principal a modificar (RF-13).' },
-      observations: {
-        type: 'string',
-        nullable: true,
-        maxLength: 5000,
-        example: 'Buena adherencia a la caminata.',
-        description: 'Observaciones libres (RF-18).',
-      },
-    },
-  },
-
-  ConsultationCreateInput: {
-    description:
-      'Los campos de `ConsultationInput` más los hábitos pautados al cierre de la consulta y las ' +
-      'mediciones tomadas en ella.',
-    allOf: [
-      { $ref: '#/components/schemas/ConsultationInput' },
-      {
-        type: 'object',
-        properties: {
-          habits: {
-            type: 'array',
-            maxItems: 20,
-            description:
-              'Hábitos pautados (RF-22), redactados por el profesional, sin catálogo. Opcional: sin ' +
-              'hábitos la consulta se guarda igual. Nacen con `compliance: pending`. No se editan con ' +
-              'el `PUT`. Un error en cualquiera de ellos viene en `details.fields.habits`.',
-            items: {
-              type: 'object',
-              required: ['description'],
-              additionalProperties: false,
-              properties: {
-                description: { type: 'string', minLength: 1, maxLength: 500, example: 'Caminar 30 minutos tres veces por semana' },
-              },
-            },
-          },
-          measurements: {
-            type: 'array',
-            maxItems: 30,
-            description:
-              'Mediciones y laboratorio tomados en la consulta (RF-11, RF-12). Opcional. Se crean en la ' +
-              'misma operación, con la fecha de la consulta, y después se leen y editan por ' +
-              '`/patients/{id}/measurements`. No se aceptan en el `PUT`. Un error en cualquiera de ' +
-              'ellas viene en `details.fields.measurements`.',
-            items: { $ref: '#/components/schemas/ConsultationMeasurementInput' },
-          },
-        },
-      },
-    ],
-  },
-
   PrescribedHabit: {
     type: 'object',
     properties: {
@@ -701,71 +433,6 @@ const schemas = {
   },
 
   // Mediciones y laboratorio (T20; RF-11, RF-12).
-  ConsultationMeasurementInput: {
-    type: 'object',
-    required: ['type', 'value'],
-    additionalProperties: false,
-    description:
-      'Una medición antropométrica o de laboratorio. Solo validaciones técnicas: valor mayor a cero, ' +
-      'tipo válido y `detail` obligatorio para `skinfold`, `circumference` y `other`. Sin umbrales ' +
-      'clínicos. Ningún tipo es obligatorio.',
-    properties: {
-      type: {
-        type: 'string',
-        enum: ['weight', 'height', 'skinfold', 'circumference', 'cholesterol', 'triglycerides', 'glucose', 'other'],
-        example: 'weight',
-        description:
-          'Antropometría: `weight`, `height`, `skinfold`, `circumference`. Laboratorio: `cholesterol`, ' +
-          '`triglycerides`, `glucose`, `other`.',
-      },
-      detail: {
-        type: 'string',
-        nullable: true,
-        maxLength: 255,
-        example: null,
-        description:
-          'Qué se midió (qué pliegue, qué circunferencia, qué parámetro). Obligatorio para `skinfold`, ' +
-          '`circumference` y `other`.',
-      },
-      value: { type: 'number', exclusiveMinimum: 0, maximum: 999999.99, example: 68.4 },
-      unit: {
-        type: 'string',
-        nullable: true,
-        maxLength: 50,
-        example: 'kg',
-        description:
-          'Fija según el tipo: `weight` kg, `height` cm, `skinfold` mm, `circumference` cm, ' +
-          '`cholesterol`, `triglycerides` y `glucose` mg/dL. Si no viene se completa, y otra distinta ' +
-          'da 400. En `other` es opcional y se elige de una lista: %, g/dL, mg/dL, mg/L, µg/dL, ' +
-          'ng/mL, pg/mL, mmol/L, mEq/L, UI/L, µUI/mL; otra da 400.',
-      },
-    },
-  },
-
-  MeasurementInput: {
-    description:
-      'Los campos de `ConsultationMeasurementInput` más la fecha y, opcionalmente, la consulta. En el ' +
-      '`PUT` es un reemplazo completo: un opcional omitido queda en `null`.',
-    allOf: [
-      { $ref: '#/components/schemas/ConsultationMeasurementInput' },
-      {
-        type: 'object',
-        required: ['date'],
-        properties: {
-          date: { type: 'string', format: 'date', example: '2026-10-19', description: 'AAAA-MM-DD, no futura.' },
-          consultationId: {
-            type: 'string',
-            format: 'uuid',
-            nullable: true,
-            description:
-              'Consulta en la que se tomó. Opcional: una medición puede cargarse fuera de una consulta. ' +
-              'Tiene que ser del mismo paciente; si no, `400` en `details.fields.consultationId`.',
-          },
-        },
-      },
-    ],
-  },
-
   Measurement: {
     type: 'object',
     properties: {
@@ -785,66 +452,6 @@ const schemas = {
           'IMC (RF-11), calculado y no guardado, con un decimal. Solo en un `weight`, con la talla más ' +
           'reciente de fecha igual o anterior a la del peso; sin esa talla, o en otro tipo, `null`. No ' +
           'se clasifica.',
-      },
-    },
-  },
-
-  GeneratePlanInput: {
-    type: 'object',
-    additionalProperties: false,
-    description: 'Opcional. Sin body (o sin `mealTypes`) se piden las cuatro comidas.',
-    properties: {
-      mealTypes: {
-        type: 'array',
-        minItems: 1,
-        maxItems: 4,
-        uniqueItems: true,
-        items: { type: 'string', enum: MEAL_TYPE_ENUM },
-        example: ['breakfast', 'lunch', 'afternoon_snack', 'dinner'],
-      },
-    },
-  },
-
-  PlanInput: {
-    type: 'object',
-    required: ['meals'],
-    additionalProperties: false,
-    description:
-      'Reemplazo completo del borrador. Un texto omitido o vacío se guarda como `null`. Se admiten ' +
-      'comidas sin opciones y opciones sin ítems (guardado parcial).',
-    properties: {
-      ...planTextProperties,
-      meals: {
-        type: 'array',
-        maxItems: 4,
-        description: 'Una por tipo de comida, sin repetir. El orden de opciones e ítems es su posición en la lista.',
-        items: {
-          type: 'object',
-          required: ['mealType', 'options'],
-          additionalProperties: false,
-          properties: {
-            mealType: { type: 'string', enum: MEAL_TYPE_ENUM },
-            instructions: {
-              type: 'string',
-              nullable: true,
-              maxLength: 500,
-              description: 'Indicación de fraccionamiento para el paciente (RF-36).',
-            },
-            options: {
-              type: 'array',
-              maxItems: 10,
-              items: {
-                type: 'object',
-                required: ['items'],
-                additionalProperties: false,
-                properties: {
-                  description: { type: 'string', nullable: true, maxLength: 500 },
-                  items: { type: 'array', maxItems: 15, items: optionItemInput },
-                },
-              },
-            },
-          },
-        },
       },
     },
   },

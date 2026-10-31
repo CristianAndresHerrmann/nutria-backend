@@ -49,6 +49,8 @@ Organizado por capas:
 
 ## Variables de entorno
 
+El backend requiere un `JWT_SECRET` con contenido al arrancar: si falta, está vacío o contiene solo espacios, termina con un error de configuración antes de escuchar conexiones. La excepción es `NODE_ENV=test`; no se agrega una clave por defecto.
+
 Cada repositorio tiene su propio `.env.example`, sin valores reales. Antes de ejecutar, copiar a `.env`:
 
 ```bash
@@ -57,7 +59,7 @@ cp ../nutria-frontend/.env.example ../nutria-frontend/.env
 cp ../nutria-ia/.env.example ../nutria-ia/.env
 ```
 
-Completar `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` y `JWT_SECRET` con valores propios del entorno local. `CORS_ORIGIN` trae un valor por defecto (dominio de Docker Compose, puerto de Vite en local y dominio de la documentación interactiva) que alcanza para desarrollo; solo hace falta tocarlo si el frontend corre en otro origen. `IA_SERVICE_URL` es el hostname interno de Docker con el que el backend alcanza al servicio de IA; ningún navegador lo usa. `IA_TIMEOUT_MS` (opcional: si no se define vale 3000; el `.env.example` trae 5000) es cuánto espera el backend al servicio de IA antes de darlo por no disponible. `IA_GENERATION_TIMEOUT_MS` (opcional: si no se define vale 30000) es lo mismo para la generación de un plan, que tarda más; tiene que superar el `AI_PROVIDER_TIMEOUT_SECONDS` de nutria-ia (25 s por defecto). Ninguno de los `.env` se versiona (están excluidos en el `.gitignore` de cada repo); solo se versiona el `.env.example` correspondiente.
+Completar `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` y `JWT_SECRET` con valores propios del entorno local. Si no se define `CORS_ORIGIN`, el backend permite `http://local.nutria.com` y `http://localhost:5173`; solo hace falta configurarlo si el frontend corre en otro origen. Swagger usa el mismo origen que sirve la documentación, así que no necesita sumar su dominio al CORS. `IA_SERVICE_URL` es el hostname interno de Docker con el que el backend alcanza al servicio de IA; ningún navegador lo usa. `IA_TIMEOUT_MS` (opcional: por defecto 3000, igual que en `.env.example`) es cuánto espera el backend al servicio de IA antes de darlo por no disponible. `IA_GENERATION_TIMEOUT_MS` (opcional: si no se define vale 30000) es lo mismo para la generación de un plan, que tarda más; tiene que superar el `AI_PROVIDER_TIMEOUT_SECONDS` de nutria-ia (25 s por defecto). Ninguno de los `.env` se versiona (están excluidos en el `.gitignore` de cada repo); solo se versiona el `.env.example` correspondiente.
 
 `LOGIN_RATE_LIMIT_MAX` y `LOGIN_RATE_LIMIT_WINDOW_MS` son opcionales: cuántos intentos de login fallidos se aceptan por IP y en qué ventana (por defecto, 10 cada 15 minutos).
 
@@ -139,6 +141,7 @@ Para bajar el stack: `npm run docker:down` (equivalente a `docker compose down`)
 | `npm run create-admin` | `node scripts/create-admin.js` | Crea o pone al día la cuenta de administrador con `ADMIN_EMAIL` y `ADMIN_PASSWORD`. |
 | `npm run studio` | `prisma studio` | Abre Prisma Studio para inspeccionar los datos. |
 | `npm run test` | `vitest run` | Corre la suite de tests una vez. |
+| `npm run test:integration` | `node scripts/run-integration-tests.js` | Recrea solo `nutria_test` con las migraciones, sin seed, y ejecuta `*.int.test.js` en serie contra Postgres real. Desde `nutria/`: `npm run test:backend:integration` (Docker). |
 | `npm run test:watch` | `vitest` | Modo watch, para iterar mientras se escribe un test. |
 | `npm run test:coverage` | `vitest run --coverage` | Tests + reporte de cobertura (terminal, `coverage/index.html` y `coverage/lcov.info`). |
 
@@ -154,7 +157,8 @@ manual previo:
 # Tests
 docker compose run --build --rm --no-deps backend npm run test
 
-# Tests + cobertura (el -v deja el reporte en ./coverage del host)
+# Tests + cobertura (limpiar el reporte anterior y crear la carpeta con el usuario del host)
+node -e "const fs = require('node:fs'); fs.rmSync('coverage', { recursive: true, force: true }); fs.mkdirSync('coverage', { recursive: true })"
 docker compose run --build --rm --no-deps -v ./coverage:/app/coverage backend npm run test:coverage
 
 # Migraciones: aplicar las pendientes
@@ -174,6 +178,16 @@ docker compose run --build --rm --no-deps backend npm run create-admin
 `docker compose up` deja además las migraciones al día por sí solo: el `CMD` de la
 imagen del backend corre `prisma migrate deploy` antes de levantar el server, así
 que un pull que trae una migración nueva no necesita ningún paso aparte.
+
+La imagen instala las dependencias con `npm ci` y ejecuta como `node` (UID/GID
+1000), tanto durante el build como al arrancar o ejecutar pruebas y Prisma.
+Conserva las dependencias de desarrollo porque la misma imagen ejecuta las suites
+y la cobertura. En Linux, los directorios del host montados para migraciones y
+cobertura deben ser escribibles por ese UID; Docker no cambia sus permisos al
+montarlos. El comando raíz `npm run test:backend:coverage` limpia el reporte
+generado anterior y recrea la carpeta con el usuario del host antes del montaje.
+Si en Linux un reporte anterior de root impide limpiarlo, hay que corregir su
+propietario primero.
 
 ## Integración continua
 
@@ -198,6 +212,30 @@ Compose; o con el script equivalente desde la carpeta raíz `nutria/`):
 | `npm test` | `npm run test:backend` desde `nutria/`. |
 | `npm audit --audit-level=high` | `docker compose run --build --rm --no-deps backend npm audit --audit-level=high` |
 | `docker build` (sin push) | `docker compose build backend` |
+| Integración contra Postgres dentro de la imagen | `npm run test:backend:integration` desde `nutria/`. |
+
+La integración deriva una conexión a `nutria_test` desde `DATABASE_URL`, o acepta
+`TEST_DATABASE_URL` si apunta a esa misma base y al schema `public`. El runner
+valida el destino antes de ejecutar `prisma migrate reset --force --skip-seed`.
+Cada test limpia las tablas y crea sus fixtures ficticias; el seed se verifica en
+una prueba aparte. La suite unitaria sigue sin necesitar Postgres.
+
+La suite unitaria incluye `src/schemas/iaProposal.contract.test.js` (AUD-004):
+compara los enums de Prisma y las restricciones de la propuesta Zod con la copia
+versionada del OpenAPI de IA en `src/schemas/fixtures/ia.openapi.json`, además de
+los topes del catálogo y los textos de contexto enviados. Ante un cambio
+intencional del contrato, ejecutar `npm run contract:ia:update` desde `nutria/`
+y revisar las pruebas de ambos repos; el test no actualiza la copia solo.
+
+Los cuerpos de entrada de OpenAPI se generan al cargar la documentación desde
+los validadores Zod (`src/docs/requestSchemas.js`, AUD-005). Al agregar uno,
+registrarlo en ese módulo y referenciar su nombre desde la ruta. Las descripciones,
+ejemplos, formatos de presentación y restricciones personalizadas no inferibles
+viven en `requestAnnotations.json`; los tipos, campos, enums y límites se derivan
+de Zod. Los topes de texto describen el valor después de normalizar espacios.
+Las reglas cruzadas, las fechas no futuras y el límite de contraseña en bytes se
+documentan en texto y se verifican con los tests de los validadores. Las respuestas,
+errores y parámetros siguen en `src/docs/components.js`.
 
 ## Staging
 

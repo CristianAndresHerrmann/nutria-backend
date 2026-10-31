@@ -25,7 +25,9 @@ const loginRateLimiter = createLoginRateLimiter({
  *       `Authorization: Bearer <token>`. Lleva el id de la cuenta en el claim
  *       `sub`, y ese id es el que filtra todo acceso a datos de pacientes. El claim
  *       `role` le dice al frontend a qué inicio llevar; el backend autoriza con el rol
- *       guardado en la base. Hay un límite de intentos fallidos por IP: pasado, responde
+ *       guardado en la base. El claim interno `tokenVersion` permite revocar los tokens anteriores
+ *       al restablecimiento de contraseña, sin esperar su vencimiento.
+ *       Hay un límite de intentos fallidos por IP: pasado, responde
  *       429 hasta que se cumple la ventana.
  *     requestBody:
  *       required: true

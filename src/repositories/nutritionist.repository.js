@@ -15,9 +15,9 @@ function createNutritionistRepository({ prisma: client }) {
   }
 
   // Lo que requireAuth necesita en cada request: si la cuenta sigue existiendo,
-  // si está activa y con qué rol.
+  // si está activa, con qué rol y qué versión de tokens sigue vigente.
   function findAuthState(id) {
-    return client.nutritionist.findUnique({ where: { id }, select: { role: true, active: true } });
+    return client.nutritionist.findUnique({ where: { id }, select: { role: true, active: true, tokenVersion: true } });
   }
 
   function listNutritionists() {
@@ -43,7 +43,9 @@ function createNutritionistRepository({ prisma: client }) {
   }
 
   function setPasswordHash(id, passwordHash) {
-    return updateManaged(id, { passwordHash });
+    // Una sola escritura: el hash y la revocación no pueden quedar separados.
+    // increment evita perder revocaciones si hay dos restablecimientos a la vez.
+    return updateManaged(id, { passwordHash, tokenVersion: { increment: 1 } });
   }
 
   return { findByEmail, findAuthState, listNutritionists, createNutritionist, setActive, setPasswordHash };
