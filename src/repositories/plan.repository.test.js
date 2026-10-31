@@ -5,6 +5,7 @@ const { createPlanRepository } = require('./plan.repository');
 // dependería solo de lo que haga el servicio.
 function createFakePrisma({ updateCount = 1, planFound = true } = {}) {
   const prisma = {
+    $queryRaw: vi.fn(async () => (planFound ? [{ id: 'plan-1' }] : [])),
     plan: {
       findMany: vi.fn(async () => []),
       findFirst: vi.fn(async () => (planFound ? { id: 'plan-1', nutritionistId: 'nutri-1' } : null)),
@@ -185,20 +186,27 @@ describe('plan.repository — filtro por nutricionista en cada consulta', () => 
     expect(prisma.planMeal.create).not.toHaveBeenCalled();
   });
 
-  it('replaceFindings borra y crea los hallazgos del plan en una transacción', async () => {
+  it('replaceFindings bloquea el borrador propio antes de borrar y crear sus hallazgos en una transacción', async () => {
     const prisma = createFakePrisma();
     const repository = createPlanRepository({ prisma });
 
     const saved = await repository.replaceFindings('plan-1', 'nutri-1', FINDINGS);
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    expect(prisma.plan.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'plan-1', nutritionistId: 'nutri-1' } }));
+    const [parts, ...values] = prisma.$queryRaw.mock.calls[0];
+    expect(values).toEqual(['plan-1', 'nutri-1', 'draft']);
+    const sql = parts.join('?');
+    expect(sql).toContain('"id" = ?::uuid');
+    expect(sql).toContain('"nutritionist_id" = ?::uuid');
+    expect(sql).toContain('"status" = ?::"plan_status"');
+    expect(sql).toContain('FOR UPDATE');
+    expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(prisma.finding.deleteMany.mock.invocationCallOrder[0]);
     expect(prisma.finding.deleteMany).toHaveBeenCalledWith({ where: { planId: 'plan-1' } });
     expect(prisma.finding.createManyAndReturn).toHaveBeenCalledWith({ data: [{ ...FINDINGS[0], planId: 'plan-1' }] });
     expect(saved).toEqual([{ ...FINDINGS[0], planId: 'plan-1' }]);
   });
 
-  it('replaceFindings devuelve null sin borrar ni escribir cuando el plan es de otro nutricionista', async () => {
+  it('replaceFindings devuelve null sin borrar ni escribir si no hay un borrador propio', async () => {
     const prisma = createFakePrisma({ planFound: false });
     const repository = createPlanRepository({ prisma });
 
@@ -228,6 +236,7 @@ describe('plan.repository — filtro por nutricionista en cada consulta', () => 
       expect(prisma.plan.findFirst).not.toHaveBeenCalled();
       expect(prisma.aiGeneration.create).not.toHaveBeenCalled();
       expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
     });
   });
 });

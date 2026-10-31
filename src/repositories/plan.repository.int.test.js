@@ -1,4 +1,5 @@
 const { randomUUID } = require('node:crypto');
+const { setTimeout: delay } = require('node:timers/promises');
 const plans = require('./plan.repository');
 const { prisma, snapshotDatabase, createTenant, draftContent, generationData } = require('../test/integration');
 
@@ -13,6 +14,90 @@ beforeEach(async () => {
 function createGenerated(content = draftContent(), generation = generationData()) {
   return plans.createGenerated(owner.nutritionist.id, { patientId: owner.patient.id, ...content, generation });
 }
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+describe('revalidaciones concurrentes contra Postgres (AUD-015)', () => {
+  it.each([['el mismo plan', true], ['planes distintos', false]])('dos reemplazos sobre %s conservan un solo juego de hallazgos', async (_label, samePlan) => {
+    const firstContent = draftContent();
+    const firstFindings = firstContent.findings;
+    firstContent.findings = [];
+    const firstPlan = await createGenerated(firstContent);
+    const secondContent = draftContent();
+    const secondFindings = samePlan ? firstFindings : secondContent.findings;
+    secondContent.findings = [];
+    const secondPlan = samePlan ? firstPlan : await createGenerated(secondContent);
+    const firstPaused = deferred();
+    const resumeFirst = deferred();
+    const secondStarted = deferred();
+    let transactions = 0;
+    let firstPid;
+    // Se ejecutan las transacciones y queries reales. Solo se demora la primera
+    // inserción para forzar el intercalado: no depende de carreras del scheduler.
+    const controlled = plans.createPlanRepository({ prisma: {
+      $transaction: (work) => prisma.$transaction(async (tx) => {
+        const index = transactions++;
+        const [{ pid }] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+        if (index === 0) firstPid = pid;
+        else secondStarted.resolve(pid);
+        return work({ ...tx, finding: {
+          ...tx.finding,
+          async createManyAndReturn(args) {
+            if (index === 0) {
+              firstPaused.resolve();
+              await resumeFirst.promise;
+            }
+            return tx.finding.createManyAndReturn(args);
+          },
+        } });
+      }, { timeout: 10000 }),
+    } });
+
+    const first = controlled.replaceFindings(firstPlan.id, owner.nutritionist.id, firstFindings);
+    first.catch(firstPaused.reject);
+    let second;
+    let secondFinished = false;
+    let blockingObserved = false;
+    try {
+      await firstPaused.promise;
+      second = controlled.replaceFindings(secondPlan.id, owner.nutritionist.id, secondFindings);
+      second.then(() => { secondFinished = true; }, (error) => { secondFinished = true; secondStarted.reject(error); });
+      const secondPid = await secondStarted.promise;
+      const deadline = Date.now() + 3000;
+      while (!secondFinished && Date.now() < deadline) {
+        const [{ blocked }] = await prisma.$queryRaw`
+          SELECT ${firstPid}::int = ANY(pg_blocking_pids(${secondPid}::int)) AS blocked
+        `;
+        if (blocked) { blockingObserved = true; break; }
+        await delay(10);
+      }
+    } finally {
+      resumeFirst.resolve();
+      await Promise.allSettled([first, second]);
+    }
+    await first;
+    await second;
+    expect(await prisma.finding.findMany({ where: { planId: firstPlan.id } })).toHaveLength(1);
+    expect(await prisma.finding.findMany({ where: { planId: secondPlan.id } })).toHaveLength(1);
+    expect(blockingObserved).toBe(samePlan);
+    expect(await prisma.plan.findUnique({ where: { id: firstPlan.id } })).toEqual(expect.objectContaining({ updatedAt: firstPlan.updatedAt }));
+    expect(await prisma.plan.findUnique({ where: { id: secondPlan.id } })).toEqual(expect.objectContaining({ updatedAt: secondPlan.updatedAt }));
+  });
+
+  it('un fallo al insertar los nuevos hallazgos restaura los anteriores y deja el plan intacto', async () => {
+    const original = await createGenerated();
+    const before = await snapshotDatabase();
+    await expect(plans.replaceFindings(original.id, owner.nutritionist.id, [{
+      type: 'unrecognized_item', severity: 'warning', optionItemId: randomUUID(), message: 'Hallazgo ficticio con referencia inválida',
+    }])).rejects.toMatchObject({ code: 'P2003' });
+    expect(await snapshotDatabase()).toEqual(before);
+  });
+});
 
 describe('planes contra Postgres — atomicidad y aislamiento', () => {
   it('guarda juntos el borrador incompleto, sus hijos, hallazgos y traza', async () => {

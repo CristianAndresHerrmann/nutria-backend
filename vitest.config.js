@@ -13,8 +13,9 @@ module.exports = defineConfig({
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
       reportsDirectory: './coverage',
-      // En Docker el directorio es un bind mount (docker-compose.test.yml):
-      // borrarlo da EBUSY. Los reportes se sobrescriben igual.
+      // test:backend:coverage monta este directorio con el compose normal.
+      // El comando limpia el reporte desde el host antes de montarlo: Vitest
+      // no debe borrar el punto de montaje, porque daría EBUSY.
       clean: false,
       include: ['src/**/*.js'],
       exclude: [

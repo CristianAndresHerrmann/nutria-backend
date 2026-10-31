@@ -59,7 +59,7 @@ cp ../nutria-frontend/.env.example ../nutria-frontend/.env
 cp ../nutria-ia/.env.example ../nutria-ia/.env
 ```
 
-Completar `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` y `JWT_SECRET` con valores propios del entorno local. `CORS_ORIGIN` trae un valor por defecto (dominio de Docker Compose, puerto de Vite en local y dominio de la documentación interactiva) que alcanza para desarrollo; solo hace falta tocarlo si el frontend corre en otro origen. `IA_SERVICE_URL` es el hostname interno de Docker con el que el backend alcanza al servicio de IA; ningún navegador lo usa. `IA_TIMEOUT_MS` (opcional: por defecto 3000, igual que en `.env.example`) es cuánto espera el backend al servicio de IA antes de darlo por no disponible. `IA_GENERATION_TIMEOUT_MS` (opcional: si no se define vale 30000) es lo mismo para la generación de un plan, que tarda más; tiene que superar el `AI_PROVIDER_TIMEOUT_SECONDS` de nutria-ia (25 s por defecto). Ninguno de los `.env` se versiona (están excluidos en el `.gitignore` de cada repo); solo se versiona el `.env.example` correspondiente.
+Completar `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` y `JWT_SECRET` con valores propios del entorno local. Si no se define `CORS_ORIGIN`, el backend permite `http://local.nutria.com` y `http://localhost:5173`; solo hace falta configurarlo si el frontend corre en otro origen. Swagger usa el mismo origen que sirve la documentación, así que no necesita sumar su dominio al CORS. `IA_SERVICE_URL` es el hostname interno de Docker con el que el backend alcanza al servicio de IA; ningún navegador lo usa. `IA_TIMEOUT_MS` (opcional: por defecto 3000, igual que en `.env.example`) es cuánto espera el backend al servicio de IA antes de darlo por no disponible. `IA_GENERATION_TIMEOUT_MS` (opcional: si no se define vale 30000) es lo mismo para la generación de un plan, que tarda más; tiene que superar el `AI_PROVIDER_TIMEOUT_SECONDS` de nutria-ia (25 s por defecto). Ninguno de los `.env` se versiona (están excluidos en el `.gitignore` de cada repo); solo se versiona el `.env.example` correspondiente.
 
 `LOGIN_RATE_LIMIT_MAX` y `LOGIN_RATE_LIMIT_WINDOW_MS` son opcionales: cuántos intentos de login fallidos se aceptan por IP y en qué ventana (por defecto, 10 cada 15 minutos).
 
@@ -157,7 +157,8 @@ manual previo:
 # Tests
 docker compose run --build --rm --no-deps backend npm run test
 
-# Tests + cobertura (el -v deja el reporte en ./coverage del host)
+# Tests + cobertura (limpiar el reporte anterior y crear la carpeta con el usuario del host)
+node -e "const fs = require('node:fs'); fs.rmSync('coverage', { recursive: true, force: true }); fs.mkdirSync('coverage', { recursive: true })"
 docker compose run --build --rm --no-deps -v ./coverage:/app/coverage backend npm run test:coverage
 
 # Migraciones: aplicar las pendientes
@@ -177,6 +178,16 @@ docker compose run --build --rm --no-deps backend npm run create-admin
 `docker compose up` deja además las migraciones al día por sí solo: el `CMD` de la
 imagen del backend corre `prisma migrate deploy` antes de levantar el server, así
 que un pull que trae una migración nueva no necesita ningún paso aparte.
+
+La imagen instala las dependencias con `npm ci` y ejecuta como `node` (UID/GID
+1000), tanto durante el build como al arrancar o ejecutar pruebas y Prisma.
+Conserva las dependencias de desarrollo porque la misma imagen ejecuta las suites
+y la cobertura. En Linux, los directorios del host montados para migraciones y
+cobertura deben ser escribibles por ese UID; Docker no cambia sus permisos al
+montarlos. El comando raíz `npm run test:backend:coverage` limpia el reporte
+generado anterior y recrea la carpeta con el usuario del host antes del montaje.
+Si en Linux un reporte anterior de root impide limpiarlo, hay que corregir su
+propietario primero.
 
 ## Integración continua
 

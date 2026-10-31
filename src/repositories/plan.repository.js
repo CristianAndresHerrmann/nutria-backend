@@ -137,13 +137,20 @@ function createPlanRepository({ prisma: client }) {
 
   // Los hallazgos se recalculan en cada revalidación (RF-46): se reemplazan
   // todos los del plan, nunca se acumulan ni se descartan uno a uno. El plan se
-  // vuelve a buscar con su nutricionista dentro de la transacción, así un id
-  // ajeno no borra ni escribe nada. Devuelve los hallazgos creados, o null si
-  // el plan no es del nutricionista.
+  // bloquea por fila antes de borrar: dos revalidaciones del mismo borrador se
+  // serializan, sin bloquear otros planes ni modificar updatedAt. El filtro
+  // conserva el dueño y el estado editable. Devuelve los hallazgos creados, o
+  // null si el plan no es un borrador del nutricionista.
   function replaceFindings(planId, nutritionistId, findings) {
     assertNutritionistId(nutritionistId);
     return client.$transaction(async (tx) => {
-      const plan = await tx.plan.findFirst({ where: { id: planId, nutritionistId }, select: { id: true } });
+      const [plan] = await tx.$queryRaw`
+        SELECT "id" FROM "plan"
+        WHERE "id" = ${planId}::uuid
+          AND "nutritionist_id" = ${nutritionistId}::uuid
+          AND "status" = ${PlanStatus.draft}::"plan_status"
+        FOR UPDATE
+      `;
       if (!plan) return null;
 
       await tx.finding.deleteMany({ where: { planId } });
