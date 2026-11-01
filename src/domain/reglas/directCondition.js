@@ -22,7 +22,9 @@ function conditionText(condition) {
   return `${CONDITION_LABELS[condition.type]} del paciente (${target})`;
 }
 
-// Texto del ítem alcanzado por el alcance, o null si no lo alcanza.
+// Texto del ítem alcanzado por el alcance, o null si no lo alcanza. El alcance
+// puede ser de una condición o de una regla por patología (pathologyRule.js):
+// solo se usan foodId y groupIds.
 function reachedItemText(item, scope, catalog) {
   switch (item.type) {
     case OptionItemType.food:
@@ -60,4 +62,4 @@ function directConditionFindings(item, scopes, catalog) {
   return findings;
 }
 
-module.exports = { directConditionFindings };
+module.exports = { directConditionFindings, reachedItemText };

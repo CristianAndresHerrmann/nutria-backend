@@ -6,6 +6,24 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ### Added
 
+- Reglas clínicas por patología (T35; RF-43, RF-47; riesgos 2 y 15; DA-36). La matriz, sus fuentes y su origen (S, sin entrevista) están en la ficha R-05 de `docs/reglas-clinicas.md` del repo raíz.
+  - `scripts/seed-data/clinical-rules.js`: 37 reglas, cada una con una fuente bibliográfica con páginas.
+    - Celiaquía: 27 alimentos con trigo, avena, cebada o centeno, `prohibited`. La avena sin TACC, `moderate`.
+    - Diabetes: azúcares y dulces, `moderate`.
+    - Hipertensión: caldo en cubo, `prohibited`. Sal fina y el grupo Fiambres y embutidos, `moderate`.
+  - El seed carga las reglas por patología y alimento o grupo, las pone al día y da de baja (`active = false`) las que salen de la matriz. No las borra, porque los hallazgos las referencian. No hay migración: el origen de cada regla queda en la documentación.
+  - Motor de reglas: nuevo `src/domain/reglas/pathologyRule.js`. Un ítem comprendido en una regla vigente de una patología del paciente genera un hallazgo `pathology_rule` con `clinicalRuleId`. El criterio de "comprendido en" es el de la condición directa. El hallazgo es `blocking` si la regla es `prohibited` y `warning` si es `moderate`, y su mensaje nombra la patología y la fuente.
+  - `validatePlan` recibe `rules`. `planValidation.service.loadInputs` carga las reglas con `clinicalRule.repository.findActiveForPathologies`, de las dos severidades, y la comparación de hallazgos en `revalidate` incluye `clinicalRuleId`.
+  - `ruleScopes` pasa de `allowedCatalog.js` a `src/utils/recipeConditionFilter.js`, y la usan el motor y la generación.
+  - La generación toma las reglas prohibitivas de las entradas del motor. Se quita `findActiveProhibitedForPathologies` y la dependencia de `clinicalRuleRepository` en `planGeneration.service`.
+  - Pruebas:
+    - `pathologyRule.test.js` y casos nuevos en `validatePlan.test.js`, con casos que disparan y que no.
+    - El servicio de validación y la generación.
+    - De punta a punta contra Postgres en `app.int.test.js`.
+    - Los datos de la matriz en `clinical-rules.test.js`.
+    - La carga y la baja en `seed.int.test.js`.
+    - El resultado esperado de los casos C1–C7 de T41 contra la matriz, en `clinical-cases.rules.test.js`.
+
 - Casos clínicos ficticios y medición de la generación (T41; Plan 5.6, Tabla 7 del IA2, riesgos 4, 10 y 17).
   - `scripts/seed-data/clinical-cases.js`: siete pacientes ficticios con la ficha completa, cargados por el seed en `nutricionista@nutria.com`: celiaquía, diabetes, hipertensión (no cocina), alergia al grupo Huevos, intolerancia a la leche, sin condiciones y rechazo del grupo Legumbres (menor). El resultado esperado de cada caso lo define la entrevista (T35). `clinical-cases.test.js` controla que referencien el catálogo y cubran los siete tipos; la integración del seed verifica que estén una sola vez después de volver a correrlo.
   - `scripts/measure-generation.js` (`npm run measure:generation` en la raíz): corre N generaciones por caso contra el stack levantado, en serie. Registra el tiempo total hasta la propuesta validada, la duración del proveedor y los tokens leídos de `ai_generation`, la validez de la salida, los hallazgos bloqueantes y el costo estimado. Resume P50, P95 y máximo por caso y en total contra las metas de 15 s y del 95 %. Registra también el tamaño de cada propuesta (cantidad de opciones y caracteres de los seis textos de la IA). `--label` agrega un sufijo al nombre del archivo, para distinguir las variantes de una prueba. El resultado queda en `docs/mediciones-de-generacion/` del repo raíz. Se corre solo a mano. Las funciones de cálculo tienen tests en `measure-generation.test.js`.

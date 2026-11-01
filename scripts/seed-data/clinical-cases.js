@@ -6,10 +6,10 @@
 // scripts/measure-generation.js, que los busca por nombre y apellido. Por eso
 // los nombres no se repiten con los demás pacientes de esa cuenta.
 //
-// Acá no hay resultado esperado: el de cada caso lo define la matriz de la
-// entrevista de validación (T35). Mientras clinical_rule esté vacía, las
-// patologías no generan hallazgos pathology_rule; las alergias, intolerancias y
-// rechazos sí (condición directa, DA-30).
+// El resultado esperado de cada caso contra la matriz de reglas por patología
+// (T35, clinical-rules.js) está en clinical-cases.rules.test.js y en la ficha
+// R-05 de docs/reglas-clinicas.md: C1–C3 dan hallazgos pathology_rule; C4, C5 y
+// C7, de condición directa (DA-30).
 //
 // Las fichas están completas porque el contexto de cocina, trabajo, comidas
 // fuera de casa y hábitos es lo que viaja a la IA. Los contextos varían para

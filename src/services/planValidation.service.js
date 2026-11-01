@@ -3,14 +3,23 @@ const patientConditionRepository = require('../repositories/patientCondition.rep
 const foodRepository = require('../repositories/food.repository');
 const foodGroupRepository = require('../repositories/foodGroup.repository');
 const recipeRepository = require('../repositories/recipe.repository');
+const clinicalRuleRepository = require('../repositories/clinicalRule.repository');
 const AppError = require('../utils/AppError');
 const { validatePlan } = require('../domain/reglas/validatePlan');
 
 const PLAN_NOT_FOUND_MESSAGE = 'Plan no encontrado';
 
 // Lo que define a un hallazgo, sin su id ni su fecha.
-function findingSignature({ type, severity, optionId, optionItemId, patientConditionId, message }) {
-  return JSON.stringify([type, severity, optionId ?? null, optionItemId ?? null, patientConditionId ?? null, message]);
+function findingSignature({ type, severity, optionId, optionItemId, patientConditionId, clinicalRuleId, message }) {
+  return JSON.stringify([
+    type,
+    severity,
+    optionId ?? null,
+    optionItemId ?? null,
+    patientConditionId ?? null,
+    clinicalRuleId ?? null,
+    message,
+  ]);
 }
 
 // Mismos hallazgos, con repeticiones y sin importar el orden.
@@ -25,8 +34,9 @@ function sameFindings(stored, computed) {
 // nutritionistId viene siempre del token.
 //
 // - loadInputs arma las entradas del motor con lo que ve el nutricionista: las
-//   condiciones del paciente y el catálogo completo, incluidas las bajas (un ítem
-//   puede seguir referenciando un alimento o una receta dados de baja).
+//   condiciones del paciente, las reglas vigentes de sus patologías (T35) y el
+//   catálogo completo, incluidas las bajas (un ítem puede seguir referenciando
+//   un alimento o una receta dados de baja).
 // - computeFindings corre el motor sobre un plan, guardado o todavía en memoria.
 //   La generación (T37) y la edición lo usan para escribir el plan y sus
 //   hallazgos en una misma transacción.
@@ -45,6 +55,7 @@ function createPlanValidationService({
   foodRepository: foods,
   foodGroupRepository: groups,
   recipeRepository: recipes,
+  clinicalRuleRepository: clinicalRules,
 }) {
   async function loadInputs(patientId, nutritionistId) {
     const [conditions, allFoods, allGroups, allRecipes] = await Promise.all([
@@ -53,11 +64,13 @@ function createPlanValidationService({
       groups.findAll(),
       recipes.findVisible(nutritionistId, { includeUnavailable: true }),
     ]);
-    return { conditions, catalog: { foods: allFoods, groups: allGroups, recipes: allRecipes } };
+    const pathologyIds = conditions.map(({ pathologyId }) => pathologyId).filter(Boolean);
+    const rules = await clinicalRules.findActiveForPathologies(pathologyIds);
+    return { conditions, rules, catalog: { foods: allFoods, groups: allGroups, recipes: allRecipes } };
   }
 
-  function computeFindings(plan, { conditions, catalog }) {
-    return validatePlan({ plan, conditions, catalog });
+  function computeFindings(plan, { conditions, rules, catalog }) {
+    return validatePlan({ plan, conditions, rules, catalog });
   }
 
   return {
@@ -87,6 +100,7 @@ module.exports = createPlanValidationService({
   foodRepository,
   foodGroupRepository,
   recipeRepository,
+  clinicalRuleRepository,
 });
 module.exports.createPlanValidationService = createPlanValidationService;
 module.exports.PLAN_NOT_FOUND_MESSAGE = PLAN_NOT_FOUND_MESSAGE;

@@ -1,10 +1,9 @@
-const { AiGenerationResult } = require('@prisma/client');
+const { AiGenerationResult, RuleSeverity } = require('@prisma/client');
 const config = require('../config/env');
 const iaClient = require('../clients/ia.client');
 const { iaUnavailable } = require('../clients/ia.client');
 const planRepository = require('../repositories/plan.repository');
 const patientRepository = require('../repositories/patient.repository');
-const clinicalRuleRepository = require('../repositories/clinicalRule.repository');
 const planValidationService = require('./planValidation.service');
 const AppError = require('../utils/AppError');
 const { PATIENT_NOT_FOUND_MESSAGE } = require('./patient.service');
@@ -54,7 +53,6 @@ function generationRow(info, contextSent) {
 function createPlanGenerationService({
   planRepository: plans,
   patientRepository: patients,
-  clinicalRuleRepository: clinicalRules,
   planValidationService: validation,
   iaClient: ia,
   generationTimeoutMs,
@@ -109,9 +107,10 @@ function createPlanGenerationService({
       const patient = await patients.findByIdForNutritionist(patientId, nutritionistId);
       if (!patient) throw new AppError(404, PATIENT_NOT_FOUND_MESSAGE);
 
+      // Solo las reglas prohibitivas sacan alimentos del catálogo enviado (DA-31);
+      // las que moderan llegan a la IA y el motor las advierte (DA-36).
       const inputs = await validation.loadInputs(patientId, nutritionistId);
-      const pathologyIds = inputs.conditions.map(({ pathologyId }) => pathologyId).filter(Boolean);
-      const prohibitedRules = await clinicalRules.findActiveProhibitedForPathologies(pathologyIds);
+      const prohibitedRules = inputs.rules.filter(({ severity }) => severity === RuleSeverity.prohibited);
 
       const allowed = allowedCatalog({
         ...inputs.catalog,
@@ -156,7 +155,6 @@ function createPlanGenerationService({
 module.exports = createPlanGenerationService({
   planRepository,
   patientRepository,
-  clinicalRuleRepository,
   planValidationService,
   iaClient,
   generationTimeoutMs: config.iaGenerationTimeoutMs,

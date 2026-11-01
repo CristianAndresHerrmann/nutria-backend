@@ -232,4 +232,31 @@ describe('Edición del borrador — API real + Postgres (T40, RF-46)', () => {
     expect(blocking(reopened)).toEqual(['direct_condition']);
     expect(reopened.findings[0].patientConditionId).toBe(condition.body.id);
   });
+
+  it('las reglas de las patologías del paciente se guardan como hallazgos con su regla (T35)', async () => {
+    const path = `/patients/${owner.patient.id}/plans/${records.plan.id}`;
+    const moderated = await prisma.food.create({ data: { name: 'Alimento a moderar ficticio', foodGroupId: catalog.group.id } });
+    await prisma.patientCondition.create({ data: { patientId: owner.patient.id, type: 'pathology', pathologyId: catalog.pathology.id } });
+    const rule = await prisma.clinicalRule.create({
+      data: { pathologyId: catalog.pathology.id, foodId: moderated.id, severity: 'moderate', source: 'Fuente ficticia, p. 1' },
+    });
+    const ruleFindings = ({ findings }) => findings.filter(({ type }) => type === 'pathology_rule');
+
+    const saved = await request(path, owner.nutritionist, 'PUT', {
+      introduction: 'Borrador ficticio', meals: [{ mealType: 'lunch', options: [{ items: [{ type: 'food', foodId: moderated.id }] }] }],
+    });
+    expect(saved.status).toBe(200);
+    expect(ruleFindings(saved.body)).toEqual([
+      expect.objectContaining({
+        severity: 'warning',
+        clinicalRuleId: rule.id,
+        patientConditionId: null,
+        message: 'Alimento a moderar ficticio: a moderar por Patología ficticia (Fuente ficticia, p. 1)',
+      }),
+    ]);
+
+    // Dar de baja la regla la saca al reabrir el borrador.
+    await prisma.clinicalRule.update({ where: { id: rule.id }, data: { active: false } });
+    expect(ruleFindings((await request(path)).body)).toEqual([]);
+  });
 });
