@@ -212,6 +212,7 @@ describe('ai_generation — CHECK de las migraciones', () => {
     ['durationMs', -1, 'ai_generation_metrics_chk'],
     ['inputTokens', -1, 'ai_generation_metrics_chk'],
     ['outputTokens', -1, 'ai_generation_metrics_chk'],
+    ['reasoningTokens', -1, 'ai_generation_metrics_chk'],
     ['rawResponse', null, 'ai_generation_response_chk'],
     ['planId', null, 'ai_generation_plan_chk'],
   ])('rechaza %s = %s', async (field, value, constraint) => {

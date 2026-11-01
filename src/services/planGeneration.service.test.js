@@ -33,8 +33,9 @@ const GENERATION = {
   model: 'fake-deterministic',
   template_version: 'plan_proposal_v1',
   duration_ms: 7,
-  input_tokens: null,
-  output_tokens: null,
+  input_tokens: 1000,
+  output_tokens: 400,
+  reasoning_tokens: 120,
   raw_response: '{"meals": []}',
 };
 
@@ -148,8 +149,9 @@ describe('planGeneration.service.generate — de punta a punta con el proveedor 
       model: 'fake-deterministic',
       templateVersion: 'plan_proposal_v1',
       durationMs: 7,
-      inputTokens: null,
-      outputTokens: null,
+      inputTokens: 1000,
+      outputTokens: 400,
+      reasoningTokens: 120,
       rawResponse: '{"meals": []}',
       result: 'success',
       validationResult: 'blocking',

@@ -6,6 +6,12 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ### Added
 
+- Casos clínicos ficticios y medición de la generación (T41; Plan 5.6, Tabla 7 del IA2, riesgos 4, 10 y 17).
+  - `scripts/seed-data/clinical-cases.js`: siete pacientes ficticios con la ficha completa, cargados por el seed en `nutricionista@nutria.com`: celiaquía, diabetes, hipertensión (no cocina), alergia al grupo Huevos, intolerancia a la leche, sin condiciones y rechazo del grupo Legumbres (menor). El resultado esperado de cada caso lo define la entrevista (T35). `clinical-cases.test.js` controla que referencien el catálogo y cubran los siete tipos; la integración del seed verifica que estén una sola vez después de volver a correrlo.
+  - `scripts/measure-generation.js` (`npm run measure:generation` en la raíz): corre N generaciones por caso contra el stack levantado, en serie. Registra el tiempo total hasta la propuesta validada, la duración del proveedor y los tokens leídos de `ai_generation`, la validez de la salida, los hallazgos bloqueantes y el costo estimado. Resume P50, P95 y máximo por caso y en total contra las metas de 15 s y del 95 %. Registra también el tamaño de cada propuesta (cantidad de opciones y caracteres de los seis textos de la IA). `--label` agrega un sufijo al nombre del archivo, para distinguir las variantes de una prueba. El resultado queda en `docs/mediciones-de-generacion/` del repo raíz. Se corre solo a mano. Las funciones de cálculo tienen tests en `measure-generation.test.js`.
+  - `scripts/seed.js` exporta `SEED_PASSWORD` y corre solo cuando se lo ejecuta directo.
+  - Migración `agrega_tokens_de_razonamiento_a_generacion`: `ai_generation.reasoning_tokens` (nullable, dentro de `ai_generation_metrics_chk`), con los tokens de razonamiento que informa `nutria-ia` en `generation.reasoning_tokens`. El script de medición los resume en la columna "De razonamiento".
+
 - Pruebas de la edición del borrador (T40; RF-29, RF-46). La edición usa el `PUT /patients/:id/plans/:planId` de T37 sin cambios de comportamiento. Las pruebas cubren los criterios de cierre:
   - Agregar un alimento contraindicado, o una receta con un ingrediente contraindicado, genera el bloqueo junto al ítem.
   - Reemplazar el alimento contraindicado o el ítem no reconocido levanta el bloqueo.

@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const { FOOD_GROUPS, FOODS, PATHOLOGIES, RECOMMENDATIONS, RECOMMENDATION_TEXT } = require('./seed-data/catalogs');
 const { COMMON_RECIPES } = require('./seed-data/recipes');
+const { CLINICAL_CASES } = require('./seed-data/clinical-cases');
 // El mismo cliente que usa el servicio de recetas, para no abrir dos conexiones.
 const prisma = require('../src/lib/prisma');
 const recipeService = require('../src/services/recipe.service');
@@ -189,6 +190,9 @@ const SEED_DATA = [
           dataCompletedAt: null,
         },
       },
+      // Los casos clínicos del Plan 5.6 (T41), para probar la generación desde
+      // esta cuenta y medirla con scripts/measure-generation.js.
+      ...CLINICAL_CASES.map(({ patient }) => patient),
     ],
   },
   {
@@ -514,11 +518,17 @@ async function main() {
   }
 }
 
-main()
-  .catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+// scripts/measure-generation.js lo importa para iniciar sesión con la misma
+// contraseña: solo corre el seed cuando se lo ejecuta directo.
+if (require.main === module) {
+  main()
+    .catch((error) => {
+      console.error(error);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+    });
+}
+
+module.exports = { SEED_PASSWORD };
