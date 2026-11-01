@@ -143,7 +143,7 @@ router.get(
  *     description: >
  *       Reemplazo completo: textos, comidas, opciones e ítems se reemplazan por los que llegan, y los
  *       hallazgos se recalculan en la misma operación (RF-46). Cada ítem referencia un alimento visible
- *       para el nutricionista, un grupo, una receta propia o un texto no reconocido. Un alimento o una
+ *       para el nutricionista, un grupo, una receta propia o común, o un texto no reconocido. Un alimento o una
  *       receta dados de baja que ya estaban en el plan se pueden conservar, pero no agregar. Un error
  *       en un ítem se informa en `details.fields.meals`, con la opción y el ítem en el mensaje. Los
  *       ids de comidas, opciones, ítems y hallazgos se regeneran en cada guardado: el cliente usa

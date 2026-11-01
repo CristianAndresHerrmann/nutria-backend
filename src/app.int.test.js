@@ -201,3 +201,35 @@ describe('PATCH de disponibilidad de recetas — API real + Postgres (AUD-008)',
     expect(await snapshotDatabase()).toEqual(before);
   });
 });
+
+describe('Edición del borrador — API real + Postgres (T40, RF-46)', () => {
+  it('los bloqueos siguen a lo que se guarda y a las condiciones actuales del paciente', async () => {
+    const path = `/patients/${owner.patient.id}/plans/${records.plan.id}`;
+    const otherFood = await prisma.food.create({ data: { name: 'Otro alimento ficticio', foodGroupId: catalog.group.id } });
+    const blocking = ({ findings }) => findings.filter(({ severity }) => severity === 'blocking').map(({ type }) => type);
+    const save = (items) => request(path, owner.nutritionist, 'PUT', {
+      introduction: 'Borrador ficticio', meals: [{ mealType: 'lunch', options: [{ items }] }],
+    });
+
+    // El paciente es alérgico a catalog.food, que también es ingrediente de la receta.
+    const blocked = await save([
+      { type: 'unrecognized', originalText: 'Texto ficticio' },
+      { type: 'food', foodId: catalog.food.id },
+      { type: 'recipe', recipeId: records.recipe.id },
+    ]);
+    expect(blocked.status).toBe(200);
+    expect(blocking(blocked.body)).toEqual(['unrecognized_item', 'direct_condition', 'direct_condition']);
+
+    const fixed = await save([{ type: 'food', foodId: otherFood.id }]);
+    expect(fixed.status).toBe(200);
+    expect(blocking(fixed.body)).toEqual([]);
+    expect(blocking((await request(path)).body)).toEqual([]);
+
+    // Una condición nueva se refleja al reabrir el borrador, sin volver a guardarlo.
+    const condition = await request(`/patients/${owner.patient.id}/conditions`, owner.nutritionist, 'POST', { type: 'intolerance', foodId: otherFood.id });
+    expect(condition.status).toBe(201);
+    const reopened = (await request(path)).body;
+    expect(blocking(reopened)).toEqual(['direct_condition']);
+    expect(reopened.findings[0].patientConditionId).toBe(condition.body.id);
+  });
+});
