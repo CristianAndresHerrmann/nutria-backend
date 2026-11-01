@@ -6,6 +6,13 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ### Added
 
+- Pruebas de la edición del borrador (T40; RF-29, RF-46). La edición usa el `PUT /patients/:id/plans/:planId` de T37 sin cambios de comportamiento. Las pruebas cubren los criterios de cierre:
+  - Agregar un alimento contraindicado, o una receta con un ingrediente contraindicado, genera el bloqueo junto al ítem.
+  - Reemplazar el alimento contraindicado o el ítem no reconocido levanta el bloqueo.
+  - Una condición nueva del paciente aparece como bloqueo al reabrir el borrador, sin volver a guardarlo.
+
+  Las cubren los tests unitarios de `plan.service.test.js` y un test de punta a punta contra Postgres en `app.int.test.js`. La descripción OpenAPI del `PUT` aclara que un ítem puede referenciar una receta común, además de una propia (DA-34).
+
 - AUD-005: los cuerpos de request de OpenAPI se generan desde los schemas Zod de las rutas, conservando OpenAPI 3.0, los nombres de componentes, las descripciones y los ejemplos. El adaptador contempla los opcionales normalizados a null y los límites aplicados después de normalizar texto. Las reglas cruzadas siguen descritas explícitamente. Las respuestas, errores y parámetros conservan sus definiciones.
 
 - AUD-004: test de contrato backend ↔ IA contra una copia versionada del OpenAPI de `nutria-ia`. Compara los enums de Prisma, los campos y límites de la propuesta Zod, y los topes del catálogo y textos de contexto enviados. Corre en la suite unitaria sin necesitar el servicio de IA ni el otro repo.

@@ -14,6 +14,13 @@ const FOODS = [
 const RECIPES = [
   { id: 'tarta', name: 'Tarta', availableInCatalog: true, ingredients: [], mealTypes: [{ mealType: 'lunch' }] },
   { id: 'vieja', name: 'Vieja', availableInCatalog: false, ingredients: [], mealTypes: [{ mealType: 'lunch' }] },
+  {
+    id: 'milanesa',
+    name: 'Milanesa',
+    availableInCatalog: true,
+    ingredients: [{ food: { id: 'pollo', name: 'Pollo', foodGroupId: 'carnes' } }],
+    mealTypes: [{ mealType: 'lunch' }],
+  },
 ];
 
 // Un plan guardado que ya usa la pera (dada de baja después) y la receta vieja.
@@ -166,6 +173,64 @@ describe('plan.service.update — edición del borrador', () => {
     });
 
     expect(planRepository.replaceDraft).toHaveBeenCalledTimes(1);
+  });
+
+  // Criterios de cierre de T40: un bloqueo aparece y se levanta solo con lo que
+  // se guarda; no hay forma de descartarlo sin cambiar el ítem.
+  describe('los bloqueos siguen al contenido guardado (RF-46)', () => {
+    const POLLO_ALLERGY = { id: 'c-1', type: 'allergy', foodId: 'pollo', foodGroupId: null, food: { name: 'Pollo' }, foodGroup: null };
+    const blocking = (data) =>
+      data.findings.filter(({ severity }) => severity === 'blocking').map(({ type, message }) => [type, message]);
+
+    async function saveTwice(first, second) {
+      const { service, planRepository } = setup({ conditions: [POLLO_ALLERGY] });
+      await service.update('p-1', 'plan-1', 'nutri-1', { ...TEXTS, meals: lunch(first) });
+      await service.update('p-1', 'plan-1', 'nutri-1', { ...TEXTS, meals: lunch(second) });
+      return planRepository.replaceDraft.mock.calls.map(([, , , data]) => data);
+    }
+
+    it('agregar un alimento contraindicado genera el bloqueo junto al ítem', async () => {
+      const [before, after] = await saveTwice(
+        [{ type: 'food_group', foodGroupId: 'frutas' }],
+        [{ type: 'food_group', foodGroupId: 'frutas' }, { type: 'food', foodId: 'pollo' }],
+      );
+
+      expect(blocking(before)).toEqual([]);
+      expect(blocking(after)).toEqual([['direct_condition', 'Pollo: alergia del paciente (Pollo)']]);
+      expect(after.findings[0].optionItemId).toBe(after.meals[0].options[0].items[1].id);
+    });
+
+    it('reemplazar el alimento contraindicado levanta el bloqueo', async () => {
+      const [before, after] = await saveTwice(
+        [{ type: 'food', foodId: 'pollo' }],
+        [{ type: 'food_group', foodGroupId: 'frutas' }],
+      );
+
+      expect(blocking(before).map(([type]) => type)).toEqual(['direct_condition']);
+      expect(blocking(after)).toEqual([]);
+    });
+
+    it('asignar una receta con un ingrediente contraindicado la bloquea', async () => {
+      const [withRecipe, withoutRecipe] = await saveTwice(
+        [{ type: 'recipe', recipeId: 'milanesa' }],
+        [{ type: 'recipe', recipeId: 'tarta' }],
+      );
+
+      expect(blocking(withRecipe)).toEqual([
+        ['direct_condition', 'Receta Milanesa, ingrediente Pollo: alergia del paciente (Pollo)'],
+      ]);
+      expect(blocking(withoutRecipe)).toEqual([]);
+    });
+
+    it('reemplazar un ítem no reconocido por uno del catálogo resuelve su bloqueo', async () => {
+      const [kept, replaced] = await saveTwice(
+        [{ type: 'unrecognized', originalText: 'Mate cocido' }],
+        [{ type: 'food_group', foodGroupId: 'frutas' }],
+      );
+
+      expect(blocking(kept).map(([type]) => type)).toEqual(['unrecognized_item']);
+      expect(blocking(replaced)).toEqual([]);
+    });
   });
 
   it.each([
