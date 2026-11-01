@@ -1,6 +1,6 @@
 const { CookingMethod } = require('@prisma/client');
 const { descendantIds } = require('../../utils/foodGroupTree');
-const { conditionScopes, scopeCoversFood } = require('../../utils/recipeConditionFilter');
+const { conditionScopes, ruleScopes, scopeCoversFood } = require('../../utils/recipeConditionFilter');
 
 // Catálogo permitido para la generación del plan (RF-37, RF-38; T37). Función
 // pura: recibe el catálogo de entrada del motor de reglas (lo que ve el
@@ -9,23 +9,16 @@ const { conditionScopes, scopeCoversFood } = require('../../utils/recipeConditio
 // ofrece a la IA. Lo que no está acá, la IA no lo puede proponer por código.
 //
 // El criterio de "comprendido" es el mismo del filtro de recetas (RF-28) y del
-// motor (DA-23): conditionScopes y scopeCoversFood. Una regla prohibitiva de una
-// patología del paciente alcanza a su alimento o a su grupo con los subgrupos,
-// igual que una condición. Las reglas a moderar no excluyen: el hallazgo lo
-// decide el motor (T35). Ver docs/decisiones/traza-de-generaciones-sin-plan.md
+// motor (DA-23): conditionScopes, ruleScopes y scopeCoversFood. Una regla
+// prohibitiva de una patología del paciente alcanza a su alimento o a su grupo
+// con los subgrupos, igual que una condición. Las reglas a moderar no excluyen:
+// llegan a la IA y el motor las advierte (T35, DA-36). Ver docs/decisiones/traza-de-generaciones-sin-plan.md
 // en el repo raíz (DA-31).
 
 // Topes de la entrada del contrato (Catalog y PlanProposalRequest de nutria-ia).
 // Pasarlos haría que el servicio responda 422; se corta antes con un error
 // interno que dice qué tope se pasó.
 const CONTRACT_LIMITS = { foods: 2000, groups: 500, recipes: 200 };
-
-function ruleScopes(rules, groups) {
-  return rules.map((rule) => ({
-    foodId: rule.foodId || null,
-    groupIds: new Set(rule.foodGroupId ? descendantIds(groups, rule.foodGroupId) : []),
-  }));
-}
 
 function assertWithinLimits(allowed) {
   for (const [key, limit] of Object.entries(CONTRACT_LIMITS)) {

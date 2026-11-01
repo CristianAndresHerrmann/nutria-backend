@@ -29,6 +29,9 @@ const PLAN = {
 };
 
 const LACTOSE_INTOLERANCE = { id: 'c-1', patientId: 'p-1', type: 'intolerance', foodId: null, foodGroupId: 'lacteos', food: null, foodGroup: { name: 'Lácteos' } };
+const DIABETES = { id: 'c-2', patientId: 'p-1', type: 'pathology', pathologyId: 'diabetes', foodId: null, foodGroupId: null, pathology: { name: 'Diabetes' } };
+
+const rule = (id, severity, source = 'Fuente de prueba, p. 1') => ({ id, pathologyId: 'diabetes', foodId: 'leche', foodGroupId: null, severity, source });
 
 // Repositorio de planes fake con el mismo aislamiento que el real: solo
 // encuentra y escribe planes del nutricionista. Guarda los hallazgos por plan y
@@ -52,19 +55,21 @@ function createFakePlanRepository() {
   };
 }
 
-function setup({ conditions = [LACTOSE_INTOLERANCE] } = {}) {
+function setup({ conditions = [LACTOSE_INTOLERANCE], rules = [] } = {}) {
   const planRepository = createFakePlanRepository();
   const patientConditionRepository = { findAllForPatient: vi.fn(async () => conditions) };
   const foodRepository = { findAllVisible: vi.fn(async () => FOODS) };
   const recipeRepository = { findVisible: vi.fn(async () => []) };
+  const clinicalRuleRepository = { findActiveForPathologies: vi.fn(async () => rules) };
   const service = createPlanValidationService({
     planRepository,
     patientConditionRepository,
     foodRepository,
     foodGroupRepository: { findAll: async () => GROUPS },
     recipeRepository,
+    clinicalRuleRepository,
   });
-  return { service, planRepository, patientConditionRepository, foodRepository, recipeRepository };
+  return { service, planRepository, patientConditionRepository, foodRepository, recipeRepository, clinicalRuleRepository };
 }
 
 describe('planValidation.service.revalidate (RF-46)', () => {
@@ -121,6 +126,33 @@ describe('planValidation.service.revalidate (RF-46)', () => {
     expect(planRepository.replaceFindings).toHaveBeenCalledTimes(2);
 
     expect(planRepository.findingsByPlan.get('plan-1').map(({ type }) => type)).toEqual(['unrecognized_item', 'composition']);
+  });
+
+  it('carga las reglas de las patologías del paciente y las evalúa (T35)', async () => {
+    const rules = [rule('r-1', 'moderate')];
+    const { service, clinicalRuleRepository } = setup({ conditions: [LACTOSE_INTOLERANCE, DIABETES], rules });
+
+    const { findings } = await service.revalidate('p-1', 'plan-1', 'nutri-1');
+
+    expect(clinicalRuleRepository.findActiveForPathologies).toHaveBeenCalledWith(['diabetes']);
+    expect(findings.map(({ type, severity, clinicalRuleId }) => [type, severity, clinicalRuleId])).toEqual([
+      ['direct_condition', 'blocking', undefined],
+      ['pathology_rule', 'warning', 'r-1'],
+      ['unrecognized_item', 'blocking', undefined],
+      ['composition', 'warning', undefined],
+    ]);
+  });
+
+  it('dos hallazgos que difieren solo en la regla son distintos: se reescriben', async () => {
+    const rules = [rule('r-1', 'moderate')];
+    const { service, planRepository } = setup({ conditions: [DIABETES], rules });
+
+    await service.revalidate('p-1', 'plan-1', 'nutri-1');
+    rules[0] = rule('r-2', 'moderate');
+    await service.revalidate('p-1', 'plan-1', 'nutri-1');
+
+    expect(planRepository.replaceFindings).toHaveBeenCalledTimes(2);
+    expect(planRepository.findingsByPlan.get('plan-1').find(({ type }) => type === 'pathology_rule').clinicalRuleId).toBe('r-2');
   });
 
   it('un plan de otro nutricionista da 404 y no escribe nada', async () => {

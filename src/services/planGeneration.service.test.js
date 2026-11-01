@@ -77,27 +77,27 @@ function controlledError(reason, generation = GENERATION) {
   return error;
 }
 
-function setup({ conditions = [], postJson, recordFailedGeneration } = {}) {
+function setup({ conditions = [], rules = [], postJson, recordFailedGeneration } = {}) {
+  const clinicalRuleRepository = { findActiveForPathologies: vi.fn(async () => rules) };
   const validation = createPlanValidationService({
     planRepository: {},
     patientConditionRepository: { findAllForPatient: async () => conditions },
     foodRepository: { findAllVisible: async () => FOODS },
     foodGroupRepository: { findAll: async () => GROUPS },
     recipeRepository: { findVisible: async () => [] },
+    clinicalRuleRepository,
   });
   const planRepository = {
     createGenerated: vi.fn(async (nutritionistId, data) => ({ id: 'plan-1', nutritionistId, ...data })),
     recordFailedGeneration: recordFailedGeneration ?? vi.fn(async () => ({})),
   };
   const iaClient = { postJson: postJson ?? vi.fn(async (path, context) => proposalFor(context)) };
-  const clinicalRuleRepository = { findActiveProhibitedForPathologies: vi.fn(async () => []) };
   const service = createPlanGenerationService({
     planRepository,
     patientRepository: {
       findByIdForNutritionist: async (id, nutritionistId) =>
         id === PATIENT.id && nutritionistId === PATIENT.nutritionistId ? PATIENT : null,
     },
-    clinicalRuleRepository,
     planValidationService: validation,
     iaClient,
     generationTimeoutMs: 1234,
@@ -180,13 +180,20 @@ describe('planGeneration.service.generate — de punta a punta con el proveedor 
     expect(context.conditions).toEqual([{ type: 'allergy', name: 'Leche' }]);
   });
 
-  it('consulta las reglas prohibitivas de las patologías del paciente', async () => {
-    const celiac = { id: 'c-2', type: 'pathology', pathologyId: 'celiaquia', pathology: { name: 'Celiaquía' } };
-    const { service, clinicalRuleRepository } = setup({ conditions: [celiac] });
+  it('solo las reglas prohibitivas de las patologías del paciente sacan alimentos del catálogo enviado', async () => {
+    const pathology = { id: 'c-2', type: 'pathology', pathologyId: 'hta', pathology: { name: 'Hipertensión' } };
+    const rules = [
+      { id: 'r-1', pathologyId: 'hta', foodId: 'leche', foodGroupId: null, severity: 'prohibited', source: 'Fuente, p. 1' },
+      { id: 'r-2', pathologyId: 'hta', foodId: 'pollo', foodGroupId: null, severity: 'moderate', source: 'Fuente, p. 2' },
+    ];
+    const { service, iaClient, clinicalRuleRepository } = setup({ conditions: [pathology], rules });
 
-    await service.generate('p-1', 'nutri-1', LUNCH_ONLY);
+    const plan = await service.generate('p-1', 'nutri-1', LUNCH_ONLY);
 
-    expect(clinicalRuleRepository.findActiveProhibitedForPathologies).toHaveBeenCalledWith(['celiaquia']);
+    expect(clinicalRuleRepository.findActiveForPathologies).toHaveBeenCalledWith(['hta']);
+    const [, context] = iaClient.postJson.mock.calls[0];
+    expect(context.catalog.foods.map(({ name }) => name)).toEqual(['Pollo', 'Zanahoria']);
+    expect(plan.findings).toContainEqual(expect.objectContaining({ type: 'pathology_rule', severity: 'warning', clinicalRuleId: 'r-2' }));
   });
 
   it('un paciente de otro nutricionista da 404 sin llamar a la IA ni escribir nada', async () => {

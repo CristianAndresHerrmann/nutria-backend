@@ -4,18 +4,19 @@ const { indexCatalog } = require('./catalogIndex');
 const { directConditionFindings } = require('./directCondition');
 const { itemCategories } = require('./itemCategories');
 const { missingCategories } = require('./mealComposition');
+const { pathologyRuleFindings, pathologyRuleScopes } = require('./pathologyRule');
 
-// Motor de reglas determinístico, v1 (T34). Función pura: (plan, condiciones
-// del paciente, catálogo) → hallazgos. Corre igual en cada guardado y los
+// Motor de reglas determinístico (T34, T35). Función pura: (plan, condiciones
+// del paciente, reglas de sus patologías, catálogo) → hallazgos. Corre igual en cada guardado y los
 // hallazgos se reemplazan, nunca se descartan a mano (RF-46). Detalle en el
 // skill reglas-clinicas-deterministicas y en docs/decisiones/motor-de-reglas-v1.md
 // en el repo raíz (DA-30).
 //
 // Cada hallazgo tiene las columnas de Finding salvo planId, armado para cumplir
 // finding_origin_chk: los de ítem no llevan optionId y el de composición no
-// lleva ítem. Orden: comidas por tipo, opciones e ítems por posición; dentro de
-// un ítem, no reconocido y después condiciones; la composición al final de cada
-// opción.
+// lleva ítem. Solo el de patología lleva clinicalRuleId. Orden: comidas por
+// tipo, opciones e ítems por posición; dentro de un ítem, no reconocido,
+// condiciones y reglas por patología; la composición al final de cada opción.
 
 const MEAL_ORDER = Object.values(MealType);
 
@@ -75,9 +76,10 @@ function compositionFinding(mealType, option, position, items, catalog) {
   };
 }
 
-function validatePlan({ plan, conditions, catalog }) {
+function validatePlan({ plan, conditions, rules, catalog }) {
   const catalogIndex = indexCatalog(catalog);
   const scopes = conditionScopes(conditions, catalog.groups);
+  const ruleScopes = pathologyRuleScopes(rules, conditions, catalog.groups);
   const meals = [...plan.meals].sort((a, b) => MEAL_ORDER.indexOf(a.mealType) - MEAL_ORDER.indexOf(b.mealType));
   const findings = [];
 
@@ -88,6 +90,7 @@ function validatePlan({ plan, conditions, catalog }) {
       for (const item of items) {
         if (item.type === OptionItemType.unrecognized) findings.push(unrecognizedItemFinding(item));
         findings.push(...directConditionFindings(item, scopes, catalogIndex));
+        findings.push(...pathologyRuleFindings(item, ruleScopes, catalogIndex));
       }
 
       const composition = compositionFinding(meal.mealType, option, index + 1, items, catalogIndex);

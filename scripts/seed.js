@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const { FOOD_GROUPS, FOODS, PATHOLOGIES, RECOMMENDATIONS, RECOMMENDATION_TEXT } = require('./seed-data/catalogs');
 const { COMMON_RECIPES } = require('./seed-data/recipes');
 const { CLINICAL_CASES } = require('./seed-data/clinical-cases');
+const { CLINICAL_RULES } = require('./seed-data/clinical-rules');
 // El mismo cliente que usa el servicio de recetas, para no abrir dos conexiones.
 const prisma = require('../src/lib/prisma');
 const recipeService = require('../src/services/recipe.service');
@@ -379,6 +380,33 @@ async function seedCatalogs() {
   return { groupIds, foodIds, pathologyIds };
 }
 
+// Reglas clínicas por patología (T35), con su ficha en docs/reglas-clinicas.md.
+// Sin único en la base: se buscan por patología y alimento o grupo, y se ponen al
+// día. Las que ya no están en la matriz se dan de baja y no se borran, porque los
+// hallazgos de los planes las referencian.
+async function seedClinicalRules(catalog) {
+  const keptIds = [];
+  for (const { pathology, food, foodGroup, severity, source } of CLINICAL_RULES) {
+    const key = {
+      pathologyId: requireId(catalog.pathologyIds, pathology, 'patología'),
+      foodId: food ? requireId(catalog.foodIds, food, 'alimento') : null,
+      foodGroupId: foodGroup ? requireId(catalog.groupIds, foodGroup, 'grupo') : null,
+    };
+    const existing = await prisma.clinicalRule.findFirst({ where: key });
+    const data = { severity, source, active: true };
+    const rule = existing
+      ? await prisma.clinicalRule.update({ where: { id: existing.id }, data })
+      : await prisma.clinicalRule.create({ data: { ...key, ...data } });
+    keptIds.push(rule.id);
+  }
+
+  const { count: retired } = await prisma.clinicalRule.updateMany({
+    where: { id: { notIn: keptIds }, active: true },
+    data: { active: false },
+  });
+  console.log(`Seed: ${CLINICAL_RULES.length} reglas clínicas por patología${retired ? `, ${retired} dada(s) de baja` : ''}.`);
+}
+
 function requireId(ids, name, kind) {
   if (!ids[name]) throw new Error(`Seed: ${kind} "${name}" no está en el catálogo`);
   return ids[name];
@@ -486,6 +514,7 @@ async function main() {
   }
   const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
   const catalog = await seedCatalogs();
+  await seedClinicalRules(catalog);
   await seedCommonRecipes(catalog);
 
   for (const { nutritionist: data, patients, recipes, privateFoods = [], privateRecommendations = [] } of SEED_DATA) {
