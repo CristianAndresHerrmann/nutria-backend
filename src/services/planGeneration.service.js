@@ -35,6 +35,7 @@ function generationRow(info, contextSent) {
     durationMs: info.duration_ms,
     inputTokens: info.input_tokens ?? null,
     outputTokens: info.output_tokens ?? null,
+    reasoningTokens: info.reasoning_tokens ?? null,
     rawResponse: info.raw_response ?? null,
   };
 }

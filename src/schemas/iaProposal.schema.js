@@ -44,7 +44,9 @@ const generationInfoSchema = z.object({
   template_version: z.string().min(1),
   duration_ms: z.number().int().nonnegative(),
   input_tokens: z.number().int().nonnegative().nullish(),
+  // Incluye los de razonamiento, que además vienen aparte.
   output_tokens: z.number().int().nonnegative().nullish(),
+  reasoning_tokens: z.number().int().nonnegative().nullish(),
   raw_response: z.string().nullish(),
 });
 

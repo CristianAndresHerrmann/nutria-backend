@@ -712,9 +712,10 @@ enum AiValidationResult {
 // salió bien, en la misma transacción que su traza. Una generación fallida queda
 // registrada sin plan, aislada por su paciente: la FK compuesta (patient_id,
 // nutritionist_id) → patient(id, nutritionist_id) es la misma que la de Plan.
-// CHECK en la migración: duración y tokens no negativos; rawResponse presente
-// cuando el proveedor respondió (success, invalid_response); validationResult
-// solo cuando result = success; planId presente si y solo si result = success
+// CHECK en la migración: duración y tokens no negativos, también los de
+// razonamiento (ai_generation_metrics_chk); rawResponse presente cuando el
+// proveedor respondió (success, invalid_response); validationResult solo cuando
+// result = success; planId presente si y solo si result = success
 // (ai_generation_plan_chk). Que el plan sea de ese paciente lo controla el
 // servicio.
 model AiGeneration {
@@ -733,6 +734,9 @@ model AiGeneration {
   durationMs       Int                 @map("duration_ms")
   inputTokens      Int?                @map("input_tokens")
   outputTokens     Int?                @map("output_tokens")
+  // Parte de outputTokens que el modelo usó para razonar (null si el proveedor no
+  // la informa). Permite atribuir el tiempo de la generación (T41).
+  reasoningTokens  Int?                @map("reasoning_tokens")
   result           AiGenerationResult
   validationResult AiValidationResult? @map("validation_result")
   generatedAt      DateTime            @default(now()) @map("generated_at")
