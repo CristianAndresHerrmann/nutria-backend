@@ -38,7 +38,6 @@ services:
       target: prod
       args:
         VITE_API_URL: https://api.${APP_HOST:?definir APP_HOST en .env}
-        VITE_ENV_LABEL: Entorno de prueba — solo datos ficticios
     # Staging sirve exclusivamente el build de la imagen, sin código local.
     volumes: !reset []
     environment: !reset {}
