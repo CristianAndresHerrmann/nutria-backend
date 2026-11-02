@@ -11,6 +11,7 @@ const recipeService = require('./services/recipe.service');
 const { COMMON_READ_ONLY_MESSAGE } = require('./services/recipe.service');
 const recommendationService = require('./services/recommendation.service');
 const nutritionistAccountService = require('./services/nutritionistAccount.service');
+const foodAdminService = require('./services/foodAdmin.service');
 const nutritionistRepository = require('./repositories/nutritionist.repository');
 const openapiSpec = require('./docs/openapi');
 const { FORBIDDEN_ROLE_MESSAGE } = require('./middlewares/auth');
@@ -1088,7 +1089,7 @@ describe('roles — 403 cruzados y panel del administrador de punta a punta', ()
   const bodyFor = (method) => (method === 'GET' || method === 'DELETE' ? undefined : {});
 
   it('el spec tiene operaciones de los dos roles', () => {
-    expect(adminOperations.length).toBe(4);
+    expect(adminOperations.length).toBe(16);
     expect(nutritionistOperations.length).toBeGreaterThan(25);
   });
 
@@ -1100,9 +1101,14 @@ describe('roles — 403 cruzados y panel del administrador de punta a punta', ()
   });
 
   it.each(adminOperations)('un nutricionista recibe 403 en %s %s y no llega al servicio', async (method, path) => {
-    const spies = ['list', 'create', 'setActive', 'resetPassword'].map((name) =>
-      vi.spyOn(nutritionistAccountService, name).mockResolvedValue(undefined),
-    );
+    const spies = [
+      ...['list', 'create', 'setActive', 'resetPassword'].map((name) => [nutritionistAccountService, name]),
+      ...['list', 'get', 'createCommon', 'update', 'promote', 'activity'].map((name) => [foodAdminService, name]),
+      ...['list', 'create', 'update'].flatMap((name) => [
+        [foodGroupService, name],
+        [pathologyService, name],
+      ]),
+    ].map(([service, name]) => vi.spyOn(service, name).mockResolvedValue(undefined));
 
     const response = await request(path, { method, token: tokenFor('nutri-1'), body: bodyFor(method) });
 
@@ -1225,5 +1231,135 @@ describe('roles — 403 cruzados y panel del administrador de punta a punta', ()
     expect(response.status).toBe(204);
     expect(response.text).toBe('');
     expect(resetPassword).toHaveBeenCalledWith(SOME_ID, 'nueva-clave-1');
+  });
+});
+
+describe('catálogo desde el panel del administrador (T25)', () => {
+  const tokenFor = (accountId) => jwt.sign({ sub: accountId }, process.env.JWT_SECRET, { expiresIn: '1h' });
+  const FOOD_ID = '22222222-2222-4222-8222-222222222222';
+  const GROUP_ID = '33333333-3333-4333-8333-333333333333';
+  const NUTRI_ID = '44444444-4444-4444-8444-444444444444';
+  const foodBody = { name: 'Kéfir', foodGroupId: GROUP_ID, categories: ['protein'] };
+  const adminFood = {
+    id: FOOD_ID,
+    name: 'Kéfir',
+    active: true,
+    foodGroupId: GROUP_ID,
+    foodGroup: { id: GROUP_ID, name: 'Lácteos', parentId: null },
+    categories: [{ category: 'protein' }],
+    nutritionistId: NUTRI_ID,
+    nutritionist: { id: NUTRI_ID, name: 'Ana', email: 'ana@nutria.test' },
+    createdById: NUTRI_ID,
+    createdBy: { id: NUTRI_ID, name: 'Ana', email: 'ana@nutria.test' },
+    createdAt: new Date('2026-10-27T13:20:05.118Z'),
+  };
+
+  it('el PUT de un alimento rechaza con 400 un cambio de dueño en el body', async () => {
+    const update = vi.spyOn(foodAdminService, 'update');
+
+    const response = await request(`/admin/foods/${FOOD_ID}`, {
+      method: 'PUT',
+      token: tokenFor(ADMIN_ID),
+      body: { ...foodBody, nutritionistId: NUTRI_ID },
+    });
+
+    expectUniformError(response, 400, 'VALIDATION_ERROR');
+    expect(response.json.error.message).toBe('Campo no admitido: "nutritionistId"');
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('el PUT pasa al servicio el id y el body normalizado, y responde la vista del administrador', async () => {
+    const update = vi.spyOn(foodAdminService, 'update').mockResolvedValue({ ...adminFood, active: false });
+
+    const response = await request(`/admin/foods/${FOOD_ID}`, {
+      method: 'PUT',
+      token: tokenFor(ADMIN_ID),
+      body: { ...foodBody, name: '  Kéfir   de leche ', active: false },
+    });
+
+    expect(response.status).toBe(200);
+    expect(update).toHaveBeenCalledWith(FOOD_ID, { ...foodBody, name: 'Kéfir de leche', active: false });
+    expect(response.json).toEqual({
+      id: FOOD_ID,
+      name: 'Kéfir',
+      active: false,
+      foodGroupId: GROUP_ID,
+      foodGroup: { id: GROUP_ID, name: 'Lácteos', parentId: null },
+      categories: ['protein'],
+      common: false,
+      owner: { id: NUTRI_ID, name: 'Ana' },
+      createdBy: { id: NUTRI_ID, name: 'Ana' },
+      createdAt: '2026-10-27T13:20:05.118Z',
+    });
+  });
+
+  it('el listado valida owner: "common" o un UUID', async () => {
+    const list = vi.spyOn(foodAdminService, 'list').mockResolvedValue([]);
+
+    const common = await request('/admin/foods?owner=common', { token: tokenFor(ADMIN_ID) });
+    const invalid = await request('/admin/foods?owner=todos', { token: tokenFor(ADMIN_ID) });
+
+    expect(common.status).toBe(200);
+    expect(list).toHaveBeenCalledWith({ owner: 'common', search: null, groupId: null });
+    expectUniformError(invalid, 400, 'VALIDATION_ERROR');
+    expect(invalid.json.error.details.fields.owner).toBe('Indicá "common" o el id de un nutricionista');
+  });
+
+  it('pasar al común sin nombre manda null, y un id que no es UUID responde 404', async () => {
+    const promote = vi.spyOn(foodAdminService, 'promote').mockResolvedValue({ ...adminFood, nutritionistId: null, nutritionist: null });
+
+    const response = await request(`/admin/foods/${FOOD_ID}/promote`, { method: 'POST', token: tokenFor(ADMIN_ID), body: {} });
+    const invalidId = await request('/admin/foods/no-es-uuid/promote', { method: 'POST', token: tokenFor(ADMIN_ID), body: {} });
+
+    expect(response.status).toBe(200);
+    expect(response.json).toMatchObject({ common: true, owner: null, createdBy: { id: NUTRI_ID, name: 'Ana' } });
+    expect(promote).toHaveBeenCalledWith(FOOD_ID, { name: null });
+    expectUniformError(invalidId, 404, 'NOT_FOUND');
+    expect(invalidId.json.error.message).toBe('Alimento no encontrado');
+  });
+
+  it('el alta de un grupo valida el padre y responde 201', async () => {
+    const create = vi.spyOn(foodGroupService, 'create').mockResolvedValue({ id: GROUP_ID, name: 'Fermentados', description: null, parentId: null });
+
+    const invalid = await request('/admin/food-groups', {
+      method: 'POST',
+      token: tokenFor(ADMIN_ID),
+      body: { name: 'Fermentados', parentId: 'no-es-uuid' },
+    });
+    const created = await request('/admin/food-groups', { method: 'POST', token: tokenFor(ADMIN_ID), body: { name: 'Fermentados' } });
+
+    expectUniformError(invalid, 400, 'VALIDATION_ERROR');
+    expect(invalid.json.error.details.fields.parentId).toBe('El grupo padre no es válido');
+    expect(created.status).toBe(201);
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledWith({ name: 'Fermentados', description: null, parentId: null });
+  });
+
+  it('la actividad del catálogo no trae el email de las cuentas', async () => {
+    vi.spyOn(foodAdminService, 'activity').mockResolvedValue([
+      {
+        id: FOOD_ID,
+        name: 'Kéfir',
+        active: true,
+        nutritionistId: NUTRI_ID,
+        createdAt: new Date('2026-10-27T13:20:05.118Z'),
+        createdBy: { id: NUTRI_ID, name: 'Ana', email: 'ana@nutria.test' },
+      },
+    ]);
+
+    const response = await request(`/admin/catalog-activity?nutritionistId=${NUTRI_ID}`, { token: tokenFor(ADMIN_ID) });
+
+    expect(response.status).toBe(200);
+    expect(response.json).toEqual([
+      {
+        id: FOOD_ID,
+        name: 'Kéfir',
+        active: true,
+        common: false,
+        createdBy: { id: NUTRI_ID, name: 'Ana' },
+        createdAt: '2026-10-27T13:20:05.118Z',
+      },
+    ]);
+    expect(foodAdminService.activity).toHaveBeenCalledWith({ nutritionistId: NUTRI_ID });
   });
 });

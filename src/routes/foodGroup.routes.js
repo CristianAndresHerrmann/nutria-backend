@@ -10,7 +10,8 @@ const router = Router();
 // Un id que no es UUID responde 404, igual que un grupo inexistente.
 const byId = { notFoundOnInvalidParams: FOOD_GROUP_NOT_FOUND_MESSAGE };
 
-// Solo lectura: el alta y la edición de grupos son del administrador (tarea aparte).
+// Solo lectura: el alta y la edición de grupos son del administrador (T25,
+// adminCatalog.routes.js).
 
 /**
  * @openapi

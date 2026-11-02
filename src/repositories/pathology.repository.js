@@ -1,7 +1,7 @@
 const prisma = require('../lib/prisma');
 
-// Catálogo común: solo lectura desde la API de los nutricionistas. El alta y la
-// edición de patologías son del administrador (tarea aparte).
+// Catálogo común: de solo lectura para los nutricionistas. El alta y la edición
+// son del administrador (T25).
 function createPathologyRepository({ prisma: client }) {
   function findAll() {
     return client.pathology.findMany({ orderBy: { name: 'asc' } });
@@ -11,7 +11,23 @@ function createPathologyRepository({ prisma: client }) {
     return client.pathology.findUnique({ where: { id } });
   }
 
-  return { findAll, findById };
+  // Sin distinguir mayúsculas, como el citext de la base. excludeId deja afuera
+  // a la patología que se está editando.
+  function findByName(name, { excludeId } = {}) {
+    const where = { name: { equals: name, mode: 'insensitive' } };
+    if (excludeId) where.id = { not: excludeId };
+    return client.pathology.findFirst({ where });
+  }
+
+  function create(data) {
+    return client.pathology.create({ data });
+  }
+
+  function update(id, data) {
+    return client.pathology.update({ where: { id }, data });
+  }
+
+  return { findAll, findById, findByName, create, update };
 }
 
 module.exports = createPathologyRepository({ prisma });

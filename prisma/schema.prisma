@@ -51,7 +51,9 @@ model Nutritionist {
   recipes  Recipe[]
 
   // Alimentos privados que cargó (T15): solo los ve y los usa él.
-  foods Food[]
+  foods        Food[] @relation("FoodOwner")
+  // Alimentos que cargó, sigan privados o hayan pasado al catálogo común (T25).
+  createdFoods Food[] @relation("FoodCreator")
 
   // Recomendaciones clínicas privadas que cargó (T22): solo las ve y las edita él.
   clinicalRecommendations ClinicalRecommendation[]
@@ -292,8 +294,9 @@ model PrescribedHabit {
 // no distingue mayúsculas ("Leche" y "leche" chocan). La extensión se crea a mano
 // en la migración de T15. Grupos y patologías son siempre comunes; un alimento puede
 // ser común o privado de un nutricionista (ver Food). Los nutricionistas no editan
-// el catálogo: lo cura un administrador (tarea aparte) o el seed. Ver
-// docs/decisiones/abm-de-catalogos-comunes.md y
+// el catálogo: lo cura el administrador (T25, rutas /admin) o el seed. Ver
+// docs/decisiones/abm-de-catalogos-comunes.md,
+// docs/decisiones/curado-del-catalogo-por-el-administrador.md y
 // docs/decisiones/nombres-de-catalogo-sin-distinguir-mayusculas.md en el repo raíz.
 
 // Grupo de alimentos jerárquico (RF-24). CHECK en la migración: no es su propio padre.
@@ -324,6 +327,11 @@ model FoodGroup {
 // nutricionista: el @@unique cubre los privados de un mismo nutricionista, y el
 // servicio chequea el cruce con los comunes y la unicidad entre comunes (Postgres
 // trata los null como distintos en un índice único).
+//
+// createdById es el nutricionista que lo cargó (T25). Coincide con nutritionistId
+// mientras es privado, y se conserva cuando el administrador lo pasa al catálogo
+// común, para la actividad del catálogo. Null en los que cargan el seed o el
+// administrador.
 model Food {
   id             String        @id @default(uuid()) @db.Uuid
   foodGroupId    String        @map("food_group_id") @db.Uuid
@@ -331,7 +339,10 @@ model Food {
   name           String        @db.Citext
   active         Boolean       @default(true)
   nutritionistId String?       @map("nutritionist_id") @db.Uuid
-  nutritionist   Nutritionist? @relation(fields: [nutritionistId], references: [id], onDelete: Restrict)
+  nutritionist   Nutritionist? @relation("FoodOwner", fields: [nutritionistId], references: [id], onDelete: Restrict)
+  createdById    String?       @map("created_by_id") @db.Uuid
+  createdBy      Nutritionist? @relation("FoodCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt      DateTime      @default(now()) @map("created_at")
 
   categories    FoodCategory[]
   conditions    PatientCondition[]
@@ -341,6 +352,7 @@ model Food {
 
   @@unique([nutritionistId, name])
   @@index([foodGroupId])
+  @@index([createdById])
   @@map("food")
 }
 

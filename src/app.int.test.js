@@ -260,3 +260,103 @@ describe('Edición del borrador — API real + Postgres (T40, RF-46)', () => {
     expect(ruleFindings((await request(path)).body)).toEqual([]);
   });
 });
+
+describe('Curación del catálogo por el administrador — API real + Postgres (T25)', () => {
+  let admin;
+
+  beforeEach(async () => {
+    admin = await prisma.nutritionist.create({
+      data: { name: 'Administrador ficticio', email: 'admin@example.test', passwordHash: 'unused', role: 'admin' },
+    });
+  });
+
+  const itemsOf = (plan) => plan.meals.flatMap(({ options }) => options.flatMap(({ items }) => items));
+
+  it('corrige las categorías y el grupo de un privado de punta a punta; el plan conserva su copia (DA-16)', async () => {
+    const created = await request('/foods', owner.nutritionist, 'POST', {
+      name: 'Kéfir ficticio', foodGroupId: catalog.group.id, categories: ['protein'],
+    });
+    expect(created.status).toBe(201);
+    const foodId = created.body.id;
+    const planPath = `/patients/${owner.patient.id}/plans/${records.plan.id}`;
+    const saved = await request(planPath, owner.nutritionist, 'PUT', {
+      introduction: 'Borrador ficticio', meals: [{ mealType: 'lunch', options: [{ items: [{ type: 'food', foodId }] }] }],
+    });
+    expect(saved.status).toBe(200);
+
+    const otherGroup = await request('/admin/food-groups', admin, 'POST', { name: 'Otro grupo ficticio' });
+    expect(otherGroup.status).toBe(201);
+    const corrected = await request(`/admin/foods/${foodId}`, admin, 'PUT', {
+      name: 'Kéfir corregido', foodGroupId: otherGroup.body.id, categories: ['protein', 'healthy_fat'],
+    });
+    expect(corrected.status).toBe(200);
+    expect(corrected.body).toMatchObject({
+      common: false,
+      owner: { id: owner.nutritionist.id },
+      createdBy: { id: owner.nutritionist.id },
+    });
+
+    // La nutricionista ve el alimento corregido; el plan, la copia que guardó.
+    expect((await request(`/foods/${foodId}`)).body).toMatchObject({
+      name: 'Kéfir corregido', foodGroupId: otherGroup.body.id, categories: ['protein', 'healthy_fat'],
+    });
+    expect(itemsOf((await request(planPath)).body)).toEqual([
+      expect.objectContaining({ foodId, foodName: 'Kéfir ficticio', foodCategories: ['protein'] }),
+    ]);
+    // Corregirlo no lo hace visible para otro nutricionista.
+    expect((await request(`/foods/${foodId}`, other.nutritionist)).status).toBe(404);
+  });
+
+  it('un grupo no puede quedar dentro de uno de sus subgrupos (400) y la base no cambia', async () => {
+    const parent = (await request('/admin/food-groups', admin, 'POST', { name: 'Raíz ficticia' })).body;
+    const child = (await request('/admin/food-groups', admin, 'POST', { name: 'Hijo ficticio', parentId: parent.id })).body;
+    const grandchild = (await request('/admin/food-groups', admin, 'POST', { name: 'Nieto ficticio', parentId: child.id })).body;
+    const before = await snapshotDatabase();
+
+    const response = await request(`/admin/food-groups/${parent.id}`, admin, 'PUT', { name: 'Raíz ficticia', parentId: grandchild.id });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.details.fields.parentId).toBe('Un grupo no puede quedar dentro de sí mismo ni de uno de sus subgrupos');
+    expect(await snapshotDatabase()).toEqual(before);
+  });
+
+  it('pasa un privado al común: choca con un privado vigente de otro, se renombra y la actividad conserva a la autora', async () => {
+    const own = (await request('/foods', owner.nutritionist, 'POST', { name: 'Caballa ficticia', foodGroupId: catalog.group.id, categories: ['protein'] })).body;
+    await request('/foods', other.nutritionist, 'POST', { name: 'caballa ficticia', foodGroupId: catalog.group.id, categories: ['protein'] });
+    const before = await snapshotDatabase();
+
+    const conflict = await request(`/admin/foods/${own.id}/promote`, admin, 'POST', {});
+    expect(conflict.status).toBe(409);
+    expect(conflict.body.error.code).toBe('CONFLICT');
+    expect(conflict.body.error.details.fields.name).toMatch(/Otro nutricionista tiene un alimento privado/);
+    expect(await snapshotDatabase()).toEqual(before);
+
+    const promoted = await request(`/admin/foods/${own.id}/promote`, admin, 'POST', { name: 'Caballa ficticia en aceite' });
+    expect(promoted.status).toBe(200);
+    expect(promoted.body).toMatchObject({ id: own.id, common: true, owner: null, createdBy: { id: owner.nutritionist.id } });
+    expect((await request('/foods', other.nutritionist)).body.map(({ name }) => name)).toContain('Caballa ficticia en aceite');
+    expect((await request(`/admin/foods/${own.id}/promote`, admin, 'POST', {})).status).toBe(409);
+
+    const activity = await request(`/admin/catalog-activity?nutritionistId=${owner.nutritionist.id}`, admin);
+    expect(activity.status).toBe(200);
+    expect(activity.body).toEqual([
+      { id: own.id, name: 'Caballa ficticia en aceite', active: true, common: true, createdBy: { id: owner.nutritionist.id, name: owner.nutritionist.name }, createdAt: expect.any(String) },
+    ]);
+    // El común del fixture (sin autor) no es actividad de nadie.
+    expect((await request('/admin/catalog-activity', admin)).body.map(({ id }) => id)).not.toContain(catalog.food.id);
+  });
+
+  it('un nombre duplicado da CONFLICT al editar un alimento, un grupo y una patología', async () => {
+    const before = await snapshotDatabase();
+    const otherFood = await prisma.food.create({ data: { name: 'Común ficticio', foodGroupId: catalog.group.id } });
+    const after = await snapshotDatabase();
+
+    const food = await request(`/admin/foods/${otherFood.id}`, admin, 'PUT', { name: 'ALIMENTO FICTICIO', foodGroupId: catalog.group.id, categories: ['protein'] });
+    const pathology = await request('/admin/pathologies', admin, 'POST', { name: 'patología ficticia' });
+    const group = await request('/admin/food-groups', admin, 'POST', { name: 'GRUPO FICTICIO' });
+
+    expect([food.status, pathology.status, group.status]).toEqual([409, 409, 409]);
+    expect(await snapshotDatabase()).toEqual(after);
+    expect(after.Food).toHaveLength(before.Food.length + 1);
+  });
+});
