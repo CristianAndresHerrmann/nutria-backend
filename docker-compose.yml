@@ -19,33 +19,51 @@ services:
       context: ../nutria-frontend
     env_file:
       - ../nutria-frontend/.env
+    environment:
+      # El watcher vive en Vite, también al iniciar desde Docker Desktop.
+      # Windows/OneDrive no siempre propagan eventos del filesystem al contenedor.
+      WATCH_POLLING: "true"
+    volumes:
+      # Solo código/configuración: node_modules conserva las dependencias Linux
+      # de la imagen y los builds siguen escribiendo dentro del contenedor.
+      - type: bind
+        source: ../nutria-frontend/src
+        target: /app/src
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../nutria-frontend/public
+        target: /app/public
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../nutria-frontend/index.html
+        target: /app/index.html
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../nutria-frontend/vite.config.js
+        target: /app/vite.config.js
+        read_only: true
+        bind:
+          create_host_path: false
     depends_on:
       - backend
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.frontend.rule=Host(`local.nutria.com`)"
       - "traefik.http.services.frontend.loadbalancer.server.port=5173"
-    # Solo aplica con `npm run dev` (up --watch): copia al contenedor cada archivo
-    # que se guarda y el Vite que ya corre en modo dev recarga solo. Copiar y no
-    # montar la carpeta: con un volumen desde Windows Vite no se entera de los
-    # cambios sin polling. Lo que cambia la imagen en sí sigue rebuildeando.
+    # Opcional con `npm run dev`: reconstruye al cambiar dependencias.
+    # El hot reload del código ya funciona sin Compose Watch por los mounts.
     develop:
       watch:
-        - action: sync
-          path: ../nutria-frontend/src
-          target: /app/src
-        - action: sync
-          path: ../nutria-frontend/public
-          target: /app/public
-        - action: sync
-          path: ../nutria-frontend/index.html
-          target: /app/index.html
         - action: rebuild
           path: ../nutria-frontend/package.json
         - action: rebuild
           path: ../nutria-frontend/package-lock.json
-        - action: rebuild
-          path: ../nutria-frontend/vite.config.js
 
   backend:
     build:

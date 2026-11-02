@@ -9,7 +9,8 @@ const router = Router();
 
 const byId = { notFoundOnInvalidParams: PATHOLOGY_NOT_FOUND_MESSAGE };
 
-// Solo lectura: el alta y la edición de patologías son del administrador (tarea aparte).
+// Solo lectura: el alta y la edición de patologías son del administrador (T25,
+// adminCatalog.routes.js).
 
 /**
  * @openapi

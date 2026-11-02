@@ -41,4 +41,13 @@ async function updateRecipe(req, res, next) {
   }
 }
 
-module.exports = { listRecipes, getRecipe, createRecipe, updateRecipe };
+async function setRecipeAvailability(req, res, next) {
+  try {
+    const recipe = await recipeService.setAvailability(req.validated.params.id, req.nutricionistaId, req.validated.body);
+    res.status(200).json(serializeRecipe(recipe));
+  } catch (error) {
+    next(error);
+  }
+}
+
+module.exports = { listRecipes, getRecipe, createRecipe, updateRecipe, setRecipeAvailability };

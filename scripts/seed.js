@@ -1,8 +1,11 @@
-const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const { FOOD_GROUPS, FOODS, PATHOLOGIES, RECOMMENDATIONS, RECOMMENDATION_TEXT } = require('./seed-data/catalogs');
-
-const prisma = new PrismaClient();
+const { COMMON_RECIPES } = require('./seed-data/recipes');
+const { CLINICAL_CASES } = require('./seed-data/clinical-cases');
+const { CLINICAL_RULES } = require('./seed-data/clinical-rules');
+// El mismo cliente que usa el servicio de recetas, para no abrir dos conexiones.
+const prisma = require('../src/lib/prisma');
+const recipeService = require('../src/services/recipe.service');
 
 // En local vale la contraseña de desarrollo. Con NODE_ENV=production (staging) es
 // obligatorio pasarla en SEED_PASSWORD: este archivo está en un repo público y el
@@ -28,7 +31,7 @@ const SEED_PASSWORD =
 const SEED_DATA = [
   {
     nutritionist: { name: 'Camila Ríos', email: 'nutricionista@nutria.com' },
-    privateFoods: [{ name: 'Kéfir', group: 'Lácteos', categories: ['protein'] }],
+    privateFoods: [{ name: 'Kéfir', group: 'Leches y yogures', categories: ['protein'] }],
     privateRecommendations: [
       { pathology: 'Celiaquía', title: 'Ejemplo ficticio: recomendación propia de Camila', text: RECOMMENDATION_TEXT },
       {
@@ -188,6 +191,9 @@ const SEED_DATA = [
           dataCompletedAt: null,
         },
       },
+      // Los casos clínicos del Plan 5.6 (T41), para probar la generación desde
+      // esta cuenta y medirla con scripts/measure-generation.js.
+      ...CLINICAL_CASES.map(({ patient }) => patient),
     ],
   },
   {
@@ -298,7 +304,8 @@ async function seedPrivateFoods(nutritionistId, foods, catalog) {
     const food = await prisma.food.upsert({
       where: { nutritionistId_name: { nutritionistId, name } },
       update: { foodGroupId, active: true },
-      create: { name, foodGroupId, nutritionistId },
+      // Como el alta desde la API: quien lo carga es su dueño (T25).
+      create: { name, foodGroupId, nutritionistId, createdById: nutritionistId },
     });
     await setCategories(food.id, categories);
   }
@@ -326,7 +333,7 @@ function toDate(value) {
 async function seedCatalogs() {
   const groupIds = {};
   for (const { name, parent } of FOOD_GROUPS) {
-    const parentId = parent ? groupIds[parent] : null;
+    const parentId = parent ? requireId(groupIds, parent, 'grupo padre') : null;
     const group = await prisma.foodGroup.upsert({
       where: { name },
       update: { parentId },
@@ -340,7 +347,7 @@ async function seedCatalogs() {
   const foodIds = {};
   for (const { name, group, categories } of FOODS) {
     const existing = await prisma.food.findFirst({ where: { name, nutritionistId: null } });
-    const data = { foodGroupId: groupIds[group], active: true };
+    const data = { foodGroupId: requireId(groupIds, group, 'grupo'), active: true };
     const food = existing
       ? await prisma.food.update({ where: { id: existing.id }, data })
       : await prisma.food.create({ data: { ...data, name } });
@@ -372,6 +379,33 @@ async function seedCatalogs() {
       `y ${RECOMMENDATIONS.length} recomendaciones comunes.`,
   );
   return { groupIds, foodIds, pathologyIds };
+}
+
+// Reglas clínicas por patología (T35), con su ficha en docs/reglas-clinicas.md.
+// Sin único en la base: se buscan por patología y alimento o grupo, y se ponen al
+// día. Las que ya no están en la matriz se dan de baja y no se borran, porque los
+// hallazgos de los planes las referencian.
+async function seedClinicalRules(catalog) {
+  const keptIds = [];
+  for (const { pathology, food, foodGroup, severity, source } of CLINICAL_RULES) {
+    const key = {
+      pathologyId: requireId(catalog.pathologyIds, pathology, 'patología'),
+      foodId: food ? requireId(catalog.foodIds, food, 'alimento') : null,
+      foodGroupId: foodGroup ? requireId(catalog.groupIds, foodGroup, 'grupo') : null,
+    };
+    const existing = await prisma.clinicalRule.findFirst({ where: key });
+    const data = { severity, source, active: true };
+    const rule = existing
+      ? await prisma.clinicalRule.update({ where: { id: existing.id }, data })
+      : await prisma.clinicalRule.create({ data: { ...key, ...data } });
+    keptIds.push(rule.id);
+  }
+
+  const { count: retired } = await prisma.clinicalRule.updateMany({
+    where: { id: { notIn: keptIds }, active: true },
+    data: { active: false },
+  });
+  console.log(`Seed: ${CLINICAL_RULES.length} reglas clínicas por patología${retired ? `, ${retired} dada(s) de baja` : ''}.`);
 }
 
 function requireId(ids, name, kind) {
@@ -436,6 +470,24 @@ async function seedPatient(nutritionistId, patient, catalog) {
   });
 }
 
+// Las recetas básicas comunes (T30) entran por el servicio, que rechaza un
+// ingrediente que no sea común, y se ponen al día por nombre. No se borran: a
+// diferencia de las privadas del seed, un plan de cualquier nutricionista puede
+// referenciarlas (option_item las restringe).
+async function seedCommonRecipes(catalog) {
+  for (const { ingredients, ...recipeData } of COMMON_RECIPES) {
+    await recipeService.upsertCommon({
+      ...recipeData,
+      ingredients: ingredients.map(({ food, quantityDescription }) => ({
+        foodId: requireId(catalog.foodIds, food, 'alimento'),
+        quantityDescription,
+      })),
+    });
+  }
+  console.log(`Seed: ${COMMON_RECIPES.length} recetas básicas comunes.`);
+}
+
+// Solo las privadas del nutricionista: el where por dueño no toca las comunes.
 async function seedRecipes(nutritionistId, recipes, catalog) {
   await prisma.recipe.deleteMany({ where: { nutritionistId } });
 
@@ -463,11 +515,13 @@ async function main() {
   }
   const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
   const catalog = await seedCatalogs();
+  await seedClinicalRules(catalog);
+  await seedCommonRecipes(catalog);
 
   for (const { nutritionist: data, patients, recipes, privateFoods = [], privateRecommendations = [] } of SEED_DATA) {
     const nutritionist = await prisma.nutritionist.upsert({
       where: { email: data.email },
-      update: { passwordHash },
+      update: { passwordHash, tokenVersion: { increment: 1 } },
       create: { ...data, passwordHash },
     });
 
@@ -494,11 +548,17 @@ async function main() {
   }
 }
 
-main()
-  .catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+// scripts/measure-generation.js lo importa para iniciar sesión con la misma
+// contraseña: solo corre el seed cuando se lo ejecuta directo.
+if (require.main === module) {
+  main()
+    .catch((error) => {
+      console.error(error);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+    });
+}
+
+module.exports = { SEED_PASSWORD };

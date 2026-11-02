@@ -1,10 +1,13 @@
-// Modelo lógico vigente — Incrementos 1 y 2.
+// Modelo lógico vigente — Incrementos 1 a 3.
 // Incremento 1 (T4): Nutritionist y Patient con sus campos base (RF-02, RF-03, RF-15, RF-17).
 // Incremento 2 (T14): datos clínicos y contextuales del paciente (RF-04 a RF-14), consultas,
 // mediciones y laboratorio, hábitos pautados, y catálogos de alimentos, recetas y
-// recomendaciones (RF-24, RF-25, RF-27, RF-30). PLAN y lo que depende de él llegan en el
-// Incremento 3. T15: alimentos privados por nutricionista y nombres de catálogo sin
-// distinguir mayúsculas. Incremento 3 (T31): rol, estado y fecha de alta de la cuenta.
+// recomendaciones (RF-24, RF-25, RF-27, RF-30). T15: alimentos privados por nutricionista y
+// nombres de catálogo sin distinguir mayúsculas. Incremento 3 (T31): rol, estado y fecha de
+// alta de la cuenta. T32: plan alimentario, reglas clínicas, hallazgos y generaciones de IA
+// (RF-34, RF-36, RF-41, RF-43, RF-47). T37: la traza de una generación fallida queda sin
+// plan, colgada del paciente. Los estados de aprobación y el versionado del plan
+// llegan en el Incremento 4.
 //
 // Convención de nombres: campos en camelCase (idiomático de Prisma/JS), mapeados con
 // @map a columnas snake_case en Postgres. Los valores de los enums también son
@@ -12,9 +15,11 @@
 // permanecen en español.
 //
 // Las reglas que Prisma no puede expresar (exclusiones entre columnas, detalle
-// obligatorio según el tipo) son CHECK en el SQL de la migración
-// 20261014203321_agrega_datos_clinicos_consultas_y_catalogos y se validan también en
-// los schemas Zod. Correspondencia con el Anexo A: docs/decisiones/ajustes-al-modelo-del-anexo-a-incremento-2.md.
+// obligatorio según el tipo) son CHECK en el SQL de las migraciones
+// 20261014203321_agrega_datos_clinicos_consultas_y_catalogos y
+// agrega_planes_validacion_y_generaciones_ia (T32), y se validan también en los schemas
+// Zod. Correspondencia con el Anexo A: docs/decisiones/ajustes-al-modelo-del-anexo-a-incremento-2.md
+// y docs/decisiones/ajustes-al-modelo-del-anexo-a-incremento-3.md.
 
 generator client {
   provider = "prisma-client-js"
@@ -35,6 +40,9 @@ model Nutritionist {
   name         String
   email        String      @unique
   passwordHash String      @map("password_hash")
+  // AUD-016: cambia junto con el hash al restablecer la contraseña. Los JWT
+  // anteriores quedan inválidos, incluso si se emitieron en el mismo segundo.
+  tokenVersion Int         @default(0) @map("token_version")
   role         AccountRole @default(nutritionist)
   active       Boolean     @default(true)
   createdAt    DateTime    @default(now()) @map("created_at")
@@ -43,10 +51,15 @@ model Nutritionist {
   recipes  Recipe[]
 
   // Alimentos privados que cargó (T15): solo los ve y los usa él.
-  foods Food[]
+  foods        Food[] @relation("FoodOwner")
+  // Alimentos que cargó, sigan privados o hayan pasado al catálogo común (T25).
+  createdFoods Food[] @relation("FoodCreator")
 
   // Recomendaciones clínicas privadas que cargó (T22): solo las ve y las edita él.
   clinicalRecommendations ClinicalRecommendation[]
+
+  plans         Plan[]
+  aiGenerations AiGeneration[]
 
   @@map("nutritionist")
 }
@@ -124,7 +137,12 @@ model Patient {
   conditions    PatientCondition[]
   consultations Consultation[]
   measurements  Measurement[]
+  plans         Plan[]
+  aiGenerations AiGeneration[]
 
+  // Destino de las FK compuestas de Plan (T32) y AiGeneration (T37): el plan y
+  // la generación llevan el mismo nutricionista que su paciente.
+  @@unique([id, nutritionistId])
   @@map("patient")
 }
 
@@ -141,6 +159,7 @@ model Pathology {
 
   conditions      PatientCondition[]
   recommendations ClinicalRecommendation[]
+  clinicalRules   ClinicalRule[]
 
   @@map("pathology")
 }
@@ -171,6 +190,8 @@ model PatientCondition {
   foodGroup    FoodGroup?    @relation(fields: [foodGroupId], references: [id], onDelete: Restrict)
   registeredAt DateTime      @default(now()) @map("registered_at") @db.Date
   observations String?
+
+  findings Finding[]
 
   @@index([patientId])
   @@map("patient_condition")
@@ -273,8 +294,9 @@ model PrescribedHabit {
 // no distingue mayúsculas ("Leche" y "leche" chocan). La extensión se crea a mano
 // en la migración de T15. Grupos y patologías son siempre comunes; un alimento puede
 // ser común o privado de un nutricionista (ver Food). Los nutricionistas no editan
-// el catálogo: lo cura un administrador (tarea aparte) o el seed. Ver
-// docs/decisiones/abm-de-catalogos-comunes.md y
+// el catálogo: lo cura el administrador (T25, rutas /admin) o el seed. Ver
+// docs/decisiones/abm-de-catalogos-comunes.md,
+// docs/decisiones/curado-del-catalogo-por-el-administrador.md y
 // docs/decisiones/nombres-de-catalogo-sin-distinguir-mayusculas.md en el repo raíz.
 
 // Grupo de alimentos jerárquico (RF-24). CHECK en la migración: no es su propio padre.
@@ -287,8 +309,10 @@ model FoodGroup {
   name        String      @unique @db.Citext
   description String?
 
-  foods      Food[]
-  conditions PatientCondition[]
+  foods         Food[]
+  conditions    PatientCondition[]
+  clinicalRules ClinicalRule[]
+  optionItems   OptionItem[]
 
   @@index([parentId])
   @@map("food_group")
@@ -303,6 +327,11 @@ model FoodGroup {
 // nutricionista: el @@unique cubre los privados de un mismo nutricionista, y el
 // servicio chequea el cruce con los comunes y la unicidad entre comunes (Postgres
 // trata los null como distintos en un índice único).
+//
+// createdById es el nutricionista que lo cargó (T25). Coincide con nutritionistId
+// mientras es privado, y se conserva cuando el administrador lo pasa al catálogo
+// común, para la actividad del catálogo. Null en los que cargan el seed o el
+// administrador.
 model Food {
   id             String        @id @default(uuid()) @db.Uuid
   foodGroupId    String        @map("food_group_id") @db.Uuid
@@ -310,14 +339,20 @@ model Food {
   name           String        @db.Citext
   active         Boolean       @default(true)
   nutritionistId String?       @map("nutritionist_id") @db.Uuid
-  nutritionist   Nutritionist? @relation(fields: [nutritionistId], references: [id], onDelete: Restrict)
+  nutritionist   Nutritionist? @relation("FoodOwner", fields: [nutritionistId], references: [id], onDelete: Restrict)
+  createdById    String?       @map("created_by_id") @db.Uuid
+  createdBy      Nutritionist? @relation("FoodCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt      DateTime      @default(now()) @map("created_at")
 
-  categories  FoodCategory[]
-  conditions  PatientCondition[]
-  ingredients RecipeIngredient[]
+  categories    FoodCategory[]
+  conditions    PatientCondition[]
+  ingredients   RecipeIngredient[]
+  clinicalRules ClinicalRule[]
+  optionItems   OptionItem[]
 
   @@unique([nutritionistId, name])
   @@index([foodGroupId])
+  @@index([createdById])
   @@map("food")
 }
 
@@ -328,6 +363,9 @@ enum FoodCategoryType {
   vegetable
   healthy_fat
   infusion
+  // Alimentos sin aporte a la composición esperada: azúcar, sal, condimentos,
+  // grasas sólidas, agua (DA-32). Nunca es una categoría que una comida exija.
+  complementary
 
   @@map("food_category_type")
 }
@@ -359,12 +397,20 @@ enum RecipeOrigin {
   @@map("recipe_origin")
 }
 
-// Receta (RF-27). Pertenece a un nutricionista (RNF-05). plan_origen_id del Anexo A
-// se agrega en el Incremento 3, junto con PLAN. CHECK en la migración: timeMinutes > 0.
+// Receta (RF-27). Como los alimentos y las recomendaciones (T30, DA-34):
+// nutritionistId null es una receta básica común (la carga el seed, solo con
+// ingredientes comunes, y nadie la edita desde la API); con valor es privada de
+// ese nutricionista (RNF-05). onDelete Restrict explícito: con la relación
+// opcional, el default de Prisma (SetNull) convertiría las privadas en comunes.
+// CHECK en la migración: timeMinutes > 0. originPlanId (plan_origen_id del
+// Anexo A, T32) es el plan para el que se generó; el servicio controla que sea
+// del mismo nutricionista.
 model Recipe {
   id                 String         @id @default(uuid()) @db.Uuid
-  nutritionistId     String         @map("nutritionist_id") @db.Uuid
-  nutritionist       Nutritionist   @relation(fields: [nutritionistId], references: [id])
+  nutritionistId     String?        @map("nutritionist_id") @db.Uuid
+  nutritionist       Nutritionist?  @relation(fields: [nutritionistId], references: [id], onDelete: Restrict)
+  originPlanId       String?        @map("origin_plan_id") @db.Uuid
+  originPlan         Plan?          @relation(fields: [originPlanId], references: [id], onDelete: SetNull)
   name               String
   preparation        String?
   finalNote          String?        @map("final_note")
@@ -379,8 +425,10 @@ model Recipe {
 
   ingredients RecipeIngredient[]
   mealTypes   RecipeMealType[]
+  optionItems OptionItem[]
 
   @@index([nutritionistId])
+  @@index([originPlanId])
   @@map("recipe")
 }
 
@@ -436,4 +484,277 @@ model ClinicalRecommendation {
   @@index([pathologyId])
   @@index([nutritionistId])
   @@map("clinical_recommendation")
+}
+
+// ---------------------------------------------------------------------------
+// Planes, validación y trazabilidad (Anexo A.3, T32). Ver
+// docs/decisiones/ajustes-al-modelo-del-anexo-a-incremento-3.md en el repo raíz.
+// ---------------------------------------------------------------------------
+
+// Solo borrador por ahora: aprobado (RF-48) se agrega en el Incremento 4 con un
+// ALTER TYPE ... ADD VALUE.
+enum PlanStatus {
+  draft
+
+  @@map("plan_status")
+}
+
+// Plan alimentario de un paciente (RF-34): por tipo de comida, con opciones
+// intercambiables, sin estructura por días. Lleva nutritionistId además del
+// paciente para que el aislamiento (RNF-05) filtre en la misma tabla. La FK
+// compuesta (patient_id, nutritionist_id) → patient(id, nutritionist_id) hace que
+// la base rechace un plan con un nutricionista distinto al de su paciente.
+//
+// Las recomendaciones son cuatro textos editables (RF-40). Las que se toman del
+// catálogo se copian en clinicalRecommendations: un plan no cambia por una
+// corrección posterior del catálogo (DA-16).
+model Plan {
+  id             String       @id @default(uuid()) @db.Uuid
+  patientId      String       @map("patient_id") @db.Uuid
+  patient        Patient      @relation(fields: [patientId, nutritionistId], references: [id, nutritionistId], onDelete: Cascade)
+  nutritionistId String       @map("nutritionist_id") @db.Uuid
+  nutritionist   Nutritionist @relation(fields: [nutritionistId], references: [id])
+  status         PlanStatus   @default(draft)
+
+  situationalDiagnosis String? @map("situational_diagnosis")
+  introduction         String?
+  objectives           String?
+
+  generalRecommendations    String? @map("general_recommendations")
+  contextualRecommendations String? @map("contextual_recommendations")
+  clinicalRecommendations   String? @map("clinical_recommendations")
+  thematicRecommendations   String? @map("thematic_recommendations")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  meals         PlanMeal[]
+  findings      Finding[]
+  aiGenerations AiGeneration[]
+  recipes       Recipe[]
+
+  @@index([patientId])
+  @@index([nutritionistId])
+  @@map("plan")
+}
+
+// Una comida del plan por tipo. El fraccionamiento es una indicación en texto
+// para el paciente, no una estructura aparte (RF-36).
+model PlanMeal {
+  id           String   @id @default(uuid()) @db.Uuid
+  planId       String   @map("plan_id") @db.Uuid
+  plan         Plan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+  mealType     MealType @map("meal_type")
+  instructions String?
+
+  options MealOption[]
+
+  @@unique([planId, mealType])
+  @@map("plan_meal")
+}
+
+// Opción intercambiable dentro de una comida.
+model MealOption {
+  id          String   @id @default(uuid()) @db.Uuid
+  planMealId  String   @map("plan_meal_id") @db.Uuid
+  planMeal    PlanMeal @relation(fields: [planMealId], references: [id], onDelete: Cascade)
+  order       Int
+  description String?
+
+  items    OptionItem[]
+  findings Finding[]
+
+  @@unique([planMealId, order])
+  @@map("meal_option")
+}
+
+enum OptionItemType {
+  food
+  food_group
+  recipe
+  unrecognized
+
+  @@map("option_item_type")
+}
+
+// Ítem de una opción. Cada tipo referencia exactamente lo suyo (CHECK
+// option_item_type_chk en la migración, y optionItemSchema en la aplicación):
+//   food:         foodId + copia de foodName y foodCategories (DA-16)
+//   food_group:   foodGroupId + copia de foodGroupName ("una fruta", DA-16)
+//   recipe:       recipeId
+//   unrecognized: originalText, el texto de la propuesta que no se resolvió contra
+//                 el catálogo (DA-26)
+// Las copias las arma el backend desde el catálogo, nunca el cliente. Que el
+// alimento sea visible para el nutricionista y la receta sea suya lo controla el
+// servicio.
+model OptionItem {
+  id             String             @id @default(uuid()) @db.Uuid
+  optionId       String             @map("option_id") @db.Uuid
+  option         MealOption         @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  order          Int
+  type           OptionItemType
+  foodId         String?            @map("food_id") @db.Uuid
+  food           Food?              @relation(fields: [foodId], references: [id], onDelete: Restrict)
+  foodName       String?            @map("food_name")
+  foodCategories FoodCategoryType[] @default([]) @map("food_categories")
+  foodGroupId    String?            @map("food_group_id") @db.Uuid
+  foodGroup      FoodGroup?         @relation(fields: [foodGroupId], references: [id], onDelete: Restrict)
+  foodGroupName  String?            @map("food_group_name")
+  recipeId       String?            @map("recipe_id") @db.Uuid
+  recipe         Recipe?            @relation(fields: [recipeId], references: [id], onDelete: Restrict)
+  originalText   String?            @map("original_text")
+
+  findings Finding[]
+
+  @@unique([optionId, order])
+  @@index([foodId])
+  @@index([foodGroupId])
+  @@index([recipeId])
+  @@map("option_item")
+}
+
+enum RuleSeverity {
+  prohibited
+  moderate
+
+  @@map("rule_severity")
+}
+
+// Regla clínica por patología (RF-47): restringe un alimento o un grupo, con su
+// fuente bibliográfica. Catálogo común, como las patologías (DA-15); se da de baja
+// con active = false porque los hallazgos la referencian. Las reglas se cargan en
+// T35. CHECK en la migración: exactamente uno de foodId / foodGroupId; source no
+// vacía.
+model ClinicalRule {
+  id          String       @id @default(uuid()) @db.Uuid
+  pathologyId String       @map("pathology_id") @db.Uuid
+  pathology   Pathology    @relation(fields: [pathologyId], references: [id], onDelete: Restrict)
+  foodId      String?      @map("food_id") @db.Uuid
+  food        Food?        @relation(fields: [foodId], references: [id], onDelete: Restrict)
+  foodGroupId String?      @map("food_group_id") @db.Uuid
+  foodGroup   FoodGroup?   @relation(fields: [foodGroupId], references: [id], onDelete: Restrict)
+  severity    RuleSeverity
+  source      String
+  active      Boolean      @default(true)
+
+  findings Finding[]
+
+  @@index([pathologyId])
+  @@index([foodId])
+  @@index([foodGroupId])
+  @@map("clinical_rule")
+}
+
+enum FindingType {
+  direct_condition
+  pathology_rule
+  composition
+  unrecognized_item
+
+  @@map("finding_type")
+}
+
+enum FindingSeverity {
+  blocking
+  warning
+
+  @@map("finding_severity")
+}
+
+// Hallazgo de la validación determinística de un plan (RF-43, RF-44). Se
+// recalculan en cada revalidación (RF-46). CHECK finding_origin_chk en la
+// migración:
+//   direct_condition:  optionItemId + patientConditionId
+//   pathology_rule:    optionItemId + clinicalRuleId
+//   composition:       optionId, sin ítem
+//   unrecognized_item: optionItemId
+// La severidad la decide el motor de reglas, no la base. Que el ítem o la opción
+// sean del mismo plan lo controla el servicio.
+model Finding {
+  id                 String            @id @default(uuid()) @db.Uuid
+  planId             String            @map("plan_id") @db.Uuid
+  plan               Plan              @relation(fields: [planId], references: [id], onDelete: Cascade)
+  optionId           String?           @map("option_id") @db.Uuid
+  option             MealOption?       @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  optionItemId       String?           @map("option_item_id") @db.Uuid
+  optionItem         OptionItem?       @relation(fields: [optionItemId], references: [id], onDelete: Cascade)
+  type               FindingType
+  severity           FindingSeverity
+  clinicalRuleId     String?           @map("clinical_rule_id") @db.Uuid
+  clinicalRule       ClinicalRule?     @relation(fields: [clinicalRuleId], references: [id], onDelete: Restrict)
+  patientConditionId String?           @map("patient_condition_id") @db.Uuid
+  patientCondition   PatientCondition? @relation(fields: [patientConditionId], references: [id], onDelete: Cascade)
+  message            String
+  detectedAt         DateTime          @default(now()) @map("detected_at")
+
+  @@index([planId])
+  @@index([optionId])
+  @@index([optionItemId])
+  @@index([clinicalRuleId])
+  @@index([patientConditionId])
+  @@map("finding")
+}
+
+// Cómo terminó la llamada al proveedor. Los errores son los que el IA2 prevé como
+// recuperables: tiempo agotado, falla del proveedor y respuesta fuera del esquema.
+enum AiGenerationResult {
+  success
+  invalid_response
+  provider_error
+  timeout
+
+  @@map("ai_generation_result")
+}
+
+// Resultado de validar la propuesta tal como llegó (RF-41). Se guarda aparte de
+// los hallazgos del plan, que se recalculan con cada edición.
+enum AiValidationResult {
+  no_findings
+  warnings
+  blocking
+
+  @@map("ai_validation_result")
+}
+
+// Una fila por generación asistida de un plan (RF-41, RNF-11). contextSent es el
+// contexto anonimizado que efectivamente se envió: sin datos identificatorios del
+// paciente (lo arma el backend, ver el skill servicio-ia-fastapi).
+//
+// T37 (DA-31, modifica DA-27): el borrador se crea solo cuando la generación
+// salió bien, en la misma transacción que su traza. Una generación fallida queda
+// registrada sin plan, aislada por su paciente: la FK compuesta (patient_id,
+// nutritionist_id) → patient(id, nutritionist_id) es la misma que la de Plan.
+// CHECK en la migración: duración y tokens no negativos, también los de
+// razonamiento (ai_generation_metrics_chk); rawResponse presente cuando el
+// proveedor respondió (success, invalid_response); validationResult solo cuando
+// result = success; planId presente si y solo si result = success
+// (ai_generation_plan_chk). Que el plan sea de ese paciente lo controla el
+// servicio.
+model AiGeneration {
+  id               String              @id @default(uuid()) @db.Uuid
+  planId           String?             @map("plan_id") @db.Uuid
+  plan             Plan?               @relation(fields: [planId], references: [id], onDelete: Cascade)
+  patientId        String              @map("patient_id") @db.Uuid
+  patient          Patient             @relation(fields: [patientId, nutritionistId], references: [id, nutritionistId], onDelete: Cascade)
+  nutritionistId   String              @map("nutritionist_id") @db.Uuid
+  nutritionist     Nutritionist        @relation(fields: [nutritionistId], references: [id])
+  contextSent      Json                @map("context_sent")
+  provider         String
+  model            String
+  templateVersion  String              @map("template_version")
+  rawResponse      String?             @map("raw_response")
+  durationMs       Int                 @map("duration_ms")
+  inputTokens      Int?                @map("input_tokens")
+  outputTokens     Int?                @map("output_tokens")
+  // Parte de outputTokens que el modelo usó para razonar (null si el proveedor no
+  // la informa). Permite atribuir el tiempo de la generación (T41).
+  reasoningTokens  Int?                @map("reasoning_tokens")
+  result           AiGenerationResult
+  validationResult AiValidationResult? @map("validation_result")
+  generatedAt      DateTime            @default(now()) @map("generated_at")
+
+  @@index([planId])
+  @@index([patientId])
+  @@index([nutritionistId])
+  @@map("ai_generation")
 }

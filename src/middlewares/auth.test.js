@@ -4,13 +4,13 @@ const { createRequireAuth, requireRole } = require('./auth');
 // Cuentas que el repositorio falso conoce. requireAuth lee rol y estado de acá
 // en cada request, no del token.
 const ACCOUNTS = {
-  'nutri-1': { role: 'nutritionist', active: true },
-  'nutri-baja': { role: 'nutritionist', active: false },
-  'admin-1': { role: 'admin', active: true },
+  'nutri-1': { role: 'nutritionist', active: true, tokenVersion: 0 },
+  'nutri-baja': { role: 'nutritionist', active: false, tokenVersion: 0 },
+  'admin-1': { role: 'admin', active: true, tokenVersion: 0 },
 };
 
-function buildRequireAuth() {
-  const repository = { findAuthState: vi.fn(async (id) => ACCOUNTS[id] || null) };
+function buildRequireAuth(accounts = ACCOUNTS) {
+  const repository = { findAuthState: vi.fn(async (id) => accounts[id] || null) };
   return { requireAuth: createRequireAuth({ nutritionistRepository: repository, jwtSecret: process.env.JWT_SECRET }), repository };
 }
 
@@ -126,6 +126,55 @@ describe('requireAuth middleware', () => {
 
     expect(next).toHaveBeenCalledWith(failure);
     expect(req.nutricionistaId).toBeUndefined();
+  });
+});
+
+describe('requireAuth — revocación tras restablecer la contraseña (AUD-016)', () => {
+  it.each([
+    [undefined, 0, true],
+    [undefined, 1, false],
+    [0, 1, false],
+    [1, 1, true],
+    [2, 1, false],
+  ])('token versión %s y cuenta versión %s: acceso %s', async (tokenVersion, currentVersion, allowed) => {
+    const { requireAuth } = buildRequireAuth({ 'nutri-1': { role: 'nutritionist', active: true, tokenVersion: currentVersion } });
+    const req = withToken(sign({ sub: 'nutri-1', tokenVersion }));
+    const next = vi.fn();
+
+    await requireAuth(req, {}, next);
+
+    if (allowed) {
+      expect(next).toHaveBeenCalledWith();
+      expect(req.nutricionistaId).toBe('nutri-1');
+    } else {
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ status: 401, message: 'Token inválido o expirado' }));
+      expect(req.nutricionistaId).toBeUndefined();
+    }
+  });
+
+  it.each([null, '0', -1, 0.5, {}])('rechaza una versión mal formada (%j) antes de consultar la cuenta', async (tokenVersion) => {
+    const { requireAuth, repository } = buildRequireAuth();
+    const next = vi.fn();
+
+    await requireAuth(withToken(sign({ sub: 'nutri-1', tokenVersion })), {}, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ status: 401 }));
+    expect(repository.findAuthState).not.toHaveBeenCalled();
+  });
+
+  it('distingue el token anterior y el nuevo aunque tengan exactamente el mismo iat', async () => {
+    const { requireAuth } = buildRequireAuth({ 'nutri-1': { role: 'nutritionist', active: true, tokenVersion: 1 } });
+    const iat = Math.floor(Date.now() / 1000);
+    const before = sign({ sub: 'nutri-1', tokenVersion: 0, iat });
+    const after = sign({ sub: 'nutri-1', tokenVersion: 1, iat });
+    const rejected = vi.fn();
+    const accepted = vi.fn();
+
+    await requireAuth(withToken(before), {}, rejected);
+    await requireAuth(withToken(after), {}, accepted);
+
+    expect(rejected).toHaveBeenCalledWith(expect.objectContaining({ status: 401 }));
+    expect(accepted).toHaveBeenCalledWith();
   });
 });
 

@@ -24,6 +24,7 @@ describe('nutritionist.repository — cuentas administradas', () => {
     const [args] = prisma.nutritionist.findMany.mock.calls[0];
     expect(args.where).toEqual({ role: 'nutritionist' });
     expect(args.select).not.toHaveProperty('passwordHash');
+    expect(args.select).not.toHaveProperty('tokenVersion');
   });
 
   it('el alta siempre crea una cuenta de nutricionista', async () => {
@@ -39,7 +40,7 @@ describe('nutritionist.repository — cuentas administradas', () => {
 
   it.each([
     ['setActive', false, { active: false }],
-    ['setPasswordHash', 'hash-nuevo', { passwordHash: 'hash-nuevo' }],
+    ['setPasswordHash', 'hash-nuevo', { passwordHash: 'hash-nuevo', tokenVersion: { increment: 1 } }],
   ])('%s escribe solo sobre cuentas de nutricionista', async (method, value, data) => {
     const prisma = createFakePrisma();
     const repository = createNutritionistRepository({ prisma });
@@ -57,7 +58,7 @@ describe('nutritionist.repository — cuentas administradas', () => {
     expect(prisma.nutritionist.findUnique).not.toHaveBeenCalled();
   });
 
-  it('el estado de autenticación lee solo rol y estado', async () => {
+  it('el estado de autenticación lee rol, estado y versión de tokens sin el hash', async () => {
     const prisma = createFakePrisma();
     const repository = createNutritionistRepository({ prisma });
 
@@ -65,7 +66,7 @@ describe('nutritionist.repository — cuentas administradas', () => {
 
     expect(prisma.nutritionist.findUnique).toHaveBeenCalledWith({
       where: { id: 'nutri-1' },
-      select: { role: true, active: true },
+      select: { role: true, active: true, tokenVersion: true },
     });
   });
 });

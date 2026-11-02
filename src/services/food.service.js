@@ -9,8 +9,8 @@ const GROUP_NOT_FOUND_MESSAGE = 'El grupo de alimentos no existe';
 
 // Un nutricionista ve los alimentos comunes y los suyos privados; el alta crea
 // siempre uno privado. No edita ni da de baja: si un alimento quedó mal cargado,
-// lo corrige el administrador (tarea aparte). No hay borrado físico: lo impiden
-// las FK de condiciones e ingredientes, y la baja es lógica (active = false).
+// lo corrige el administrador (T25, foodAdmin.service). No hay borrado físico: lo
+// impiden las FK de condiciones e ingredientes, y la baja es lógica (active = false).
 function createFoodService({ foodRepository: repository, foodGroupRepository: groups }) {
   return {
     // Filtrar por un grupo incluye sus subgrupos. Un grupo inexistente es un
@@ -57,3 +57,5 @@ function createFoodService({ foodRepository: repository, foodGroupRepository: gr
 module.exports = createFoodService({ foodRepository, foodGroupRepository });
 module.exports.createFoodService = createFoodService;
 module.exports.FOOD_NOT_FOUND_MESSAGE = FOOD_NOT_FOUND_MESSAGE;
+module.exports.DUPLICATE_NAME_MESSAGE = DUPLICATE_NAME_MESSAGE;
+module.exports.GROUP_NOT_FOUND_MESSAGE = GROUP_NOT_FOUND_MESSAGE;

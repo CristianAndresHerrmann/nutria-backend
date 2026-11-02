@@ -2,10 +2,11 @@
 // @openapi de las rutas con $ref. Van como objeto JS y no como YAML suelto
 // porque las comparten todas las rutas y así quedan requeribles y testeables.
 //
-// Los schemas se escriben a mano en vez de derivarlos de los schemas Zod:
-// z.toJSONSchema no puede representar el superRefine de "menor de edad exige
-// adulto responsable" ni el preprocess/transform de birthDate. Al agregar o
-// cambiar un endpoint hay que actualizar esto junto con el schema Zod.
+// Los cuerpos de entrada se generan desde Zod en requestSchemas.js. Sus
+// descripciones y ejemplos viven en requestAnnotations.json; las respuestas,
+// los errores y los parámetros siguen definidos acá.
+
+const { requestSchemas } = require('./requestSchemas');
 
 const securitySchemes = {
   bearerAuth: {
@@ -14,15 +15,14 @@ const securitySchemes = {
     bearerFormat: 'JWT',
     description:
       'Token devuelto por `POST /auth/login`. Se manda como `Authorization: Bearer <token>` ' +
-      'y expira a las 2 horas por defecto (`JWT_EXPIRES_IN`). Si la cuenta se desactiva, el ' +
+      'y expira a las 2 horas por defecto (`JWT_EXPIRES_IN`). Si la cuenta se desactiva o se restablece su contraseña, el ' +
       'token deja de servir en la siguiente request. Las rutas clínicas y de catálogo son de ' +
       'nutricionista y las de `/admin`, de administrador: con el otro rol responden 403.',
   },
 };
 
-// Campos del paciente que comparten request y respuesta con el mismo tipo.
-// birthDate queda afuera a propósito: entra como AAAA-MM-DD y sale como
-// fecha-hora ISO, así que se declara distinto en cada schema.
+// Campos de la respuesta de paciente. birthDate queda afuera porque se
+// serializa como fecha-hora ISO; su entrada se genera desde Zod.
 const sharedPatientFields = {
   firstName: { type: 'string', minLength: 1, example: 'Lucía' },
   lastName: { type: 'string', minLength: 1, example: 'Fernández' },
@@ -68,13 +68,16 @@ const clinicalPatientFields = {
   intakePatterns: nullableText('Picoteo por la tarde'),
 };
 
-// Categorías de un alimento, compartidas por el alta y la respuesta (T15).
+// Categorías en la respuesta de un alimento (T15).
 const foodCategoriesField = {
   type: 'array',
   minItems: 1,
   uniqueItems: true,
   description: 'Categorías nutricionales (RF-25): una o más, sin repetir.',
-  items: { type: 'string', enum: ['protein', 'carbohydrate', 'fiber', 'vegetable', 'healthy_fat', 'infusion'] },
+  items: {
+    type: 'string',
+    enum: ['protein', 'carbohydrate', 'fiber', 'vegetable', 'healthy_fat', 'infusion', 'complementary'],
+  },
   example: ['protein', 'healthy_fat'],
 };
 
@@ -89,7 +92,7 @@ function catalogRef(exampleName) {
   };
 }
 
-// Campos de una receta compartidos por el alta, la edición y la respuesta (T21).
+// Campos de la respuesta de una receta (T21).
 const recipeInputProperties = {
   name: { type: 'string', minLength: 1, maxLength: 100, example: 'Ensalada de arroz y atún' },
   preparation: { type: 'string', nullable: true, maxLength: 5000, example: '1. Hervir el arroz.\n2. Mezclar con el atún.' },
@@ -128,8 +131,7 @@ const recipeInputProperties = {
   },
 };
 
-// Campos de una recomendación clínica compartidos por el alta, la edición y la
-// respuesta (T22).
+// Campos de la respuesta de una recomendación clínica (T22).
 const recommendationInputProperties = {
   pathologyId: {
     type: 'string',
@@ -140,7 +142,30 @@ const recommendationInputProperties = {
   text: { type: 'string', minLength: 1, maxLength: 5000, example: 'Texto de ejemplo ficticio.' },
 };
 
+
+// Plan alimentario (T37; RF-34, RF-36, RF-40, RF-43). Los textos tienen el mismo
+// tope que la propuesta de la IA, así un borrador generado se puede volver a
+// guardar tal cual.
+const MEAL_TYPE_ENUM = ['breakfast', 'lunch', 'afternoon_snack', 'dinner'];
+
+const planText = (description, example) => ({ type: 'string', nullable: true, maxLength: 4000, description, example });
+
+const planTextProperties = {
+  situationalDiagnosis: planText('Diagnóstico situacional.', 'Texto de ejemplo ficticio.'),
+  introduction: planText('Introducción dirigida al paciente.', 'Texto de ejemplo ficticio.'),
+  objectives: planText('Objetivos del plan.', 'Texto de ejemplo ficticio.'),
+  generalRecommendations: planText('Recomendaciones generales.', 'Texto de ejemplo ficticio.'),
+  contextualRecommendations: planText('Recomendaciones contextuales.', 'Texto de ejemplo ficticio.'),
+  clinicalRecommendations: planText(
+    'Recomendaciones clínicas. No las redacta la IA: el profesional copia las del catálogo (DA-16, DA-28). ' +
+      'Un plan generado nace con `null`.',
+    null,
+  ),
+  thematicRecommendations: planText('Recomendaciones temáticas.', 'Texto de ejemplo ficticio.'),
+};
+
 const schemas = {
+  ...requestSchemas,
   Health: {
     type: 'object',
     properties: {
@@ -150,22 +175,14 @@ const schemas = {
     },
   },
 
-  LoginRequest: {
-    type: 'object',
-    required: ['email', 'password'],
-    properties: {
-      email: { type: 'string', format: 'email', example: 'nutricionista@nutria.com' },
-      password: { type: 'string', format: 'password', example: '123456aA!' },
-    },
-  },
-
   LoginResponse: {
     type: 'object',
     properties: {
       token: {
         type: 'string',
         description:
-          'JWT firmado con HS256. El id de la cuenta viaja en el claim `sub` y su rol en `role`.',
+          'JWT firmado con HS256. El id de la cuenta viaja en el claim `sub`, su rol en `role` y ' +
+          'la versión interna de revocación en `tokenVersion`.',
         example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
       },
       nutritionist: {
@@ -193,92 +210,6 @@ const schemas = {
       email: { type: 'string', format: 'email', example: 'ejemplo@nutria.test' },
       active: { type: 'boolean', example: true, description: 'Con `false` la cuenta no inicia sesión.' },
       createdAt: { type: 'string', format: 'date-time', example: '2026-10-26T14:03:11.204Z' },
-    },
-  },
-
-  NutritionistAccountInput: {
-    type: 'object',
-    required: ['name', 'email', 'password'],
-    additionalProperties: false,
-    description: 'El rol y el estado no se eligen: la cuenta nace de nutricionista y activa.',
-    properties: {
-      name: { type: 'string', minLength: 1, maxLength: 100, example: 'Lic. Ejemplo Ficticio' },
-      email: {
-        type: 'string',
-        format: 'email',
-        description: 'Se guarda sin espacios y en minúsculas.',
-        example: 'ejemplo@nutria.test',
-      },
-      password: {
-        type: 'string',
-        format: 'password',
-        minLength: 8,
-        description: 'Contraseña inicial: al menos 8 caracteres y hasta 72 bytes.',
-      },
-    },
-  },
-
-  NutritionistActiveInput: {
-    type: 'object',
-    required: ['active'],
-    additionalProperties: false,
-    properties: {
-      active: { type: 'boolean', example: false, description: '`false` desactiva la cuenta; `true` la reactiva.' },
-    },
-  },
-
-  NutritionistPasswordInput: {
-    type: 'object',
-    required: ['password'],
-    additionalProperties: false,
-    properties: {
-      password: {
-        type: 'string',
-        format: 'password',
-        minLength: 8,
-        description: 'Contraseña nueva: al menos 8 caracteres y hasta 72 bytes.',
-      },
-    },
-  },
-
-  PatientInput: {
-    type: 'object',
-    required: ['firstName', 'lastName'],
-    // Refleja el z.strictObject del schema Zod: una clave desconocida da 400.
-    additionalProperties: false,
-    description:
-      'Body de alta y de edición: comparten schema porque el formulario es el mismo y ambos ' +
-      'mandan el objeto completo, no un diff de campos.\n\n' +
-      '**Regla cruzada que no se puede expresar en JSON Schema:** si `birthDate` corresponde a ' +
-      'un menor de 18 años, `guardianName`, `guardianRelationship`, `guardianContact` y ' +
-      '`attendsAccompanied` pasan a ser obligatorios y su ausencia devuelve 400 con los cuatro ' +
-      'campos en `details.fields`.\n\n' +
-      'Los campos opcionales aceptan el valor, `""`, `null` o su ausencia; las tres últimas ' +
-      'formas se guardan como `null`. Eso permite dar de alta un paciente con solo nombre y ' +
-      'apellido y completar el resto después.\n\n' +
-      'Los datos clínicos y contextuales (`medicalHistory` a `intakePatterns`) son todos ' +
-      'opcionales. Como la edición reemplaza el objeto completo, un campo que no se manda en ' +
-      'el `PUT` queda en `null`.',
-    properties: {
-      ...sharedPatientFields,
-      ...clinicalPatientFields,
-      birthDate: {
-        type: 'string',
-        pattern: '^\\d{4}-\\d{2}-\\d{2}$',
-        nullable: true,
-        description:
-          'Fecha de nacimiento en formato `AAAA-MM-DD`. Tiene que ser una fecha que exista ' +
-          '(`2023-02-30` da 400) y no puede ser posterior a hoy (UTC).',
-        example: '1992-03-14',
-      },
-      registrationComplete: {
-        type: 'boolean',
-        default: false,
-        description:
-          'Marca el registro como completo. La primera vez que pasa de `false` a `true` el ' +
-          'servidor sella `dataCompletedAt`; ese sello no se borra si después se vuelve a ' +
-          'marcar como incompleto.',
-      },
     },
   },
 
@@ -352,20 +283,6 @@ const schemas = {
     },
   },
 
-  FoodInput: {
-    type: 'object',
-    required: ['name', 'foodGroupId', 'categories'],
-    additionalProperties: false,
-    description:
-      'Alta de un alimento privado. El nombre se guarda sin espacios de más. El dueño no se manda: ' +
-      'sale del token.',
-    properties: {
-      name: { type: 'string', minLength: 1, maxLength: 100, example: 'Caballa' },
-      foodGroupId: { type: 'string', format: 'uuid' },
-      categories: foodCategoriesField,
-    },
-  },
-
   Food: {
     type: 'object',
     description:
@@ -397,34 +314,72 @@ const schemas = {
     },
   },
 
-  // Recetas (T21; RF-27). Propias de cada nutricionista.
-  RecipeInput: {
+  // Panel del administrador (T25): el alimento con su dueño y quién lo cargó.
+  AdminFood: {
     type: 'object',
-    required: ['name', 'mealTypes', 'ingredients'],
-    additionalProperties: false,
     description:
-      'Alta de una receta. El dueño y el origen no se mandan: salen del token y del servidor. Un ' +
-      'string vacío en un campo opcional cuenta como ausencia del dato.',
-    properties: recipeInputProperties,
-  },
-
-  RecipeUpdateInput: {
-    type: 'object',
-    required: ['name', 'mealTypes', 'ingredients'],
-    additionalProperties: false,
-    description: 'Reemplazo completo de la receta, más la baja lógica.',
+      'Alimento visto desde el panel del administrador: común o privado de cualquier ' +
+      'nutricionista, vigente o dado de baja. De las cuentas viajan solo el id y el nombre.',
     properties: {
-      ...recipeInputProperties,
-      availableInCatalog: {
-        type: 'boolean',
-        description: '`false` da de baja la receta y `true` la reactiva. Omitido, conserva el valor que tenía.',
+      id: { type: 'string', format: 'uuid' },
+      name: { type: 'string', example: 'Kéfir' },
+      active: { type: 'boolean', example: true },
+      foodGroupId: { type: 'string', format: 'uuid' },
+      foodGroup: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          name: { type: 'string', example: 'Leches y yogures' },
+          parentId: { type: 'string', format: 'uuid', nullable: true },
+        },
       },
+      categories: foodCategoriesField,
+      common: { type: 'boolean', description: '`true` si lo ven todos los nutricionistas.', example: false },
+      owner: {
+        allOf: [{ $ref: '#/components/schemas/AccountRef' }],
+        nullable: true,
+        description: 'Dueño de un privado; `null` en un común.',
+      },
+      createdBy: {
+        allOf: [{ $ref: '#/components/schemas/AccountRef' }],
+        nullable: true,
+        description:
+          'Nutricionista que lo cargó. Se conserva al pasarlo al común; `null` en los que ' +
+          'cargaron el seed o el administrador.',
+      },
+      createdAt: { type: 'string', format: 'date-time', example: '2026-10-27T13:20:05.118Z' },
     },
   },
 
+  AccountRef: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      name: { type: 'string', example: 'Lic. Ejemplo Ficticio' },
+    },
+  },
+
+  CatalogActivityEntry: {
+    type: 'object',
+    description: 'Un alimento que cargó un nutricionista. Nada de pacientes ni de planes.',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      name: { type: 'string', example: 'Kéfir' },
+      active: { type: 'boolean', example: true },
+      common: {
+        type: 'boolean',
+        description: '`true` si el administrador ya lo pasó al catálogo común.',
+        example: false,
+      },
+      createdBy: { $ref: '#/components/schemas/AccountRef' },
+      createdAt: { type: 'string', format: 'date-time', example: '2026-10-27T13:20:05.118Z' },
+    },
+  },
+
+  // Recetas (T21; RF-27). Básicas comunes (T30) y propias de cada nutricionista.
   Recipe: {
     type: 'object',
-    description: 'Receta del nutricionista autenticado. El dueño no viaja.',
+    description: 'Receta básica común o propia del nutricionista autenticado. El dueño no viaja: va `own`.',
     properties: {
       id: { type: 'string', format: 'uuid' },
       name: recipeInputProperties.name,
@@ -439,6 +394,10 @@ const schemas = {
         description: 'Siempre `professional` por ahora: `ai_generated` llega con RF-39 (Incremento 3).',
       },
       availableInCatalog: { type: 'boolean', description: 'Disponible en el catálogo (baja lógica).' },
+      own: {
+        type: 'boolean',
+        description: '`true` si es propia del nutricionista autenticado (la puede editar); `false` si es una receta básica común.',
+      },
       mealTypes: recipeInputProperties.mealTypes,
       ingredients: {
         type: 'array',
@@ -466,30 +425,6 @@ const schemas = {
   },
 
   // Recomendaciones clínicas (T22; RF-30). Comunes o privadas del nutricionista.
-  ClinicalRecommendationInput: {
-    type: 'object',
-    required: ['pathologyId', 'title', 'text'],
-    additionalProperties: false,
-    description:
-      'Alta de una recomendación privada. El dueño no se manda: sale del token. El título se guarda ' +
-      'sin espacios de más; el texto, sin espacios en los extremos.',
-    properties: recommendationInputProperties,
-  },
-
-  ClinicalRecommendationUpdateInput: {
-    type: 'object',
-    required: ['pathologyId', 'title', 'text'],
-    additionalProperties: false,
-    description: 'Reemplazo completo de una recomendación propia, más la baja lógica.',
-    properties: {
-      ...recommendationInputProperties,
-      active: {
-        type: 'boolean',
-        description: '`false` la da de baja y `true` la reactiva. Omitido, conserva el valor que tenía.',
-      },
-    },
-  },
-
   ClinicalRecommendation: {
     type: 'object',
     description: 'Recomendación común o privada del nutricionista autenticado. El dueño no viaja.',
@@ -508,35 +443,6 @@ const schemas = {
   },
 
   // Condiciones del paciente (T18; RF-04 patologías, RF-07).
-  PatientConditionInput: {
-    type: 'object',
-    required: ['type'],
-    additionalProperties: false,
-    description:
-      'Una `pathology` exige `pathologyId` y no referencia alimentos. Los demás tipos exigen ' +
-      'exactamente uno entre `foodId` y `foodGroupId`, y no llevan `pathologyId`. Cualquier otra ' +
-      'combinación da 400 `VALIDATION_ERROR` con el campo en `details.fields`. Un string vacío ' +
-      'cuenta como ausencia del dato. El paciente sale de la ruta y el nutricionista del token.',
-    properties: {
-      type: { type: 'string', enum: ['pathology', 'allergy', 'intolerance', 'rejection', 'preference'] },
-      pathologyId: { type: 'string', format: 'uuid', nullable: true },
-      foodId: {
-        type: 'string',
-        format: 'uuid',
-        nullable: true,
-        description: 'Alimento común o privado propio, vigente. Uno inexistente o privado de otro da 400.',
-      },
-      foodGroupId: { type: 'string', format: 'uuid', nullable: true },
-      registeredAt: {
-        type: 'string',
-        format: 'date',
-        nullable: true,
-        description: 'AAAA-MM-DD, no futura. Si no viene: en el alta, la fecha del día; en la edición, la que tenía.',
-      },
-      observations: { type: 'string', nullable: true, maxLength: 1000, example: 'Le cae mal en cantidad' },
-    },
-  },
-
   PatientCondition: {
     type: 'object',
     description: 'Condición registrada, con el nombre de lo que referencia. Solo uno de los tres destinos viene con valor.',
@@ -556,71 +462,6 @@ const schemas = {
   },
 
   // Consultas y hábitos pautados (T19; RF-13, RF-18, RF-22 registro).
-  ConsultationInput: {
-    type: 'object',
-    required: ['date', 'type'],
-    additionalProperties: false,
-    description:
-      'Campos de la consulta. Fecha y tipo son obligatorios; el resto es opcional y un string vacío ' +
-      'cuenta como ausencia del dato (RNF-09). En el `PUT` es un reemplazo completo: un campo ' +
-      'omitido queda en `null`. El paciente sale de la ruta y el nutricionista del token.',
-    properties: {
-      date: { type: 'string', format: 'date', example: '2026-10-19', description: 'AAAA-MM-DD, no futura.' },
-      type: { type: 'string', enum: ['first', 'follow_up'], description: '`first` = primera, `follow_up` = seguimiento.' },
-      motivation: { ...nullableText('Sentirse con más energía'), description: 'Motivación (RF-13).' },
-      decisionOrigin: { ...nullableText('Propia'), description: 'Origen de la decisión de cambio (RF-13).' },
-      perceivedObstacle: { ...nullableText('Falta de tiempo para cocinar'), description: 'Obstáculo percibido (RF-13).' },
-      mainHabit: { ...nullableText('Picoteo por la tarde'), description: 'Hábito principal a modificar (RF-13).' },
-      observations: {
-        type: 'string',
-        nullable: true,
-        maxLength: 5000,
-        example: 'Buena adherencia a la caminata.',
-        description: 'Observaciones libres (RF-18).',
-      },
-    },
-  },
-
-  ConsultationCreateInput: {
-    description:
-      'Los campos de `ConsultationInput` más los hábitos pautados al cierre de la consulta y las ' +
-      'mediciones tomadas en ella.',
-    allOf: [
-      { $ref: '#/components/schemas/ConsultationInput' },
-      {
-        type: 'object',
-        properties: {
-          habits: {
-            type: 'array',
-            maxItems: 20,
-            description:
-              'Hábitos pautados (RF-22), redactados por el profesional, sin catálogo. Opcional: sin ' +
-              'hábitos la consulta se guarda igual. Nacen con `compliance: pending`. No se editan con ' +
-              'el `PUT`. Un error en cualquiera de ellos viene en `details.fields.habits`.',
-            items: {
-              type: 'object',
-              required: ['description'],
-              additionalProperties: false,
-              properties: {
-                description: { type: 'string', minLength: 1, maxLength: 500, example: 'Caminar 30 minutos tres veces por semana' },
-              },
-            },
-          },
-          measurements: {
-            type: 'array',
-            maxItems: 30,
-            description:
-              'Mediciones y laboratorio tomados en la consulta (RF-11, RF-12). Opcional. Se crean en la ' +
-              'misma operación, con la fecha de la consulta, y después se leen y editan por ' +
-              '`/patients/{id}/measurements`. No se aceptan en el `PUT`. Un error en cualquiera de ' +
-              'ellas viene en `details.fields.measurements`.',
-            items: { $ref: '#/components/schemas/ConsultationMeasurementInput' },
-          },
-        },
-      },
-    ],
-  },
-
   PrescribedHabit: {
     type: 'object',
     properties: {
@@ -654,71 +495,6 @@ const schemas = {
   },
 
   // Mediciones y laboratorio (T20; RF-11, RF-12).
-  ConsultationMeasurementInput: {
-    type: 'object',
-    required: ['type', 'value'],
-    additionalProperties: false,
-    description:
-      'Una medición antropométrica o de laboratorio. Solo validaciones técnicas: valor mayor a cero, ' +
-      'tipo válido y `detail` obligatorio para `skinfold`, `circumference` y `other`. Sin umbrales ' +
-      'clínicos. Ningún tipo es obligatorio.',
-    properties: {
-      type: {
-        type: 'string',
-        enum: ['weight', 'height', 'skinfold', 'circumference', 'cholesterol', 'triglycerides', 'glucose', 'other'],
-        example: 'weight',
-        description:
-          'Antropometría: `weight`, `height`, `skinfold`, `circumference`. Laboratorio: `cholesterol`, ' +
-          '`triglycerides`, `glucose`, `other`.',
-      },
-      detail: {
-        type: 'string',
-        nullable: true,
-        maxLength: 255,
-        example: null,
-        description:
-          'Qué se midió (qué pliegue, qué circunferencia, qué parámetro). Obligatorio para `skinfold`, ' +
-          '`circumference` y `other`.',
-      },
-      value: { type: 'number', exclusiveMinimum: 0, maximum: 999999.99, example: 68.4 },
-      unit: {
-        type: 'string',
-        nullable: true,
-        maxLength: 50,
-        example: 'kg',
-        description:
-          'Fija según el tipo: `weight` kg, `height` cm, `skinfold` mm, `circumference` cm, ' +
-          '`cholesterol`, `triglycerides` y `glucose` mg/dL. Si no viene se completa, y otra distinta ' +
-          'da 400. En `other` es opcional y se elige de una lista: %, g/dL, mg/dL, mg/L, µg/dL, ' +
-          'ng/mL, pg/mL, mmol/L, mEq/L, UI/L, µUI/mL; otra da 400.',
-      },
-    },
-  },
-
-  MeasurementInput: {
-    description:
-      'Los campos de `ConsultationMeasurementInput` más la fecha y, opcionalmente, la consulta. En el ' +
-      '`PUT` es un reemplazo completo: un opcional omitido queda en `null`.',
-    allOf: [
-      { $ref: '#/components/schemas/ConsultationMeasurementInput' },
-      {
-        type: 'object',
-        required: ['date'],
-        properties: {
-          date: { type: 'string', format: 'date', example: '2026-10-19', description: 'AAAA-MM-DD, no futura.' },
-          consultationId: {
-            type: 'string',
-            format: 'uuid',
-            nullable: true,
-            description:
-              'Consulta en la que se tomó. Opcional: una medición puede cargarse fuera de una consulta. ' +
-              'Tiene que ser del mismo paciente; si no, `400` en `details.fields.consultationId`.',
-          },
-        },
-      },
-    ],
-  },
-
   Measurement: {
     type: 'object',
     properties: {
@@ -738,6 +514,144 @@ const schemas = {
           'IMC (RF-11), calculado y no guardado, con un decimal. Solo en un `weight`, con la talla más ' +
           'reciente de fecha igual o anterior a la del peso; sin esa talla, o en otro tipo, `null`. No ' +
           'se clasifica.',
+      },
+    },
+  },
+
+  PlanSummary: {
+    type: 'object',
+    description: 'Plan en el historial del paciente.',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      patientId: { type: 'string', format: 'uuid' },
+      status: { type: 'string', enum: ['draft'], description: 'Solo borrador en el Incremento 3.' },
+      createdAt: { type: 'string', format: 'date-time' },
+      updatedAt: { type: 'string', format: 'date-time' },
+    },
+  },
+
+  Finding: {
+    type: 'object',
+    description:
+      'Hallazgo del motor de reglas (RF-43, RF-44). Se recalculan en cada guardado y al abrir el ' +
+      'borrador (RF-46): no se marcan como resueltos, dejan de existir cuando se corrige lo que los produjo. ' +
+      'Los de ítem traen `optionItemId`; el de composición, `optionId`.',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      planId: { type: 'string', format: 'uuid' },
+      optionId: { type: 'string', format: 'uuid', nullable: true },
+      optionItemId: { type: 'string', format: 'uuid', nullable: true },
+      type: { type: 'string', enum: ['direct_condition', 'pathology_rule', 'composition', 'unrecognized_item'] },
+      severity: { type: 'string', enum: ['blocking', 'warning'] },
+      clinicalRuleId: { type: 'string', format: 'uuid', nullable: true },
+      patientConditionId: { type: 'string', format: 'uuid', nullable: true },
+      message: { type: 'string', example: 'Opción 1 del almuerzo: falta verdura' },
+      detectedAt: { type: 'string', format: 'date-time' },
+    },
+  },
+
+  Plan: {
+    type: 'object',
+    description:
+      'Plan alimentario del paciente, por tipo de comida con opciones intercambiables (RF-34), sin ' +
+      'cantidades (RF-35). El dueño no viaja.',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      patientId: { type: 'string', format: 'uuid' },
+      status: { type: 'string', enum: ['draft'] },
+      ...planTextProperties,
+      createdAt: { type: 'string', format: 'date-time' },
+      updatedAt: { type: 'string', format: 'date-time' },
+      meals: {
+        type: 'array',
+        description: 'En el orden de las comidas (desayuno a cena).',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            planId: { type: 'string', format: 'uuid' },
+            mealType: { type: 'string', enum: MEAL_TYPE_ENUM },
+            instructions: { type: 'string', nullable: true },
+            options: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string', format: 'uuid' },
+                  planMealId: { type: 'string', format: 'uuid' },
+                  order: { type: 'integer', minimum: 1 },
+                  description: { type: 'string', nullable: true },
+                  items: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      description:
+                        'Ítem con la referencia de su tipo y la copia del catálogo tomada al guardar (DA-16): ' +
+                        '`foodName` y `foodCategories` en un alimento, `foodGroupName` en un grupo. Las ' +
+                        'referencias y copias que no corresponden al tipo vienen en `null` (o `[]`).',
+                      properties: {
+                        id: { type: 'string', format: 'uuid' },
+                        optionId: { type: 'string', format: 'uuid' },
+                        order: { type: 'integer', minimum: 1 },
+                        type: { type: 'string', enum: ['food', 'food_group', 'recipe', 'unrecognized'] },
+                        foodId: { type: 'string', format: 'uuid', nullable: true },
+                        foodName: { type: 'string', nullable: true, example: 'Pollo' },
+                        foodCategories: {
+                          type: 'array',
+                          items: {
+                            type: 'string',
+                            enum: ['protein', 'carbohydrate', 'fiber', 'vegetable', 'healthy_fat', 'infusion', 'complementary'],
+                          },
+                        },
+                        foodGroupId: { type: 'string', format: 'uuid', nullable: true },
+                        foodGroupName: { type: 'string', nullable: true },
+                        recipeId: { type: 'string', format: 'uuid', nullable: true },
+                        recipe: {
+                          type: 'object',
+                          nullable: true,
+                          description:
+                            'Solo en un ítem `recipe`: la receta vigente (no se copia). `availableInCatalog` ' +
+                            'es `false` si se dio de baja después de agregarla.',
+                          properties: {
+                            id: { type: 'string', format: 'uuid' },
+                            name: { type: 'string', example: 'Tarta de verduras' },
+                            availableInCatalog: { type: 'boolean' },
+                          },
+                        },
+                        originalText: { type: 'string', nullable: true },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      findings: {
+        type: 'array',
+        description:
+          'En el orden del plan: por comida, opción e ítem; dentro de un ítem, el no reconocido primero; ' +
+          'la composición al final de su opción.',
+        items: { $ref: '#/components/schemas/Finding' },
+      },
+      generation: {
+        type: 'object',
+        nullable: true,
+        description:
+          'Resumen de la generación que originó el plan (RF-41), o `null`. El contexto enviado y la ' +
+          'respuesta cruda quedan en la trazabilidad y no viajan.',
+        properties: {
+          provider: { type: 'string', example: 'fake' },
+          model: { type: 'string', example: 'fake-deterministic' },
+          templateVersion: { type: 'string', example: 'plan_proposal_v1' },
+          validationResult: {
+            type: 'string',
+            enum: ['no_findings', 'warnings', 'blocking'],
+            description: 'Resultado de validar la propuesta tal como llegó, antes de cualquier edición.',
+          },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
       },
     },
   },
@@ -796,8 +710,17 @@ const schemas = {
               },
               reason: {
                 type: 'string',
-                enum: ['timeout', 'unreachable', 'bad_status', 'bad_body'],
-                description: 'Por qué no se pudo usar el servicio de IA.',
+                enum: [
+                  'timeout',
+                  'unreachable',
+                  'bad_status',
+                  'bad_body',
+                  'provider_timeout',
+                  'provider_error',
+                  'invalid_output',
+                ],
+                description:
+                  'Por qué no se pudo usar el servicio de IA. Los tres últimos solo en la generación del plan.',
               },
             },
           },
@@ -824,6 +747,9 @@ function notFoundResponse(message) {
     },
   };
 }
+
+const PRIVATE_NAME_CONFLICT_MESSAGE =
+  'Otro nutricionista tiene un alimento privado vigente con ese nombre: renombralo o dalo de baja';
 
 // 403 por rol: lo responde requireRole antes de llegar al controlador.
 const forbiddenRoleExample = errorExample('FORBIDDEN', 'No tenés permiso para acceder a este recurso');
@@ -985,6 +911,61 @@ const responses = {
     },
   },
 
+  AdminFoodConflict: {
+    description:
+      'El nombre choca, sin distinguir mayúsculas. Un privado no repite un común ni otro privado ' +
+      'del mismo nutricionista. Un común (alta, edición o un privado que pasa al común) no repite ' +
+      'otro común ni un privado vigente de otro nutricionista. También responde 409 pasar al ' +
+      'común un alimento que ya es común.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        examples: {
+          nombre: {
+            summary: 'Ya hay un común, o un privado del mismo dueño, con ese nombre',
+            value: errorExample('CONFLICT', 'Ya existe un alimento con ese nombre', {
+              fields: { name: 'Ya existe un alimento con ese nombre' },
+            }),
+          },
+          privadoDeOtro: {
+            summary: 'Otro nutricionista tiene un privado vigente con ese nombre',
+            value: errorExample('CONFLICT', PRIVATE_NAME_CONFLICT_MESSAGE, {
+              fields: { name: PRIVATE_NAME_CONFLICT_MESSAGE },
+            }),
+          },
+          yaComun: {
+            summary: 'El alimento ya es común',
+            value: errorExample('CONFLICT', 'El alimento ya es común'),
+          },
+        },
+      },
+    },
+  },
+
+  FoodGroupConflict: {
+    description: 'Ya existe un grupo con ese nombre, sin distinguir mayúsculas.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        example: errorExample('CONFLICT', 'Ya existe un grupo con ese nombre', {
+          fields: { name: 'Ya existe un grupo con ese nombre' },
+        }),
+      },
+    },
+  },
+
+  PathologyConflict: {
+    description: 'Ya existe una patología con ese nombre, sin distinguir mayúsculas.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        example: errorExample('CONFLICT', 'Ya existe una patología con ese nombre', {
+          fields: { name: 'Ya existe una patología con ese nombre' },
+        }),
+      },
+    },
+  },
+
   FoodGroupNotFound: notFoundResponse('Grupo de alimentos no encontrado'),
   FoodNotFound: notFoundResponse('Alimento no encontrado'),
   PathologyNotFound: notFoundResponse('Patología no encontrada'),
@@ -1002,6 +983,24 @@ const responses = {
           comun: {
             summary: 'La recomendación es común',
             value: errorExample('FORBIDDEN', 'Las recomendaciones comunes son de solo lectura'),
+          },
+          rol: { summary: 'El token no es de un nutricionista', value: forbiddenRoleExample },
+        },
+      },
+    },
+  },
+
+  CommonRecipeReadOnly: {
+    description:
+      'La receta es una básica común: ningún nutricionista la edita ni la da de baja. También ' +
+      'responde 403 un token de administrador.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        examples: {
+          comun: {
+            summary: 'La receta es común',
+            value: errorExample('FORBIDDEN', 'Las recetas comunes son de solo lectura'),
           },
           rol: { summary: 'El token no es de un nutricionista', value: forbiddenRoleExample },
         },
@@ -1092,6 +1091,36 @@ const responses = {
       },
     },
   },
+
+  PlanGenerationUnavailable: {
+    description:
+      'La generación no se pudo completar y no se creó ningún plan (RNF-02). Es recuperable: se puede ' +
+      'reintentar. `reason`: `unreachable` (servicio caído), `timeout` (no respondió dentro de ' +
+      '`IA_GENERATION_TIMEOUT_MS`), `provider_timeout` y `provider_error` (falla del proveedor de IA), ' +
+      '`invalid_output` (la propuesta no respeta el contrato), `bad_status` / `bad_body` (respuesta ' +
+      'inesperada del servicio).',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        example: errorExample('IA_UNAVAILABLE', 'El servicio de IA no está disponible', { reason: 'provider_timeout' }),
+      },
+    },
+  },
+
+  PlanNotFound: {
+    description:
+      'El paciente o el plan no existen para el nutricionista autenticado: inexistentes, de otro ' +
+      'nutricionista, un plan de otro paciente o un id que no es UUID. La API no distingue los casos.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        examples: {
+          plan: { summary: 'Plan', value: errorExample('NOT_FOUND', 'Plan no encontrado') },
+          paciente: { summary: 'Paciente', value: errorExample('NOT_FOUND', 'Paciente no encontrado') },
+        },
+      },
+    },
+  },
 };
 
 const parameters = {
@@ -1135,6 +1164,13 @@ const parameters = {
     in: 'path',
     required: true,
     description: 'Id de la medición. Un valor que no sea un UUID devuelve 404, no 400.',
+    schema: { type: 'string', format: 'uuid' },
+  },
+  PlanId: {
+    name: 'planId',
+    in: 'path',
+    required: true,
+    description: 'Id del plan. Un valor que no sea un UUID devuelve 404, no 400.',
     schema: { type: 'string', format: 'uuid' },
   },
   RecipeId: {

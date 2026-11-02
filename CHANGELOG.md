@@ -4,6 +4,261 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ## Unreleased
 
+## [0.0.3] - 2026-11-01
+
+Incremento 3 (ver `docs/cierre-incremento-3.md` en el repo raíz).
+
+### Added
+
+- Cierre del Incremento 3 (T42; RNF-08, RNF-13). Revisión completa en `docs/cierre-incremento-3.md` del repo raíz.
+  - Suites en verde dentro de Docker y recorrido contra la API real: el admin crea una cuenta, la nutricionista genera con el proveedor real, edita y revalida, y el aislamiento del plan se verifica con los dos nutricionistas del seed.
+  - README, sección "Staging": el `.env` de `nutria-ia` en la VM lleva el proveedor real (`AI_PROVIDER`, `AI_MODEL`, `AI_REASONING_LEVEL`, `AI_PROVIDER_TIMEOUT_SECONDS` y la clave). Sin `AI_PROVIDER`, el servicio arranca con el proveedor simulado y el smoke test del CD no lo detecta. Se suman a "Operación" la recarga del seed después de un despliegue que cambia catálogos, reglas o casos, y la consulta que confirma el proveedor usado.
+
+- Curado del catálogo desde el panel del administrador (T25; RF-04, RF-24, RF-25, RNF-05; DA-37). Decisión completa en `docs/decisiones/curado-del-catalogo-por-el-administrador.md` del repo raíz.
+  - Migración `agrega_alta_y_autor_de_alimentos`:
+    - `food.created_at` y `food.created_by_id` (FK a `nutritionist`, `RESTRICT`).
+    - En los privados existentes, `created_by_id` se completa con su dueño. Su `created_at` queda con la fecha de la migración, porque no hay un dato anterior.
+    - El alta de un privado, por la API o por el seed, guarda al autor. Los comunes quedan sin autor.
+  - Rutas nuevas, todas bajo `/admin` y solo para el administrador. Un nutricionista recibe `403`, y el test de 403 cruzados las cubre.
+    - **Grupos:** `GET`, `POST /admin/food-groups` y `PUT /admin/food-groups/:id`, con grupo padre.
+      - Un grupo dentro de sí mismo o de uno de sus subgrupos, a cualquier profundidad, da `400` en `details.fields.parentId`. Usa `wouldCreateCycle` de `src/utils/foodGroupTree.js`.
+      - Un padre inexistente también da `400`.
+    - **Patologías:** `GET`, `POST /admin/pathologies` y `PUT /admin/pathologies/:id`, con nombre y descripción.
+    - **Alimentos:**
+      - `GET /admin/foods` trae los comunes y los privados de todos, incluidas las bajas. Acepta `owner` (`common` o el id de un nutricionista), `search` y `groupId`.
+      - `GET /admin/foods/:id`.
+      - `POST /admin/foods` da de alta un común.
+      - `PUT /admin/foods/:id` corrige el nombre, el grupo y las categorías, y con `active` da de baja o reactiva. Un `nutritionistId` en el body da `400`.
+      - `POST /admin/foods/:id/promote` pasa un privado al común con el mismo id y conserva quién lo cargó. Acepta un `name` opcional para renombrarlo en la misma operación.
+    - **Actividad:** `GET /admin/catalog-activity` lista qué alimento cargó cada nutricionista y cuándo, sigan privados o hayan pasado al común. Acepta `nutritionistId`. De la cuenta viajan solo el id y el nombre, y nada de pacientes ni de planes.
+  - Nombre duplicado, sin distinguir mayúsculas: `409 CONFLICT` en `details.fields.name`.
+    - Un privado no repite un común ni otro privado de su dueño.
+    - Un común no repite otro común ni un privado vigente de otro nutricionista. El mensaje pide renombrar o dar de baja ese privado.
+    - Al pasar un privado al común, tampoco puede repetir otro privado de su dueño, aunque esté dado de baja.
+    - En la edición, el nombre se controla solo si cambia o si el alimento se reactiva.
+    - Grupos y patologías tampoco repiten nombre.
+    - Pasar al común uno que ya es común también da `409`.
+  - Los planes conservan la copia del nombre y las categorías del alimento corregido (DA-16) hasta que se vuelve a guardar el borrador.
+  - La respuesta de `/foods` para el nutricionista no cambia: no expone `createdAt` ni `createdById`.
+  - Capas nuevas:
+    - `foodAdmin.service`, el `adminCatalog.controller` y `adminCatalog.routes`.
+    - Los schemas `foodGroup.schema` y `pathology.schema`, más los nuevos de `food.schema`.
+    - En el OpenAPI: `AdminFood`, `CatalogActivityEntry`, `AdminFoodConflict`, `FoodGroupConflict` y `PathologyConflict`.
+    - `foodGroup.service` y `pathology.service` suman el alta y la edición.
+  - Pruebas:
+    - Unitarias de ciclos, padre inexistente y nombre duplicado → `CONFLICT` al crear, al editar y al pasar al común.
+    - Las consultas del repositorio, los serializadores y la validación de las rutas.
+    - De punta a punta contra Postgres en `app.int.test.js`:
+      - El admin corrige las categorías y el grupo de un privado, y el plan conserva su copia.
+      - El ciclo de grupos da `400` y no cambia la base.
+      - El paso al común: el choque, el renombre y la autora en la actividad.
+      - Los duplicados al editar.
+
+- Reglas clínicas por patología (T35; RF-43, RF-47; riesgos 2 y 15; DA-36). La matriz, sus fuentes y su origen (S, sin entrevista) están en la ficha R-05 de `docs/reglas-clinicas.md` del repo raíz.
+  - `scripts/seed-data/clinical-rules.js`: 37 reglas, cada una con una fuente bibliográfica con páginas.
+    - Celiaquía: 27 alimentos con trigo, avena, cebada o centeno, `prohibited`. La avena sin TACC, `moderate`.
+    - Diabetes: azúcares y dulces, `moderate`.
+    - Hipertensión: caldo en cubo, `prohibited`. Sal fina y el grupo Fiambres y embutidos, `moderate`.
+  - El seed carga las reglas por patología y alimento o grupo, las pone al día y da de baja (`active = false`) las que salen de la matriz. No las borra, porque los hallazgos las referencian. No hay migración: el origen de cada regla queda en la documentación.
+  - Motor de reglas: nuevo `src/domain/reglas/pathologyRule.js`. Un ítem comprendido en una regla vigente de una patología del paciente genera un hallazgo `pathology_rule` con `clinicalRuleId`. El criterio de "comprendido en" es el de la condición directa. El hallazgo es `blocking` si la regla es `prohibited` y `warning` si es `moderate`, y su mensaje nombra la patología y la fuente.
+  - `validatePlan` recibe `rules`. `planValidation.service.loadInputs` carga las reglas con `clinicalRule.repository.findActiveForPathologies`, de las dos severidades, y la comparación de hallazgos en `revalidate` incluye `clinicalRuleId`.
+  - `ruleScopes` pasa de `allowedCatalog.js` a `src/utils/recipeConditionFilter.js`, y la usan el motor y la generación.
+  - La generación toma las reglas prohibitivas de las entradas del motor. Se quita `findActiveProhibitedForPathologies` y la dependencia de `clinicalRuleRepository` en `planGeneration.service`.
+  - Pruebas:
+    - `pathologyRule.test.js` y casos nuevos en `validatePlan.test.js`, con casos que disparan y que no.
+    - El servicio de validación y la generación.
+    - De punta a punta contra Postgres en `app.int.test.js`.
+    - Los datos de la matriz en `clinical-rules.test.js`.
+    - La carga y la baja en `seed.int.test.js`.
+    - El resultado esperado de los casos C1–C7 de T41 contra la matriz, en `clinical-cases.rules.test.js`.
+
+- Casos clínicos ficticios y medición de la generación (T41; Plan 5.6, Tabla 7 del IA2, riesgos 4, 10 y 17).
+  - `scripts/seed-data/clinical-cases.js`: siete pacientes ficticios con la ficha completa, cargados por el seed en `nutricionista@nutria.com`: celiaquía, diabetes, hipertensión (no cocina), alergia al grupo Huevos, intolerancia a la leche, sin condiciones y rechazo del grupo Legumbres (menor). El resultado esperado de cada caso lo define la entrevista (T35). `clinical-cases.test.js` controla que referencien el catálogo y cubran los siete tipos; la integración del seed verifica que estén una sola vez después de volver a correrlo.
+  - `scripts/measure-generation.js` (`npm run measure:generation` en la raíz): corre N generaciones por caso contra el stack levantado, en serie. Registra el tiempo total hasta la propuesta validada, la duración del proveedor y los tokens leídos de `ai_generation`, la validez de la salida, los hallazgos bloqueantes y el costo estimado. Resume P50, P95 y máximo por caso y en total contra las metas de 15 s y del 95 %. Registra también el tamaño de cada propuesta (cantidad de opciones y caracteres de los seis textos de la IA). `--label` agrega un sufijo al nombre del archivo, para distinguir las variantes de una prueba. El resultado queda en `docs/mediciones-de-generacion/` del repo raíz. Se corre solo a mano. Las funciones de cálculo tienen tests en `measure-generation.test.js`.
+  - `scripts/seed.js` exporta `SEED_PASSWORD` y corre solo cuando se lo ejecuta directo.
+  - Migración `agrega_tokens_de_razonamiento_a_generacion`: `ai_generation.reasoning_tokens` (nullable, dentro de `ai_generation_metrics_chk`), con los tokens de razonamiento que informa `nutria-ia` en `generation.reasoning_tokens`. El script de medición los resume en la columna "De razonamiento".
+
+- Pruebas de la edición del borrador (T40; RF-29, RF-46). La edición usa el `PUT /patients/:id/plans/:planId` de T37 sin cambios de comportamiento. Las pruebas cubren los criterios de cierre:
+  - Agregar un alimento contraindicado, o una receta con un ingrediente contraindicado, genera el bloqueo junto al ítem.
+  - Reemplazar el alimento contraindicado o el ítem no reconocido levanta el bloqueo.
+  - Una condición nueva del paciente aparece como bloqueo al reabrir el borrador, sin volver a guardarlo.
+
+  Las cubren los tests unitarios de `plan.service.test.js` y un test de punta a punta contra Postgres en `app.int.test.js`. La descripción OpenAPI del `PUT` aclara que un ítem puede referenciar una receta común, además de una propia (DA-34).
+
+- AUD-005: los cuerpos de request de OpenAPI se generan desde los schemas Zod de las rutas, conservando OpenAPI 3.0, los nombres de componentes, las descripciones y los ejemplos. El adaptador contempla los opcionales normalizados a null y los límites aplicados después de normalizar texto. Las reglas cruzadas siguen descritas explícitamente. Las respuestas, errores y parámetros conservan sus definiciones.
+
+- AUD-004: test de contrato backend ↔ IA contra una copia versionada del OpenAPI de `nutria-ia`. Compara los enums de Prisma, los campos y límites de la propuesta Zod, y los topes del catálogo y textos de contexto enviados. Corre en la suite unitaria sin necesitar el servicio de IA ni el otro repo.
+
+- Recetas básicas comunes (T30; RF-27, RF-28; DA-34, modifica DA-15), con el mismo criterio que las recomendaciones comunes. Origen, criterios y pendientes en `docs/recetas-basicas.md` y `docs/decisiones/recetas-comunes.md` del repo raíz.
+  - Migración `recetas_comunes`: `recipe.nutritionist_id` pasa a nullable (null = común). La FK queda en `RESTRICT`, explícito en el schema.
+  - `GET /recipes` devuelve las comunes y las propias, con los filtros por tipo de comida y por condiciones del paciente (RF-28) aplicados igual a las dos. `GET /recipes/:id` muestra una común; una privada de otro nutricionista sigue dando `404`.
+  - `PUT /recipes/:id` sobre una común (editarla o darla de baja) responde `403` con "Las recetas comunes son de solo lectura". `POST /recipes` sigue creando recetas privadas del nutricionista del token.
+  - La respuesta de una receta trae `own` (`false` en las comunes) en lugar del dueño.
+  - Una receta común solo lleva alimentos comunes: `recipe.service.upsertCommon` (sin ruta HTTP) rechaza un ingrediente privado o inexistente con `400` en `details.fields.ingredients`.
+  - El plan y la generación ven las recetas comunes como candidatas, porque leen el mismo listado.
+  - Seed: 17 recetas básicas con origen V (`scripts/seed-data/recipes.js`): 7 de desayuno y merienda y 10 de almuerzo y cena, 6 sin cocción. Se cargan por el servicio, se ponen al día por nombre y no se borran (un plan puede referenciarlas). Las recetas privadas de ejemplo se siguen reemplazando por nutricionista. `scripts/seed.js` usa el cliente de Prisma de `src/lib/prisma`.
+  - `scripts/seed-data/recipes.test.js`: controla los datos de las recetas (ingredientes del catálogo común sin repetir, sin sal, azúcar, dulces, caldo, salsa de soja ni fiambres, al menos 2 recetas y 2 sin cocción por tipo de comida, y la composición esperada de cada comida).
+- Catálogo base de alimentos (T28; RF-24, RF-25; DA-21 y DA-32). El seed pasa de 15 grupos y 31 alimentos a 12 grupos raíz, 32 subgrupos y 231 alimentos comunes, todos con origen V (propuesta del desarrollador a partir de las GAPA, pendiente de validación con la nutricionista). Origen, criterios y pendientes en `docs/catalogo-de-alimentos.md` del repo raíz.
+  - Categoría `complementary` en `food_category_type` (migración `agrega_categoria_complementary`) para los 38 alimentos sin aporte a la composición: azúcares, dulces, condimentos, grasas sólidas y agua. La composición esperada no la exige en ninguna comida.
+  - `scripts/seed-data/catalogs.test.js`: prueba de los datos del seed (nombres únicos sin distinguir mayúsculas, grupos existentes y hoja, categorías válidas).
+  - `scripts/seed.js` falla con un mensaje claro si un alimento o un grupo referencia un grupo que no existe, en vez de guardarlo sin grupo.
+  - Kéfir, el alimento privado de ejemplo, pasa al grupo `Leches y yogures`.
+- Rol administrador y gestión de cuentas de nutricionistas (T31; RNF-05, RNF-06). Requerimiento fuera del catálogo del IA1, que se informa en el IA3.
+  - Migración `20261026143412_agrega_rol_estado_y_alta_a_nutricionista`: `nutritionist` suma `role` (enum `account_role`: `nutritionist` | `admin`, por defecto `nutritionist`), `active` (por defecto `true`) y `created_at`. Las cuentas existentes quedan como nutricionistas activas.
+  - **Rutas de administración**, solo para administradores:
+    - `GET /admin/nutritionists`: nombre, email, estado y fecha de alta de cada cuenta de nutricionista. No incluye administradores ni datos de pacientes.
+    - `POST /admin/nutritionists`: alta con nombre, email y contraseña inicial. La cuenta nace activa. Un email repetido da `409 CONFLICT` en `details.fields.email`.
+    - `PATCH /admin/nutritionists/:id` con `{ active }`: desactiva o reactiva la cuenta. El administrador no puede desactivarse a sí mismo (`403`).
+    - `PUT /admin/nutritionists/:id/password`: restablece la contraseña, que define el administrador (`204`).
+    - Solo operan sobre cuentas de nutricionista: el id de un administrador, uno inexistente o uno que no es UUID responden `404`. No hay `DELETE`, porque la baja es lógica.
+  - **Acceso por rol:**
+    - `requireAuth` lee rol y estado de la cuenta en cada request. Una cuenta desactivada, o que ya no existe, recibe `401` aunque su token no haya vencido.
+    - El rol que autoriza es el de la base, no el del token.
+    - Toda ruta protegida usa `requireNutritionist` o `requireAdmin`. El administrador recibe `403` en pacientes, condiciones, consultas, mediciones, recetas, recomendaciones y catálogos, y el nutricionista recibe `403` en `/admin/*`.
+  - **Login:**
+    - Una cuenta desactivada recibe el mismo `401` "Credenciales inválidas" que una contraseña incorrecta.
+    - El JWT suma el claim `role`, y la respuesta suma `nutritionist.role`.
+    - Rate limit con `express-rate-limit`: 10 intentos fallidos por IP cada 15 minutos, configurables con `LOGIN_RATE_LIMIT_MAX` y `LOGIN_RATE_LIMIT_WINDOW_MS`. Los exitosos no cuentan. Superado el límite, responde `429 TOO_MANY_REQUESTS`.
+    - `app.js` confía en un salto de proxy (`trust proxy`) para contar por la IP real detrás de Traefik.
+  - **Validación:** email sin espacios y en minúsculas, tanto en el alta como en el login. Contraseña de al menos 8 caracteres y hasta 72 bytes.
+  - **Script del administrador:** `scripts/create-admin.js` (`npm run create-admin`; desde la raíz, `npm run db:create-admin`).
+    - Crea la cuenta con `ADMIN_EMAIL`, `ADMIN_PASSWORD` y `ADMIN_NAME` (opcional) del entorno. El seed no crea administradores.
+    - Es idempotente: si la cuenta ya existe, pone al día la contraseña y la reactiva.
+    - Si el email ya es de una nutricionista, falla y no la toca. Nunca imprime la contraseña.
+  - El seed no cambia: solo actualiza sus dos cuentas por email, así que no toca las creadas desde el panel ni la del administrador.
+  - Documentado en Swagger:
+    - Tag nuevo "Administración", con los schemas `NutritionistAccount`, `NutritionistAccountInput`, `NutritionistActiveInput` y `NutritionistPasswordInput`.
+    - Respuestas `ForbiddenRole` (documentada en toda operación protegida), `ForbiddenAccountChange`, `DuplicateAccountEmail`, `NutritionistAccountNotFound` y `TooManyLoginAttempts`.
+  - Tests:
+    - `403` cruzados por rol, generados desde el spec: el administrador en cada operación clínica y de catálogo, y el nutricionista en cada operación de `/admin`, que no llega al servicio.
+    - `401` sin token en `/admin`.
+    - Token vigente de una cuenta desactivada → `401`, y el rol tomado de la base aunque el token diga otro.
+    - Login de una cuenta inactiva con el mismo error que credenciales inválidas.
+    - Email repetido → `409` en `details.fields.email`, también contra la cuenta del administrador.
+    - El administrador no se desactiva a sí mismo.
+    - Desactivar y reactivar; restablecer la contraseña (la nueva valida y la anterior no).
+    - El listado sin hash de la contraseña; las escrituras del repositorio limitadas a cuentas de nutricionista.
+    - Rate limit: `429` con el formato uniforme, y los exitosos no consumen el límite.
+    - Script del administrador: alta, idempotencia, que no promueve a una nutricionista, y validación de las variables.
+    - `openapi.test.js` exige el `403` en toda operación protegida y el `429` del login.
+  - Decisión: `docs/decisiones/administrador-y-gestion-de-cuentas.md` en el repo raíz (DA-25, que modifica DA-07 y actualiza DA-04).
+- Modelo de datos del Incremento 3: plan alimentario y validación (T32; RF-34, RF-36, RF-41, RF-43, RF-47; RNF-05, RNF-11). Migración `20261026173617_agrega_planes_validacion_y_generaciones_ia`. `schema.prisma` pasa a ser el modelo lógico vigente de los Incrementos 1 a 3. Todavía no hay endpoints.
+  - **Plan** (`plan`):
+    - Pertenece a un paciente y a su nutricionista. Una FK compuesta `(patient_id, nutritionist_id) → patient(id, nutritionist_id)` hace que la base rechace un plan con un nutricionista distinto al de su paciente. `patient` suma el único `(id, nutritionist_id)` que esa FK necesita.
+    - Estado `draft`, el único por ahora: los estados de aprobación son del Incremento 4 (RF-48).
+    - Textos de RF-34 (diagnóstico situacional, introducción y objetivos) y cuatro textos de recomendaciones del Anexo A (generales, contextuales, clínicas y temáticas). Las recomendaciones del catálogo se copian como texto (DA-16).
+  - **Estructura del plan:**
+    - `plan_meal`: una comida por tipo (enum `meal_type` existente), con la indicación de fraccionamiento en texto (`instructions`, RF-36).
+    - `meal_option`: opción con orden y descripción.
+    - `option_item`, de tipo `food`, `food_group`, `recipe` o `unrecognized`. El alimento guarda una copia de su nombre y categorías, y el grupo, de su nombre (DA-16). El ítem no reconocido guarda el texto original de la propuesta (DA-26).
+  - **Validación:**
+    - `clinical_rule`: patología, alimento o grupo, severidad (`prohibited` | `moderate`), fuente bibliográfica y `active` (RF-47). Catálogo común; las reglas se cargan en T35.
+    - `finding`: plan, opción o ítem señalado, tipo (`direct_condition`, `pathology_rule`, `composition`, `unrecognized_item`), severidad (`blocking` | `warning`), regla o condición que lo origina, y mensaje.
+  - **Trazabilidad** (`ai_generation`):
+    - Por cada generación: el plan, el contexto enviado (jsonb, sin datos identificatorios), el proveedor y el modelo, la versión de plantilla, la respuesta cruda, la duración, los tokens cuando el proveedor los informa, el resultado de la llamada y el de la validación de la propuesta.
+    - `recipe.origin_plan_id`: el plan para el que se generó la receta (diferido por DA-19).
+  - **Restricciones `CHECK`:**
+    - `option_item_type_chk`: cada ítem referencia exactamente lo que su tipo indica.
+    - `clinical_rule_target_chk` y `clinical_rule_source_chk`: un alimento o un grupo, y una fuente no vacía.
+    - `finding_origin_chk`: lo que señala cada tipo de hallazgo.
+    - `ai_generation_metrics_chk`, `ai_generation_response_chk` y `ai_generation_validation_chk`.
+  - **Borrado:**
+    - Lo del plan se borra con él, y el plan con su paciente.
+    - Los hallazgos se borran con la condición que los origina, porque se recalculan.
+    - Alimentos, grupos, recetas y reglas en uso no se pueden borrar (`RESTRICT`).
+  - `src/schemas/plan.schema.js` (`optionItemSchema`) valida en la aplicación la misma regla que `option_item_type_chk`. El cliente nunca manda la copia del catálogo: la arma el backend. Todavía no está montado en ninguna ruta.
+  - `src/repositories/plan.repository.js`: corta cualquier consulta sin nutricionista, igual que `patient.repository`.
+  - **Tests:**
+    - `plan.schema.test.js`: combinaciones válidas e inválidas por tipo de ítem, y la copia del catálogo rechazada.
+    - `plan.repository.test.js`: el where de cada consulta lleva el nutricionista, y con un nutricionista vacío ninguna operación llega a Prisma.
+    - Los `CHECK` y la FK compuesta se verificaron a mano contra Postgres, hasta que existan las pruebas de integración.
+  - Decisión: `docs/decisiones/ajustes-al-modelo-del-anexo-a-incremento-3.md` en el repo raíz (DA-26 y DA-27; completa DA-19).
+- Composición esperada por tipo de comida (T27; RF-25, RF-26, RF-44), en `src/domain/reglas/mealComposition.js`, la carpeta del motor de reglas. Es configuración versionada, sin tabla ni pantalla de edición (Tabla 3 del registro de decisiones del Inc. 2). Genera advertencias, no bloquea la aprobación.
+  - **Almuerzo y cena:** `vegetable`, `protein` y `carbohydrate` (RF-26).
+  - **Desayuno y merienda:** `protein` (el lácteo) y `carbohydrate` (pan o cereales). Es un supuesto tomado del *Manual para la aplicación de las Guías Alimentarias para la Población Argentina*, que la entrevista de validación tiene que confirmar. No se exige fruta ni frutas secas.
+  - Un tipo de comida con composición `null` no genera advertencias.
+  - `missingCategories(mealType, items)`: función pura que recibe los ítems de una opción con sus categorías y devuelve las esperadas que faltan. No depende del modelo de plan; la usa el motor de reglas (T34) para los hallazgos `composition`.
+  - Cómo se derivan las categorías de un ítem receta o grupo se define junto con el motor (T34).
+  - `mealComposition.test.js`: opción completa, categoría faltante, tipo de comida sin composición definida, desayuno y merienda, y la integridad de la configuración (una entrada por tipo de comida, con categorías válidas).
+  - Decisión: `docs/decisiones/composicion-esperada-por-tipo-de-comida.md` en el repo raíz (DA-29).
+- Motor de reglas v1 (T34; RF-37, RF-43, RF-44, RF-46), en `src/domain/reglas/`. Son funciones puras, (plan, condiciones del paciente, catálogo) → hallazgos, sin endpoint propio. Las reglas por patología llegan con T35.
+  - **Condición directa** (`direct_condition`, bloqueo):
+    - Dispara cuando el alimento del ítem, un ingrediente de su receta o su grupo está comprendido en una alergia, intolerancia o rechazo del paciente, por alimento o por grupo con sus subgrupos.
+    - Genera un hallazgo por cada par de ítem y condición. En una receta, el mensaje nombra los ingredientes alcanzados.
+    - Las preferencias y las patologías no disparan. Un ítem de grupo más amplio que la condición ("una fruta" con alergia a la banana) tampoco.
+  - **Ítem no reconocido** (`unrecognized_item`, bloqueo): no se puede validar hasta que se lo reemplaza por algo del catálogo.
+  - **Composición** (`composition`, advertencia sobre la opción). Usa la configuración de T27, que no cambia. Las categorías de cada ítem salen así:
+    - Alimento: la copia del ítem.
+    - Receta: la unión de las categorías de sus ingredientes.
+    - Grupo: la intersección de las categorías de los alimentos vigentes del grupo y sus subgrupos.
+    - No reconocido: ninguna.
+  - `validationResult(findings)` resume el resultado como `no_findings`, `warnings` o `blocking`, para `ai_generation.validation_result`.
+  - **Catálogo de entrada:** alimentos comunes y privados del nutricionista, incluidos los dados de baja, más los grupos y sus recetas. Un alimento o una receta que falta en el catálogo corta con un error, en vez de saltear el ítem.
+  - **Revalidación:** `planValidation.service.revalidate(planId, nutritionistId)` carga las entradas y reemplaza los hallazgos del plan en una transacción (`plan.repository.replaceFindings`), sin acumularlos. Un plan ajeno da `404`. Lo llamarán la generación y el editor después de cada guardado.
+  - `food.repository.findAllVisible`: todo lo que ve el nutricionista, con los dados de baja.
+  - `recipeConditionFilter.js` expone el criterio por condición (`conditionScopes`, `scopeCoversFood`), que comparten el filtro de recetas (RF-28) y el motor (DA-23). El filtro de recetas se comporta igual que antes.
+  - **Pruebas por regla**, de casos que disparan y que no:
+    - Alimento directo, grupo y subgrupo, ingrediente de receta y alimento privado.
+    - Preferencia y patología, que no disparan.
+    - Ítem no reconocido.
+    - Opción con y sin composición completa.
+    - Categorías por tipo de ítem.
+    - Forma de cada hallazgo según `finding_origin_chk`, y orden determinístico.
+    - El servicio, con repositorios fake.
+  - La escritura de los tres tipos de hallazgo se verificó a mano contra Postgres (`finding_origin_chk`), dentro de una transacción revertida, hasta que existan las pruebas de integración.
+  - Decisión: `docs/decisiones/motor-de-reglas-v1.md` en el repo raíz (DA-30; modifica DA-26 y completa DA-29). Se activa el skill `reglas-clinicas-deterministicas`.
+- Generación asistida del plan, lectura y edición del borrador (T37; RF-34, RF-37, RF-38, RF-41, RF-43, RF-46; RNF-02, RNF-05, RNF-07, RNF-11). Todas las rutas piden rol nutricionista, y un paciente o un plan de otro nutricionista (o un plan de otro paciente) dan `404`.
+  - **`POST /patients/:id/plans/generate`** (body opcional `{ mealTypes }`, por defecto las cuatro comidas) → `201` con el borrador:
+    1. Arma el contexto mínimo y anonimizado (`src/domain/generacion/buildContext.js`) por lista blanca. Viajan las condiciones (tipo y nombre, sin observaciones), el contexto de cocina, las comidas fuera del hogar, el trabajo y los hábitos. No viajan nombre, contacto, fecha de nacimiento, datos del responsable, antecedentes, medicación ni ids. En los textos libres, los emails, los teléfonos (7 o más dígitos) y cada palabra del nombre y apellido del paciente y de su responsable (sin distinguir mayúsculas ni acentos) se reemplazan por `[dato omitido]`; no detecta nombres de terceros. Los textos vacíos se omiten y los de más de 500 caracteres se truncan al tope del contrato, después del filtro.
+    2. Catálogo permitido (`allowedCatalog.js`): alimentos vigentes, comunes y privados del nutricionista, sin los comprendidos en alergias, intolerancias y rechazos (RF-37) ni en reglas `prohibited` vigentes de las patologías del paciente. Las reglas `moderate` no excluyen. Se envían los grupos con algún alimento permitido. Recetas candidatas: disponibles, con alguno de los tipos de comida pedidos y sin ingredientes comprendidos (RF-28); si el paciente no cocina, solo las `no_cooking` (RF-38). El tiempo y el gusto por cocinar los evalúa el modelo con `time_minutes` y el contexto de cocina. Todo viaja con códigos cortos (`G1`, `A1`, `R1`).
+    3. Llama a `POST /plan-proposals` de nutria-ia con un tope propio, `IA_GENERATION_TIMEOUT_MS` (30000 por defecto; tiene que superar el `AI_PROVIDER_TIMEOUT_SECONDS` del servicio).
+    4. Valida la respuesta contra el contrato con Zod (`src/schemas/iaProposal.schema.js`). La resuelve a ítems (`resolveProposal.js`): un código válido da un ítem `food`, `food_group` o `recipe` con la copia del catálogo; el texto libre o un código inexistente, un ítem `unrecognized`.
+    5. Corre el motor de reglas sobre el plan en memoria y guarda en una sola transacción el borrador, sus ítems, sus hallazgos y la traza `ai_generation` (`success`, con `validation_result`).
+  - **Errores de la IA:** todos responden `503 IA_UNAVAILABLE` con `details.reason` y no crean ningún plan (RNF-02):
+    - `unreachable` y `timeout` (servicio caído o lento): no escriben en la base. Dejan en el log una línea JSON `{ event: 'ai_generation_untraced', reason, patientId, durationMs }`, para contarlas junto con las trazas (RNF-11).
+    - `provider_timeout`, `provider_error` e `invalid_output` (incluye una respuesta `200` fuera del contrato o con comidas distintas de las pedidas): dejan la traza en `ai_generation` sin plan, con el resultado `timeout`, `provider_error` o `invalid_response`. Si la traza no se puede escribir, queda en el log y el cliente recibe igual el `503`.
+    - Un `422` del servicio es una solicitud mal armada por el backend: responde `500`.
+  - **`GET /patients/:id/plans`**: resumen de los planes del paciente (id, estado, fechas), del más reciente al más antiguo.
+  - **`GET /patients/:id/plans/:planId`**: revalida el borrador antes de responder, así los hallazgos reflejan las condiciones actuales del paciente (RF-46). Si los hallazgos no cambiaron, no se reescriben y conservan sus ids. Incluye en `generation` el resumen de la generación que lo originó (proveedor, modelo, plantilla, resultado de la validación). El contexto enviado y la respuesta cruda no viajan.
+  - **`PUT /patients/:id/plans/:planId`**: reemplazo completo del borrador (textos, comidas, opciones e ítems), guardado y revalidado en una sola transacción. Los ids de comidas, opciones, ítems y hallazgos se regeneran en cada guardado. Se admiten comidas sin opciones y opciones sin ítems (guardado parcial). Cada ítem referencia un alimento visible, un grupo, una receta propia o un texto no reconocido; la copia del catálogo la arma el backend. Un alimento o una receta dados de baja que ya estaban en el plan se conservan, pero no se pueden agregar. Un error en un ítem responde `400` en `details.fields.meals`, con la opción y el ítem en el mensaje.
+  - **Lectura del plan:** los hallazgos salen en el orden del plan (comida, opción e ítem; el no reconocido primero dentro de su ítem; la composición al final de su opción), en vez del orden de la base, que con el mismo `detected_at` quedaba librado al UUID. Un ítem de receta trae `recipe: { id, name, availableInCatalog }`, la receta vigente.
+  - **Migración** `20261026225010_agrega_traza_de_generaciones_sin_plan`: `ai_generation.plan_id` pasa a nullable, y se agregan `patient_id` y `nutritionist_id` con una FK compuesta a `patient(id, nutritionist_id)`, igual que `plan`. El `CHECK` `ai_generation_plan_chk` exige plan si y solo si `result = 'success'`. Las columnas nuevas se completan desde el plan antes del `NOT NULL`.
+  - `clinicalRule.repository.findActiveProhibitedForPathologies`: reglas vigentes `prohibited` de las patologías dadas. T35 carga las reglas.
+  - **Tests:**
+    - `buildContext.test.js`: el contexto no contiene ningún campo identificatorio, observación ni id interno de un paciente con todos los datos cargados, ni los datos identificatorios escritos en sus textos libres, y solo tiene los campos del contrato.
+    - `planGeneration.service.test.js`: generación de punta a punta con un cliente de IA que responde como el proveedor simulado, sobre el motor real. Crea plan, ítems, hallazgos y traza en una sola escritura. Paciente ajeno → `404` sin llamar a la IA. Cada falla → `503` sin crear el plan, con la traza que corresponde.
+    - `allowedCatalog.test.js`, `resolveProposal.test.js`, `plan.service.test.js` (aislamiento, revalidación al abrir, edición, guardado parcial y referencias inválidas), `planValidation.service.test.js` (abrir sin cambios no reescribe), `plan.serializer.test.js` (orden de los hallazgos), `plan.repository.test.js`, `plan.schema.test.js`, `ia.client.test.js` y `clinicalRule.repository.test.js`.
+    - El `CHECK` nuevo y la FK compuesta se verificaron a mano contra Postgres, dentro de una transacción revertida, hasta que existan las pruebas de integración.
+  - Documentados en Swagger, bajo el tag "Planes".
+  - Decisión: `docs/decisiones/traza-de-generaciones-sin-plan.md` en el repo raíz (DA-31; modifica DA-27).
+
+### Changed
+
+- `src/middlewares/auth.js` exporta `requireAuth`, `requireRole`, `requireNutritionist`, `requireAdmin` y el factory `createRequireAuth`, en lugar de exportar solo `requireAuth` (T31). `nutritionist.repository` pasa al patrón factory de los demás repositorios.
+- T37:
+  - `planValidation.service` expone `loadInputs` y `computeFindings`, para que la generación y la edición escriban el plan y sus hallazgos en una misma transacción. `revalidate` pasa a `revalidate(patientId, planId, nutritionistId)`, filtra también por paciente y devuelve el plan con los hallazgos nuevos.
+  - `plan.repository`: `findByIdForNutritionist`, `create` y `updateForNutritionist` (de T32, sin uso) se reemplazan por `findByIdForPatient`, `createGenerated`, `recordFailedGeneration` y `replaceDraft`. `findAllForPatient` devuelve solo el resumen.
+  - `ia.client` suma `postJson` y exporta `iaUnavailable`. El `reason` de `IA_UNAVAILABLE` suma `provider_timeout`, `provider_error` e `invalid_output`.
+  - `validatePlan.js` exporta `MEAL_LABELS`.
+
+### Fixed
+
+- AUD-015: `replaceFindings` bloquea la fila del borrador con `SELECT FOR UPDATE`, filtrando por plan, nutricionista y estado `draft`, antes de borrar e insertar hallazgos. Dos revalidaciones del mismo plan ya no acumulan duplicados; planes distintos siguen ejecutándose en paralelo y `updatedAt` se conserva. La prueba contra Postgres reprodujo dos hallazgos antes de la corrección y verifica un solo juego después, además del rollback ante una FK inválida. El esquema actual sigue teniendo únicamente el estado `draft`; el flujo de aprobación pertenece al Incremento 4.
+
+- AUD-013: el README describe los orígenes CORS por defecto y el uso de un servidor relativo por Swagger. El comentario de cobertura referencia el compose normal y la limpieza previa al montaje, sin mencionar un `docker-compose.test.yml` inexistente. El comentario del cliente de recetas ya se había actualizado con AUD-008.
+
+- AUD-010: la imagen instala desde el lockfile con `npm ci` y construye y ejecuta como `node` (UID/GID 1000). Los archivos de la aplicación pertenecen a ese usuario para permitir las escrituras de Prisma y Vitest. Se conserva la imagen compartida para runtime y pruebas. El comando raíz de cobertura limpia el reporte generado anterior y recrea el directorio con el usuario del host antes de montarlo; se documentan los permisos necesarios para montajes en Linux.
+
+- AUD-008: `PATCH /recipes/:id` acepta únicamente `{ availableInCatalog }` y cambia la disponibilidad de una receta propia sin reemplazar sus datos, ingredientes ni tipos de comida. Una fila desactualizada del listado ya no sobrescribe una edición posterior. Mantiene el PUT completo, el 403 de recetas comunes y el 404 de privadas ajenas. OpenAPI deriva el nuevo cuerpo del schema Zod. El estado de recomendaciones sigue en su formulario de edición completa; no hay una acción equivalente desde su listado.
+
+- AUD-016: restablecer la contraseña invalida todos los JWT anteriores de esa cuenta en la siguiente request, sin esperar su vencimiento. `nutritionist.token_version` (migración `agrega_version_de_tokens`) se incrementa atómicamente junto con el hash y se compara con el claim `tokenVersion` al autorizar. Evita la ambigüedad de cambios dentro del mismo segundo; los tokens previos al cambio de formato siguen válidos como versión cero hasta el primer restablecimiento. Las rotaciones de `create-admin` y del seed aplican la misma revocación. La respuesta pública de la cuenta no agrega campos. Decisión DA-35 en el repo raíz.
+
+- AUD-009: el backend rechaza al arrancar un `JWT_SECRET` ausente, vacío o compuesto solo por espacios, salvo con `NODE_ENV=test`. Conserva la clave configurada sin recortarla. El ejemplo de `IA_TIMEOUT_MS` se alinea con el default de 3000 ms; los valores explícitos conservan prioridad.
+
+## [0.0.2] - 2026-10-25
+
+Incremento 2 (ver `docs/cierre-incremento-2.md` en el repo raíz).
+
 ### Added
 
 - Modelo de datos del Incremento 2 (T14), en la migración `20261014203321_agrega_datos_clinicos_consultas_y_catalogos`. `schema.prisma` pasa a ser el modelo lógico vigente de los Incrementos 1 y 2. Lo que se agrega:
@@ -225,45 +480,6 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
   - `scripts/deploy-staging.sh`: lo que ejecuta la clave de despliegue como forced command. Acepta solo `backend`, `frontend` o `ia`, deja el repo igual a `origin/staging` y rebuildea ese servicio (el backend, todo el stack), con un lock para no pisar dos despliegues.
   - El CI también corre en los PR hacia `staging` y se puede reutilizar desde otro workflow (`workflow_call`).
   - Seed: la contraseña de los nutricionistas sale de `SEED_PASSWORD`. Sin la variable se usa la de desarrollo, salvo con `NODE_ENV=production`, donde el seed falla. Solo se imprime cuando es la de desarrollo.
-- Rol administrador y gestión de cuentas de nutricionistas (T31; RNF-05, RNF-06). Requerimiento fuera del catálogo del IA1, que se informa en el IA3.
-  - Migración `20261026143412_agrega_rol_estado_y_alta_a_nutricionista`: `nutritionist` suma `role` (enum `account_role`: `nutritionist` | `admin`, por defecto `nutritionist`), `active` (por defecto `true`) y `created_at`. Las cuentas existentes quedan como nutricionistas activas.
-  - **Rutas de administración**, solo para administradores:
-    - `GET /admin/nutritionists`: nombre, email, estado y fecha de alta de cada cuenta de nutricionista. No incluye administradores ni datos de pacientes.
-    - `POST /admin/nutritionists`: alta con nombre, email y contraseña inicial. La cuenta nace activa. Un email repetido da `409 CONFLICT` en `details.fields.email`.
-    - `PATCH /admin/nutritionists/:id` con `{ active }`: desactiva o reactiva la cuenta. El administrador no puede desactivarse a sí mismo (`403`).
-    - `PUT /admin/nutritionists/:id/password`: restablece la contraseña, que define el administrador (`204`).
-    - Solo operan sobre cuentas de nutricionista: el id de un administrador, uno inexistente o uno que no es UUID responden `404`. No hay `DELETE`, porque la baja es lógica.
-  - **Acceso por rol:**
-    - `requireAuth` lee rol y estado de la cuenta en cada request. Una cuenta desactivada, o que ya no existe, recibe `401` aunque su token no haya vencido.
-    - El rol que autoriza es el de la base, no el del token.
-    - Toda ruta protegida usa `requireNutritionist` o `requireAdmin`. El administrador recibe `403` en pacientes, condiciones, consultas, mediciones, recetas, recomendaciones y catálogos, y el nutricionista recibe `403` en `/admin/*`.
-  - **Login:**
-    - Una cuenta desactivada recibe el mismo `401` "Credenciales inválidas" que una contraseña incorrecta.
-    - El JWT suma el claim `role`, y la respuesta suma `nutritionist.role`.
-    - Rate limit con `express-rate-limit`: 10 intentos fallidos por IP cada 15 minutos, configurables con `LOGIN_RATE_LIMIT_MAX` y `LOGIN_RATE_LIMIT_WINDOW_MS`. Los exitosos no cuentan. Superado el límite, responde `429 TOO_MANY_REQUESTS`.
-    - `app.js` confía en un salto de proxy (`trust proxy`) para contar por la IP real detrás de Traefik.
-  - **Validación:** email sin espacios y en minúsculas, tanto en el alta como en el login. Contraseña de al menos 8 caracteres y hasta 72 bytes.
-  - **Script del administrador:** `scripts/create-admin.js` (`npm run create-admin`; desde la raíz, `npm run db:create-admin`).
-    - Crea la cuenta con `ADMIN_EMAIL`, `ADMIN_PASSWORD` y `ADMIN_NAME` (opcional) del entorno. El seed no crea administradores.
-    - Es idempotente: si la cuenta ya existe, pone al día la contraseña y la reactiva.
-    - Si el email ya es de una nutricionista, falla y no la toca. Nunca imprime la contraseña.
-  - El seed no cambia: solo actualiza sus dos cuentas por email, así que no toca las creadas desde el panel ni la del administrador.
-  - Documentado en Swagger:
-    - Tag nuevo "Administración", con los schemas `NutritionistAccount`, `NutritionistAccountInput`, `NutritionistActiveInput` y `NutritionistPasswordInput`.
-    - Respuestas `ForbiddenRole` (documentada en toda operación protegida), `ForbiddenAccountChange`, `DuplicateAccountEmail`, `NutritionistAccountNotFound` y `TooManyLoginAttempts`.
-  - Tests:
-    - `403` cruzados por rol, generados desde el spec: el administrador en cada operación clínica y de catálogo, y el nutricionista en cada operación de `/admin`, que no llega al servicio.
-    - `401` sin token en `/admin`.
-    - Token vigente de una cuenta desactivada → `401`, y el rol tomado de la base aunque el token diga otro.
-    - Login de una cuenta inactiva con el mismo error que credenciales inválidas.
-    - Email repetido → `409` en `details.fields.email`, también contra la cuenta del administrador.
-    - El administrador no se desactiva a sí mismo.
-    - Desactivar y reactivar; restablecer la contraseña (la nueva valida y la anterior no).
-    - El listado sin hash de la contraseña; las escrituras del repositorio limitadas a cuentas de nutricionista.
-    - Rate limit: `429` con el formato uniforme, y los exitosos no consumen el límite.
-    - Script del administrador: alta, idempotencia, que no promueve a una nutricionista, y validación de las variables.
-    - `openapi.test.js` exige el `403` en toda operación protegida y el `429` del login.
-  - Decisión: `docs/decisiones/administrador-y-gestion-de-cuentas.md` en el repo raíz (DA-25, que modifica DA-07 y actualiza DA-04).
 
 ### Changed
 
@@ -280,7 +496,6 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 - `optionalField` y el parseo de fechas `AAAA-MM-DD` (`pastOrTodayDate`) pasan de `patient.schema.js` a `common.schema.js`, para reutilizarlos. Los mensajes de `birthDate` no cambian.
 - `touchPatient` (mover `updatedAt` del paciente) pasa de `consultation.repository` a `src/repositories/touchPatient.js`, para reusarlo en `measurement.repository` (T20).
 - `measurement.schema.js` (T14) se separa en `measurementSchema` (con fecha y consulta) y `consultationMeasurementSchema` (sin ellas), y suma la unidad por tipo: fija en todos salvo `other`, que la elige de una lista (T20).
-- `src/middlewares/auth.js` exporta `requireAuth`, `requireRole`, `requireNutritionist`, `requireAdmin` y el factory `createRequireAuth`, en lugar de exportar solo `requireAuth` (T31). `nutritionist.repository` pasa al patrón factory de los demás repositorios.
 
 ### Fixed
 

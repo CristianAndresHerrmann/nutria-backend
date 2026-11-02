@@ -10,7 +10,7 @@ function createFakeNutritionistRepository(nutritionists) {
   };
 }
 
-async function buildService(password, { active = true, role = 'nutritionist' } = {}) {
+async function buildService(password, { active = true, role = 'nutritionist', tokenVersion = 0 } = {}) {
   const passwordHash = await bcrypt.hash(password, 4);
   const nutritionist = {
     id: 'nutri-1',
@@ -19,6 +19,7 @@ async function buildService(password, { active = true, role = 'nutritionist' } =
     passwordHash,
     role,
     active,
+    tokenVersion,
   };
 
   const service = createAuthService({
@@ -52,6 +53,15 @@ describe('auth.service — login', () => {
 
     expect(jwt.verify(token, 'test-secret')).toMatchObject({ sub: 'nutri-1', role: 'admin' });
     expect(nutritionist.role).toBe('admin');
+  });
+
+  it.each([0, 3])('incluye la versión vigente %s en el token, sin agregarla a la respuesta de la cuenta', async (tokenVersion) => {
+    const { service } = await buildService('correcta123', { tokenVersion });
+
+    const result = await service.login('camila@nutria.test', 'correcta123');
+
+    expect(jwt.verify(result.token, 'test-secret').tokenVersion).toBe(tokenVersion);
+    expect(result.nutritionist).not.toHaveProperty('tokenVersion');
   });
 
   it('una cuenta desactivada no inicia sesión aunque la contraseña sea correcta, con el mismo error que credenciales inválidas', async () => {

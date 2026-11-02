@@ -1,8 +1,22 @@
-const { createRecipeSchema, updateRecipeSchema, listRecipesQuerySchema } = require('./recipe.schema');
+const { createRecipeSchema, updateRecipeSchema, setRecipeAvailabilitySchema, listRecipesQuerySchema } = require('./recipe.schema');
 
 const FOOD_1 = '11111111-1111-1111-1111-111111111111';
 const FOOD_2 = '22222222-2222-2222-2222-222222222222';
 const FOOD_3 = '33333333-3333-3333-3333-333333333333';
+
+describe('recipe.schema — cambio de disponibilidad', () => {
+  it.each([true, false])('acepta únicamente la disponibilidad booleana %s', (availableInCatalog) => {
+    expect(setRecipeAvailabilitySchema.parse({ availableInCatalog })).toEqual({ availableInCatalog });
+  });
+
+  it.each([{}, { availableInCatalog: null }, { availableInCatalog: 'false' }, { availableInCatalog: 0 },
+    { availableInCatalog: false, name: 'Copia desactualizada' },
+    { availableInCatalog: false, nutritionistId: FOOD_1 },
+    { availableInCatalog: false, ingredients: [] },
+  ])('rechaza un cuerpo incompleto, mal tipado o con otros campos: %j', (body) => {
+    expect(setRecipeAvailabilitySchema.safeParse(body).success).toBe(false);
+  });
+});
 
 function issuesByField(result) {
   return Object.fromEntries(result.error.issues.map((issue) => [issue.path[0], issue.message]));
