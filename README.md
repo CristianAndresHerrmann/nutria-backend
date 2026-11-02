@@ -290,8 +290,13 @@ Configuración en GitHub (Environment `staging` de cada repo, restringido a la r
      (oculta Swagger), `JWT_SECRET` y `POSTGRES_PASSWORD` propios de staging,
      `CORS_ORIGIN=https://<APP_HOST>`, y las variables de la sección "Solo staging":
      `APP_HOST`, `ACME_EMAIL`, `SEED_PASSWORD`, `ADMIN_EMAIL` y `ADMIN_PASSWORD`.
-   - `nutria-frontend/.env` y `nutria-ia/.env` copiados de sus `.env.example`: en
-     staging no se usan, pero el compose los exige.
+   - `nutria-ia/.env` a partir de su `.env.example`, con el proveedor real (DA-12):
+     `AI_PROVIDER=openai`, `AI_MODEL=gpt-6-luna`, `AI_REASONING_LEVEL=low`,
+     `AI_PROVIDER_TIMEOUT_SECONDS=25` y `OPENAI_API_KEY`. Si falta el modelo o la clave,
+     el servicio no arranca y el smoke test falla. Si falta `AI_PROVIDER`, arranca con el
+     proveedor simulado y el smoke test **no** lo detecta (ver "Operación").
+   - `nutria-frontend/.env` copiado de su `.env.example`: en staging no se usa, pero el
+     compose lo exige.
 3. Primer arranque, seed y cuenta de administrador:
    ```bash
    dcs up -d --build
@@ -315,7 +320,9 @@ Configuración en GitHub (Environment `staging` de cada repo, restringido a la r
 |---|---|
 | Ver el estado | `dcs ps` |
 | Ver logs | `dcs logs -f backend` (o `frontend`, `ia`, `proxy`) |
-| Recargar el seed | `dcs run --rm backend npm run seed` |
+| Recargar el seed | `dcs run --rm backend npm run seed`. También después de desplegar un cambio en catálogos, reglas, recetas comunes o casos clínicos: el despliegue migra, pero no corre el seed |
+| Confirmar qué proveedor de IA generó | `dcs exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select provider, model, result, duration_ms from ai_generation order by generated_at desc limit 3"'`. `fake` significa que falta `AI_PROVIDER` en `nutria-ia/.env` |
+| Respaldar la base antes de un despliegue con migraciones | `dcs exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > ~/backups/nutria-$(date +%F).dump` |
 | Crear el administrador o cambiar su contraseña | Actualizar `ADMIN_EMAIL`/`ADMIN_PASSWORD` en el `.env` y correr `dcs run --rm backend npm run create-admin` |
 | Desplegar a mano | `bash ~/nutria/nutria-backend/scripts/deploy-staging.sh backend` |
 | Ver el espacio que ocupa Docker | `docker system df`; liberar cache de builds con `docker builder prune` |
