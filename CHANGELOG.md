@@ -4,6 +4,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ## Unreleased
 
+### Removed
+
+- `docker-compose.staging.yml` deja de pasarle `VITE_ENV_LABEL` al build del frontend, que ya no muestra el aviso de entorno de prueba.
+
 ## [0.0.3] - 2026-11-01
 
 Incremento 3 (ver `docs/cierre-incremento-3.md` en el repo raíz).

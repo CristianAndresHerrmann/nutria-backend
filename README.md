@@ -329,7 +329,7 @@ Configuración en GitHub (Environment `staging` de cada repo, restringido a la r
 
 Antes de una sesión con la nutricionista: confirmar que la VM está *Running* en la
 consola de OCI, recargar el seed y hacer login una vez. Al darle su cuenta, recordarle
-que cargue solo pacientes ficticios (RNF-08); la interfaz lo avisa en un cartel fijo.
+que cargue solo pacientes ficticios (RNF-08).
 
 ## Stack
 
