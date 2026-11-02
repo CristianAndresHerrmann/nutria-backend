@@ -2,7 +2,9 @@ const { z } = require('zod');
 const { loginSchema } = require('../schemas/auth.schema');
 const { createNutritionistSchema, setNutritionistActiveSchema, resetNutritionistPasswordSchema } = require('../schemas/adminNutritionist.schema');
 const { createPatientSchema } = require('../schemas/patient.schema');
-const { createFoodSchema } = require('../schemas/food.schema');
+const { createFoodSchema, updateFoodSchema, promoteFoodSchema } = require('../schemas/food.schema');
+const { foodGroupSchema } = require('../schemas/foodGroup.schema');
+const { pathologySchema } = require('../schemas/pathology.schema');
 const { createRecipeSchema, updateRecipeSchema, setRecipeAvailabilitySchema } = require('../schemas/recipe.schema');
 const { createRecommendationSchema, updateRecommendationSchema } = require('../schemas/recommendation.schema');
 const { patientConditionSchema } = require('../schemas/patientCondition.schema');
@@ -20,6 +22,11 @@ const requestValidators = {
   NutritionistPasswordInput: resetNutritionistPasswordSchema,
   PatientInput: createPatientSchema,
   FoodInput: createFoodSchema,
+  AdminFoodInput: createFoodSchema,
+  FoodUpdateInput: updateFoodSchema,
+  FoodPromoteInput: promoteFoodSchema,
+  FoodGroupInput: foodGroupSchema,
+  PathologyInput: pathologySchema,
   RecipeInput: createRecipeSchema,
   RecipeUpdateInput: updateRecipeSchema,
   RecipeAvailabilityInput: setRecipeAvailabilitySchema,

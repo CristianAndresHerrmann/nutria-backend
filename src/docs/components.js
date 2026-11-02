@@ -314,6 +314,68 @@ const schemas = {
     },
   },
 
+  // Panel del administrador (T25): el alimento con su dueño y quién lo cargó.
+  AdminFood: {
+    type: 'object',
+    description:
+      'Alimento visto desde el panel del administrador: común o privado de cualquier ' +
+      'nutricionista, vigente o dado de baja. De las cuentas viajan solo el id y el nombre.',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      name: { type: 'string', example: 'Kéfir' },
+      active: { type: 'boolean', example: true },
+      foodGroupId: { type: 'string', format: 'uuid' },
+      foodGroup: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          name: { type: 'string', example: 'Leches y yogures' },
+          parentId: { type: 'string', format: 'uuid', nullable: true },
+        },
+      },
+      categories: foodCategoriesField,
+      common: { type: 'boolean', description: '`true` si lo ven todos los nutricionistas.', example: false },
+      owner: {
+        allOf: [{ $ref: '#/components/schemas/AccountRef' }],
+        nullable: true,
+        description: 'Dueño de un privado; `null` en un común.',
+      },
+      createdBy: {
+        allOf: [{ $ref: '#/components/schemas/AccountRef' }],
+        nullable: true,
+        description:
+          'Nutricionista que lo cargó. Se conserva al pasarlo al común; `null` en los que ' +
+          'cargaron el seed o el administrador.',
+      },
+      createdAt: { type: 'string', format: 'date-time', example: '2026-10-27T13:20:05.118Z' },
+    },
+  },
+
+  AccountRef: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      name: { type: 'string', example: 'Lic. Ejemplo Ficticio' },
+    },
+  },
+
+  CatalogActivityEntry: {
+    type: 'object',
+    description: 'Un alimento que cargó un nutricionista. Nada de pacientes ni de planes.',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      name: { type: 'string', example: 'Kéfir' },
+      active: { type: 'boolean', example: true },
+      common: {
+        type: 'boolean',
+        description: '`true` si el administrador ya lo pasó al catálogo común.',
+        example: false,
+      },
+      createdBy: { $ref: '#/components/schemas/AccountRef' },
+      createdAt: { type: 'string', format: 'date-time', example: '2026-10-27T13:20:05.118Z' },
+    },
+  },
+
   // Recetas (T21; RF-27). Básicas comunes (T30) y propias de cada nutricionista.
   Recipe: {
     type: 'object',
@@ -686,6 +748,9 @@ function notFoundResponse(message) {
   };
 }
 
+const PRIVATE_NAME_CONFLICT_MESSAGE =
+  'Otro nutricionista tiene un alimento privado vigente con ese nombre: renombralo o dalo de baja';
+
 // 403 por rol: lo responde requireRole antes de llegar al controlador.
 const forbiddenRoleExample = errorExample('FORBIDDEN', 'No tenés permiso para acceder a este recurso');
 
@@ -841,6 +906,61 @@ const responses = {
         schema: { $ref: '#/components/schemas/Error' },
         example: errorExample('CONFLICT', 'Ya existe un alimento con ese nombre', {
           fields: { name: 'Ya existe un alimento con ese nombre' },
+        }),
+      },
+    },
+  },
+
+  AdminFoodConflict: {
+    description:
+      'El nombre choca, sin distinguir mayúsculas. Un privado no repite un común ni otro privado ' +
+      'del mismo nutricionista. Un común (alta, edición o un privado que pasa al común) no repite ' +
+      'otro común ni un privado vigente de otro nutricionista. También responde 409 pasar al ' +
+      'común un alimento que ya es común.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        examples: {
+          nombre: {
+            summary: 'Ya hay un común, o un privado del mismo dueño, con ese nombre',
+            value: errorExample('CONFLICT', 'Ya existe un alimento con ese nombre', {
+              fields: { name: 'Ya existe un alimento con ese nombre' },
+            }),
+          },
+          privadoDeOtro: {
+            summary: 'Otro nutricionista tiene un privado vigente con ese nombre',
+            value: errorExample('CONFLICT', PRIVATE_NAME_CONFLICT_MESSAGE, {
+              fields: { name: PRIVATE_NAME_CONFLICT_MESSAGE },
+            }),
+          },
+          yaComun: {
+            summary: 'El alimento ya es común',
+            value: errorExample('CONFLICT', 'El alimento ya es común'),
+          },
+        },
+      },
+    },
+  },
+
+  FoodGroupConflict: {
+    description: 'Ya existe un grupo con ese nombre, sin distinguir mayúsculas.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        example: errorExample('CONFLICT', 'Ya existe un grupo con ese nombre', {
+          fields: { name: 'Ya existe un grupo con ese nombre' },
+        }),
+      },
+    },
+  },
+
+  PathologyConflict: {
+    description: 'Ya existe una patología con ese nombre, sin distinguir mayúsculas.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        example: errorExample('CONFLICT', 'Ya existe una patología con ese nombre', {
+          fields: { name: 'Ya existe una patología con ese nombre' },
         }),
       },
     },

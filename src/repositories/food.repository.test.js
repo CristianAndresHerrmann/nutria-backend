@@ -57,7 +57,7 @@ describe('food.repository — visibilidad por nutricionista', () => {
     });
   });
 
-  it('el alta guarda al nutricionista como dueño y crea las categorías', async () => {
+  it('el alta guarda al nutricionista como dueño y como autor, y crea las categorías', async () => {
     const prisma = createFakePrisma();
     const repository = createFoodRepository({ prisma });
 
@@ -69,6 +69,7 @@ describe('food.repository — visibilidad por nutricionista', () => {
           name: 'Caballa',
           foodGroupId: 'g-1',
           nutritionistId: 'nutri-1',
+          createdById: 'nutri-1',
           categories: { create: [{ category: 'protein' }, { category: 'healthy_fat' }] },
         },
       }),
@@ -89,5 +90,95 @@ describe('food.repository — visibilidad por nutricionista', () => {
     expect(prisma.food.findMany).not.toHaveBeenCalled();
     expect(prisma.food.findFirst).not.toHaveBeenCalled();
     expect(prisma.food.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('food.repository — panel del administrador (T25)', () => {
+  function createAdminPrisma() {
+    return {
+      food: {
+        findMany: vi.fn(async () => []),
+        findUnique: vi.fn(async () => null),
+        update: vi.fn(async ({ data }) => ({ id: 'f-1', ...data })),
+      },
+    };
+  }
+
+  it('el listado no filtra visibilidad ni vigencia; owner elige comunes o los privados de uno', async () => {
+    const prisma = createAdminPrisma();
+    const repository = createFoodRepository({ prisma });
+
+    await repository.findForAdmin({});
+    await repository.findForAdmin({ owner: 'common' });
+    await repository.findForAdmin({ owner: 'nutri-1', search: 'ké' });
+
+    expect(prisma.food.findMany.mock.calls.map(([query]) => query.where)).toEqual([
+      {},
+      { nutritionistId: null },
+      { nutritionistId: 'nutri-1', name: { contains: 'ké', mode: 'insensitive' } },
+    ]);
+  });
+
+  it('la búsqueda por nombre arma los ámbitos pedidos y excluye el alimento editado', async () => {
+    const prisma = createAdminPrisma();
+    const repository = createFoodRepository({ prisma });
+
+    await repository.findByName('Kéfir', { excludeId: 'f-1', ownerId: 'nutri-1' });
+    await repository.findByName('Kéfir', { activePrivates: true });
+
+    expect(prisma.food.findMany.mock.calls.map(([query]) => query.where)).toEqual([
+      {
+        name: { equals: 'Kéfir', mode: 'insensitive' },
+        OR: [{ nutritionistId: null }, { nutritionistId: 'nutri-1' }],
+        id: { not: 'f-1' },
+      },
+      {
+        name: { equals: 'Kéfir', mode: 'insensitive' },
+        OR: [{ nutritionistId: null }, { nutritionistId: { not: null }, active: true }],
+      },
+    ]);
+  });
+
+  it('la edición reemplaza las categorías en la misma escritura', async () => {
+    const prisma = createAdminPrisma();
+    const repository = createFoodRepository({ prisma });
+
+    await repository.update('f-1', { name: 'Kéfir', foodGroupId: 'g-1', categories: ['protein'], active: false });
+
+    expect(prisma.food.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'f-1' },
+        data: {
+          name: 'Kéfir',
+          foodGroupId: 'g-1',
+          active: false,
+          categories: { deleteMany: {}, create: [{ category: 'protein' }] },
+        },
+      }),
+    );
+  });
+
+  it('pasar al común quita el dueño y no toca al autor', async () => {
+    const prisma = createAdminPrisma();
+    const repository = createFoodRepository({ prisma });
+
+    await repository.promote('f-1', 'Kéfir');
+
+    expect(prisma.food.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'f-1' }, data: { nutritionistId: null, name: 'Kéfir' } }),
+    );
+  });
+
+  it('la actividad trae solo lo cargado por nutricionistas, o por uno, sin nada de pacientes', async () => {
+    const prisma = createAdminPrisma();
+    const repository = createFoodRepository({ prisma });
+
+    await repository.findActivity();
+    await repository.findActivity({ nutritionistId: 'nutri-1' });
+
+    const [[all], [one]] = prisma.food.findMany.mock.calls;
+    expect(all.where).toEqual({ createdById: { not: null } });
+    expect(one.where).toEqual({ createdById: 'nutri-1' });
+    expect(Object.keys(all.select).sort()).toEqual(['active', 'createdAt', 'createdBy', 'id', 'name', 'nutritionistId']);
   });
 });

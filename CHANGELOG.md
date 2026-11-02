@@ -6,6 +6,46 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ### Added
 
+- Curado del catálogo desde el panel del administrador (T25; RF-04, RF-24, RF-25, RNF-05; DA-37). Decisión completa en `docs/decisiones/curado-del-catalogo-por-el-administrador.md` del repo raíz.
+  - Migración `agrega_alta_y_autor_de_alimentos`:
+    - `food.created_at` y `food.created_by_id` (FK a `nutritionist`, `RESTRICT`).
+    - En los privados existentes, `created_by_id` se completa con su dueño. Su `created_at` queda con la fecha de la migración, porque no hay un dato anterior.
+    - El alta de un privado, por la API o por el seed, guarda al autor. Los comunes quedan sin autor.
+  - Rutas nuevas, todas bajo `/admin` y solo para el administrador. Un nutricionista recibe `403`, y el test de 403 cruzados las cubre.
+    - **Grupos:** `GET`, `POST /admin/food-groups` y `PUT /admin/food-groups/:id`, con grupo padre.
+      - Un grupo dentro de sí mismo o de uno de sus subgrupos, a cualquier profundidad, da `400` en `details.fields.parentId`. Usa `wouldCreateCycle` de `src/utils/foodGroupTree.js`.
+      - Un padre inexistente también da `400`.
+    - **Patologías:** `GET`, `POST /admin/pathologies` y `PUT /admin/pathologies/:id`, con nombre y descripción.
+    - **Alimentos:**
+      - `GET /admin/foods` trae los comunes y los privados de todos, incluidas las bajas. Acepta `owner` (`common` o el id de un nutricionista), `search` y `groupId`.
+      - `GET /admin/foods/:id`.
+      - `POST /admin/foods` da de alta un común.
+      - `PUT /admin/foods/:id` corrige el nombre, el grupo y las categorías, y con `active` da de baja o reactiva. Un `nutritionistId` en el body da `400`.
+      - `POST /admin/foods/:id/promote` pasa un privado al común con el mismo id y conserva quién lo cargó. Acepta un `name` opcional para renombrarlo en la misma operación.
+    - **Actividad:** `GET /admin/catalog-activity` lista qué alimento cargó cada nutricionista y cuándo, sigan privados o hayan pasado al común. Acepta `nutritionistId`. De la cuenta viajan solo el id y el nombre, y nada de pacientes ni de planes.
+  - Nombre duplicado, sin distinguir mayúsculas: `409 CONFLICT` en `details.fields.name`.
+    - Un privado no repite un común ni otro privado de su dueño.
+    - Un común no repite otro común ni un privado vigente de otro nutricionista. El mensaje pide renombrar o dar de baja ese privado.
+    - Al pasar un privado al común, tampoco puede repetir otro privado de su dueño, aunque esté dado de baja.
+    - En la edición, el nombre se controla solo si cambia o si el alimento se reactiva.
+    - Grupos y patologías tampoco repiten nombre.
+    - Pasar al común uno que ya es común también da `409`.
+  - Los planes conservan la copia del nombre y las categorías del alimento corregido (DA-16) hasta que se vuelve a guardar el borrador.
+  - La respuesta de `/foods` para el nutricionista no cambia: no expone `createdAt` ni `createdById`.
+  - Capas nuevas:
+    - `foodAdmin.service`, el `adminCatalog.controller` y `adminCatalog.routes`.
+    - Los schemas `foodGroup.schema` y `pathology.schema`, más los nuevos de `food.schema`.
+    - En el OpenAPI: `AdminFood`, `CatalogActivityEntry`, `AdminFoodConflict`, `FoodGroupConflict` y `PathologyConflict`.
+    - `foodGroup.service` y `pathology.service` suman el alta y la edición.
+  - Pruebas:
+    - Unitarias de ciclos, padre inexistente y nombre duplicado → `CONFLICT` al crear, al editar y al pasar al común.
+    - Las consultas del repositorio, los serializadores y la validación de las rutas.
+    - De punta a punta contra Postgres en `app.int.test.js`:
+      - El admin corrige las categorías y el grupo de un privado, y el plan conserva su copia.
+      - El ciclo de grupos da `400` y no cambia la base.
+      - El paso al común: el choque, el renombre y la autora en la actividad.
+      - Los duplicados al editar.
+
 - Reglas clínicas por patología (T35; RF-43, RF-47; riesgos 2 y 15; DA-36). La matriz, sus fuentes y su origen (S, sin entrevista) están en la ficha R-05 de `docs/reglas-clinicas.md` del repo raíz.
   - `scripts/seed-data/clinical-rules.js`: 37 reglas, cada una con una fuente bibliográfica con páginas.
     - Celiaquía: 27 alimentos con trigo, avena, cebada o centeno, `prohibited`. La avena sin TACC, `moderate`.

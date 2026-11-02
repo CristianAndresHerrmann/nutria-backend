@@ -158,6 +158,68 @@
       }
     }
   },
+  "AdminFoodInput": {
+    "description": "Alta de un alimento común desde el panel del administrador. El nombre se guarda sin espacios de más.",
+    "properties": {
+      "name": {
+        "example": "Kéfir"
+      },
+      "categories": {
+        "description": "Categorías nutricionales (RF-25): una o más, sin repetir.",
+        "example": [
+          "protein",
+          "healthy_fat"
+        ],
+        "uniqueItems": true
+      }
+    }
+  },
+  "FoodUpdateInput": {
+    "description": "Corrección de un alimento común o privado: reemplazo completo del nombre, el grupo y las categorías. `active` da de baja o reactiva; omitido conserva el estado.",
+    "properties": {
+      "name": {
+        "example": "Kéfir"
+      },
+      "categories": {
+        "description": "Categorías nutricionales (RF-25): una o más, sin repetir.",
+        "example": [
+          "protein",
+          "healthy_fat"
+        ],
+        "uniqueItems": true
+      },
+      "active": {
+        "example": true
+      }
+    }
+  },
+  "FoodPromoteInput": {
+    "description": "Pasar un alimento privado al catálogo común. Sin `name` conserva el nombre; con `name` lo renombra en la misma operación.",
+    "properties": {
+      "name": {
+        "example": "Kéfir de leche"
+      }
+    }
+  },
+  "FoodGroupInput": {
+    "description": "Alta o edición de un grupo de alimentos. Sin `parentId` es un grupo raíz.",
+    "properties": {
+      "name": {
+        "example": "Leches fermentadas"
+      }
+    }
+  },
+  "PathologyInput": {
+    "description": "Alta o edición de una patología (RF-04).",
+    "properties": {
+      "name": {
+        "example": "Celiaquía"
+      },
+      "description": {
+        "example": "Enfermedad celíaca"
+      }
+    }
+  },
   "RecipeInput": {
     "description": "Alta de una receta. El dueño y el origen no se mandan: salen del token y del servidor. Un string vacío en un campo opcional cuenta como ausencia del dato.",
     "properties": {

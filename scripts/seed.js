@@ -304,7 +304,8 @@ async function seedPrivateFoods(nutritionistId, foods, catalog) {
     const food = await prisma.food.upsert({
       where: { nutritionistId_name: { nutritionistId, name } },
       update: { foodGroupId, active: true },
-      create: { name, foodGroupId, nutritionistId },
+      // Como el alta desde la API: quien lo carga es su dueño (T25).
+      create: { name, foodGroupId, nutritionistId, createdById: nutritionistId },
     });
     await setCategories(food.id, categories);
   }

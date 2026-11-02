@@ -51,6 +51,18 @@ const EXPECTED_OPERATIONS = [
   'post /admin/nutritionists',
   'patch /admin/nutritionists/{id}',
   'put /admin/nutritionists/{id}/password',
+  'get /admin/food-groups',
+  'post /admin/food-groups',
+  'put /admin/food-groups/{id}',
+  'get /admin/pathologies',
+  'post /admin/pathologies',
+  'put /admin/pathologies/{id}',
+  'get /admin/foods',
+  'post /admin/foods',
+  'get /admin/foods/{id}',
+  'put /admin/foods/{id}',
+  'post /admin/foods/{id}/promote',
+  'get /admin/catalog-activity',
 ];
 
 const PROTECTED_OPERATIONS = [
@@ -94,6 +106,18 @@ const PROTECTED_OPERATIONS = [
   ['/admin/nutritionists', 'post'],
   ['/admin/nutritionists/{id}', 'patch'],
   ['/admin/nutritionists/{id}/password', 'put'],
+  ['/admin/food-groups', 'get'],
+  ['/admin/food-groups', 'post'],
+  ['/admin/food-groups/{id}', 'put'],
+  ['/admin/pathologies', 'get'],
+  ['/admin/pathologies', 'post'],
+  ['/admin/pathologies/{id}', 'put'],
+  ['/admin/foods', 'get'],
+  ['/admin/foods', 'post'],
+  ['/admin/foods/{id}', 'get'],
+  ['/admin/foods/{id}', 'put'],
+  ['/admin/foods/{id}/promote', 'post'],
+  ['/admin/catalog-activity', 'get'],
 ];
 
 function listOperations(spec) {

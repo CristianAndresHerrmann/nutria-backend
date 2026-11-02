@@ -13,7 +13,8 @@ const router = Router();
 const byId = { notFoundOnInvalidParams: FOOD_NOT_FOUND_MESSAGE };
 
 // No hay PUT ni DELETE: el nutricionista no edita ni da de baja alimentos. Lo
-// hace el administrador (tarea aparte), y la baja es lógica (active = false).
+// hace el administrador (T25, adminCatalog.routes.js), y la baja es lógica
+// (active = false).
 
 /**
  * @openapi

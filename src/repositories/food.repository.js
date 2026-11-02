@@ -7,6 +7,15 @@ const FOOD_INCLUDE = {
   categories: { select: { category: true }, orderBy: { category: 'asc' } },
 };
 
+// El panel del administrador (T25) además muestra el dueño de un privado y quién
+// lo cargó.
+const ACCOUNT_SELECT = { select: { id: true, name: true } };
+const ADMIN_FOOD_INCLUDE = { ...FOOD_INCLUDE, nutritionist: ACCOUNT_SELECT, createdBy: ACCOUNT_SELECT };
+
+function categoryRows(categories) {
+  return categories.map((category) => ({ category }));
+}
+
 // Un nutricionista ve los alimentos comunes (nutritionistId null) y los suyos
 // privados. Prisma ignora los filtros con valor undefined: con un nutritionistId
 // vacío, `{ nutritionistId }` no filtraría nada y la consulta devolvería los
@@ -58,17 +67,96 @@ function createFoodRepository({ prisma: client }) {
     return client.food.findFirst({ where: { id, nutritionistId: null } });
   }
 
-  // Siempre privado: el dueño es obligatorio. Los alimentos comunes los carga el
-  // seed (y, más adelante, el administrador).
+  // Siempre privado: el dueño es obligatorio, y es también quien lo cargó. Los
+  // alimentos comunes los carga el seed o el administrador (createCommon).
   function createPrivate(nutritionistId, { categories, ...data }) {
     assertNutritionistId(nutritionistId);
     return client.food.create({
-      data: { ...data, nutritionistId, categories: { create: categories.map((category) => ({ category })) } },
+      data: { ...data, nutritionistId, createdById: nutritionistId, categories: { create: categoryRows(categories) } },
       include: FOOD_INCLUDE,
     });
   }
 
-  return { findVisible, findAllVisible, findVisibleById, findVisibleByName, findCommonById, createPrivate };
+  // --- Panel del administrador (T25). Sin filtro de visibilidad: requireAdmin
+  // ya garantizó el rol, y el administrador cura los comunes y los privados.
+
+  // Incluye los dados de baja. owner: 'common' (los comunes) o el id de un
+  // nutricionista (sus privados); sin owner, todos.
+  function findForAdmin({ owner, search, groupIds } = {}) {
+    const where = {};
+    if (owner) where.nutritionistId = owner === 'common' ? null : owner;
+    if (search) where.name = { contains: search, mode: 'insensitive' };
+    if (groupIds) where.foodGroupId = { in: groupIds };
+
+    return client.food.findMany({ where, include: ADMIN_FOOD_INCLUDE, orderBy: { name: 'asc' } });
+  }
+
+  function findById(id) {
+    return client.food.findUnique({ where: { id }, include: ADMIN_FOOD_INCLUDE });
+  }
+
+  // Los alimentos con ese nombre, sin distinguir mayúsculas, salvo excludeId,
+  // dentro de los ámbitos pedidos: siempre los comunes; los privados de ownerId,
+  // vigentes o no; y con activePrivates, los privados vigentes de todos. El
+  // servicio decide cuáles chocan según el alimento que se escribe.
+  function findByName(name, { excludeId, ownerId, activePrivates = false } = {}) {
+    const scopes = [{ nutritionistId: null }];
+    if (ownerId) scopes.push({ nutritionistId: ownerId });
+    if (activePrivates) scopes.push({ nutritionistId: { not: null }, active: true });
+
+    const where = { name: { equals: name, mode: 'insensitive' }, OR: scopes };
+    if (excludeId) where.id = { not: excludeId };
+
+    return client.food.findMany({ where, select: { id: true, nutritionistId: true } });
+  }
+
+  function createCommon({ categories, ...data }) {
+    return client.food.create({
+      data: { ...data, nutritionistId: null, createdById: null, categories: { create: categoryRows(categories) } },
+      include: ADMIN_FOOD_INCLUDE,
+    });
+  }
+
+  // Reemplazo completo de las categorías en la misma escritura. Los ítems de los
+  // planes no cambian: guardan su propia copia del nombre y las categorías (DA-16).
+  function update(id, { categories, ...data }) {
+    return client.food.update({
+      where: { id },
+      data: { ...data, categories: { deleteMany: {}, create: categoryRows(categories) } },
+      include: ADMIN_FOOD_INCLUDE,
+    });
+  }
+
+  // Pasa a común: sin dueño. createdById se conserva para la actividad.
+  function promote(id, name) {
+    return client.food.update({ where: { id }, data: { nutritionistId: null, name }, include: ADMIN_FOOD_INCLUDE });
+  }
+
+  // Qué alimento cargó cada nutricionista y cuándo, del más nuevo al más viejo.
+  // Solo datos del catálogo: nada de pacientes ni de planes (RNF-05).
+  function findActivity({ nutritionistId } = {}) {
+    return client.food.findMany({
+      where: { createdById: nutritionistId || { not: null } },
+      select: { id: true, name: true, active: true, nutritionistId: true, createdAt: true, createdBy: ACCOUNT_SELECT },
+      orderBy: [{ createdAt: 'desc' }, { name: 'asc' }],
+    });
+  }
+
+  return {
+    findVisible,
+    findAllVisible,
+    findVisibleById,
+    findVisibleByName,
+    findCommonById,
+    createPrivate,
+    findForAdmin,
+    findById,
+    findByName,
+    createCommon,
+    update,
+    promote,
+    findActivity,
+  };
 }
 
 module.exports = createFoodRepository({ prisma });
