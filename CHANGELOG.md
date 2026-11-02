@@ -4,6 +4,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ## Unreleased
 
+### Changed
+
+- El filtro por grupo de alimentos comparte la resolución de descendientes entre los servicios de nutricionista y administrador. Conserva el resultado vacío para grupos inexistentes y no carga grupos sin filtro. Pruebas de caracterización de filtros y propagación HTTP de errores, sin cambios en contratos ni reglas clínicas.
+
 ### Removed
 
 - `docker-compose.staging.yml` deja de pasarle `VITE_ENV_LABEL` al build del frontend, que ya no muestra el aviso de entorno de prueba.

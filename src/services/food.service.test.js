@@ -148,6 +148,24 @@ describe('food.service — alimentos privados aislados por nutricionista', () =>
 });
 
 describe('food.service — listado', () => {
+  it('sin filtro no carga grupos y conserva la búsqueda y el aislamiento', async () => {
+    const groups = { findAll: vi.fn() };
+    const foods = { findVisible: vi.fn(async () => ['resultado']) };
+    const service = createFoodService({ foodRepository: foods, foodGroupRepository: groups });
+
+    expect(await service.list('nutri-1', { search: 'leche' })).toEqual(['resultado']);
+    expect(groups.findAll).not.toHaveBeenCalled();
+    expect(foods.findVisible).toHaveBeenCalledWith('nutri-1', { search: 'leche', groupIds: undefined });
+  });
+
+  it('un grupo inexistente no consulta alimentos', async () => {
+    const foods = { findVisible: vi.fn() };
+    const service = createFoodService({ foodRepository: foods, foodGroupRepository: createFakeGroupRepository() });
+
+    expect(await service.list('nutri-1', { groupId: 'no-existe' })).toEqual([]);
+    expect(foods.findVisible).not.toHaveBeenCalled();
+  });
+
   it('no lista los dados de baja', async () => {
     const { service } = buildService();
 

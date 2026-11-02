@@ -112,7 +112,7 @@ function createRecipeService({
     },
 
     // Alta o puesta al día de una receta básica común, por nombre (T30). Sin
-    // ruta: la usa el seed, y el administrador la tendrá con T25.
+    // ruta: la usa el seed.
     async upsertCommon({ ingredients, mealTypes, ...data }) {
       await assertCommonIngredientFoods(ingredients);
       return repository.upsertCommon(data, ingredients, mealTypes);

@@ -90,6 +90,21 @@ function expectUniformError(response, status, code) {
 
 const validToken = () => jwt.sign({ sub: 'nutri-1' }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
+describe('propagación de errores del controlador de pacientes', () => {
+  it.each([
+    [new AppError(503, 'Servicio no disponible'), 503, 'SERVICE_UNAVAILABLE', 'Servicio no disponible'],
+    [new Error('Detalle interno'), 500, 'INTERNAL_ERROR', 'Error interno del servidor'],
+    [false, 404, 'NOT_FOUND', 'Ruta no encontrada'],
+  ])('un rechazo %j conserva la respuesta HTTP actual', async (reason, status, code, message) => {
+    vi.spyOn(patientService, 'listForNutritionist').mockRejectedValueOnce(reason);
+
+    const response = await request('/patients', { token: validToken() });
+
+    expectUniformError(response, status, code);
+    expect(response.json.error.message).toBe(message);
+  });
+});
+
 describe('formato uniforme de error de punta a punta', () => {
   it('una ruta inexistente responde 404 con el formato uniforme', async () => {
     const response = await request('/no-existe');

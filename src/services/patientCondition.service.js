@@ -30,8 +30,8 @@ function withoutEmptyDate({ registeredAt, ...data }) {
   return registeredAt ? { ...data, registeredAt } : data;
 }
 
-// Condiciones del paciente (RF-04 patologías, RF-07). Solo se registran: las
-// reglas clínicas que se derivan de una patología son del Incremento 3.
+// Condiciones del paciente (RF-04 patologías, RF-07). Las reglas clínicas por
+// patología se evalúan en el motor de reglas, no al registrar la condición.
 //
 // Orden de los chequeos: paciente/condición ajenos o inexistentes (404), destino
 // que no existe en el catálogo (400), condición repetida (409).

@@ -1,7 +1,7 @@
 const foodRepository = require('../repositories/food.repository');
 const foodGroupRepository = require('../repositories/foodGroup.repository');
 const AppError = require('../utils/AppError');
-const { descendantIds } = require('../utils/foodGroupTree');
+const { groupFilterIds } = require('../utils/foodGroupTree');
 const { FOOD_NOT_FOUND_MESSAGE, DUPLICATE_NAME_MESSAGE, GROUP_NOT_FOUND_MESSAGE } = require('./food.service');
 
 const PRIVATE_NAME_CONFLICT_MESSAGE =
@@ -60,12 +60,8 @@ function createFoodAdminService({ foodRepository: repository, foodGroupRepositor
     // Incluye las bajas y los privados de todos. Filtrar por un grupo incluye
     // sus subgrupos; un grupo inexistente es un filtro que no matchea nada.
     async list({ owner = null, search = null, groupId = null } = {}) {
-      let groupIds;
-      if (groupId) {
-        const allGroups = await groups.findAll();
-        if (!allGroups.some((group) => group.id === groupId)) return [];
-        groupIds = descendantIds(allGroups, groupId);
-      }
+      const groupIds = groupId ? groupFilterIds(await groups.findAll(), groupId) : undefined;
+      if (groupIds?.length === 0) return [];
 
       return repository.findForAdmin({ owner, search, groupIds });
     },

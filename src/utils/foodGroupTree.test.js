@@ -1,4 +1,4 @@
-const { wouldCreateCycle, descendantIds } = require('./foodGroupTree');
+const { wouldCreateCycle, descendantIds, groupFilterIds } = require('./foodGroupTree');
 
 // Carnes, pescados y huevos
 // ├── Aves
@@ -55,5 +55,17 @@ describe('foodGroupTree.descendantIds', () => {
 
   it('un grupo sin hijos devuelve solo su id', () => {
     expect(descendantIds(GROUPS, 'lacteos')).toEqual(['lacteos']);
+  });
+});
+
+describe('foodGroupTree.groupFilterIds', () => {
+  it('un filtro existente conserva el orden del grupo y sus descendientes', () => {
+    expect(groupFilterIds(GROUPS, 'carnes')).toEqual(['carnes', 'pescados', 'aves', 'corral']);
+    expect(groupFilterIds(GROUPS, 'lacteos')).toEqual(['lacteos']);
+  });
+
+  it('un filtro inexistente no incluye hijos huérfanos ni coincide con alimentos', () => {
+    expect(groupFilterIds([{ id: 'hijo', parentId: 'ausente' }], 'ausente')).toEqual([]);
+    expect(groupFilterIds([], 'ausente')).toEqual([]);
   });
 });

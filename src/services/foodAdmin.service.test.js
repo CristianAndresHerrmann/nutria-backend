@@ -98,6 +98,24 @@ const edit = (food, changes) => ({
 });
 
 describe('foodAdmin.service — listado', () => {
+  it('sin filtro de grupo no carga grupos y conserva los filtros del administrador', async () => {
+    const groups = { findAll: vi.fn() };
+    const foods = { findForAdmin: vi.fn(async () => ['resultado']) };
+    const service = createFoodAdminService({ foodRepository: foods, foodGroupRepository: groups });
+
+    expect(await service.list({ owner: 'common', search: 'leche' })).toEqual(['resultado']);
+    expect(groups.findAll).not.toHaveBeenCalled();
+    expect(foods.findForAdmin).toHaveBeenCalledWith({ owner: 'common', search: 'leche', groupIds: undefined });
+  });
+
+  it('un grupo inexistente no consulta alimentos', async () => {
+    const foods = { findForAdmin: vi.fn() };
+    const service = createFoodAdminService({ foodRepository: foods, foodGroupRepository: groupRepository });
+
+    expect(await service.list({ groupId: 'no-existe' })).toEqual([]);
+    expect(foods.findForAdmin).not.toHaveBeenCalled();
+  });
+
   it('trae comunes y privados de todos, incluidas las bajas', async () => {
     const { service, foodRepository } = buildService();
 

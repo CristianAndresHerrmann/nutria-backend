@@ -50,4 +50,9 @@ function descendantIds(groups, rootId) {
   return result;
 }
 
-module.exports = { wouldCreateCycle, descendantIds };
+// Un grupo inexistente no debe producir coincidencias en los filtros de alimentos.
+function groupFilterIds(groups, rootId) {
+  return groups.some((group) => group.id === rootId) ? descendantIds(groups, rootId) : [];
+}
+
+module.exports = { wouldCreateCycle, descendantIds, groupFilterIds };

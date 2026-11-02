@@ -1,7 +1,7 @@
 const foodRepository = require('../repositories/food.repository');
 const foodGroupRepository = require('../repositories/foodGroup.repository');
 const AppError = require('../utils/AppError');
-const { descendantIds } = require('../utils/foodGroupTree');
+const { groupFilterIds } = require('../utils/foodGroupTree');
 
 const FOOD_NOT_FOUND_MESSAGE = 'Alimento no encontrado';
 const DUPLICATE_NAME_MESSAGE = 'Ya existe un alimento con ese nombre';
@@ -16,12 +16,8 @@ function createFoodService({ foodRepository: repository, foodGroupRepository: gr
     // Filtrar por un grupo incluye sus subgrupos. Un grupo inexistente es un
     // filtro que no matchea nada, no un error.
     async list(nutritionistId, { search = null, groupId = null } = {}) {
-      let groupIds;
-      if (groupId) {
-        const allGroups = await groups.findAll();
-        if (!allGroups.some((group) => group.id === groupId)) return [];
-        groupIds = descendantIds(allGroups, groupId);
-      }
+      const groupIds = groupId ? groupFilterIds(await groups.findAll(), groupId) : undefined;
+      if (groupIds?.length === 0) return [];
 
       return repository.findVisible(nutritionistId, { search, groupIds });
     },
