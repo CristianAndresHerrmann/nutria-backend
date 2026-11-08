@@ -1,11 +1,11 @@
 const { descendantIds } = require('./foodGroupTree');
 
-// Filtro de recetas por las condiciones del paciente (RF-28). Solo las
-// condiciones directas sobre un alimento o un grupo: una preferencia no excluye
-// nada, y lo que se deriva de una patología son reglas clínicas (clinical_rule,
-// T35), no de este filtro. El motor de reglas (RF-43) usa el mismo criterio por
-// condición (DA-23): conditionScopes y scopeCoversFood; y para las reglas por
-// patología, ruleScopes con el mismo scopeCoversFood.
+// Filtro de recetas por las condiciones del paciente (RF-28): las condiciones
+// directas sobre un alimento o un grupo, y las reglas prohibitivas de sus patologías
+// (clinical_rule, T35) que le pase quien llama. Una preferencia no excluye nada. El
+// motor de reglas (RF-43) usa el mismo criterio por condición (DA-23):
+// conditionScopes y scopeCoversFood; y para las reglas por patología, ruleScopes con
+// el mismo scopeCoversFood.
 const RESTRICTIVE_CONDITION_TYPES = ['allergy', 'intolerance', 'rejection'];
 
 // Lo que alcanza cada condición restrictiva: su alimento, o su grupo con todos
@@ -38,10 +38,11 @@ function scopeCoversFood(scope, food) {
 }
 
 // Función pura: recibe las recetas con sus ingredientes ({ food: { id,
-// foodGroupId } }), las condiciones del paciente y la lista plana de grupos.
-// Devuelve las recetas sin ningún ingrediente comprendido en una condición.
-function excludeRecipesForConditions(recipes, conditions, groups) {
-  const scopes = conditionScopes(conditions, groups);
+// foodGroupId } }), las condiciones del paciente, la lista plana de grupos y las
+// reglas que excluyen. Devuelve las recetas sin ningún ingrediente comprendido en
+// una condición o en una de esas reglas.
+function excludeRecipesForConditions(recipes, conditions, groups, prohibitedRules = []) {
+  const scopes = [...conditionScopes(conditions, groups), ...ruleScopes(prohibitedRules, groups)];
   if (scopes.length === 0) return recipes;
 
   return recipes.filter((recipe) =>

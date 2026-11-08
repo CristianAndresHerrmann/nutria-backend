@@ -4,8 +4,16 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ## Unreleased
 
+### Added
+
+- **Catálogo de recetas ampliado para probar la generación.** El seed carga 77 recetas comunes (suma 60) y 45 privadas nuevas de `nutricionista@nutria.com`: 40 elaboradas y 5 de control, que llevan a propósito un alimento alcanzado por una regla de diabetes o hipertensión. Son datos ficticios con origen V, sin validación profesional.
+- `measure-generation` audita las recetas de cada generación frente a las candidatas de la traza: propias o comunes, de control, fuera de las candidatas o en una comida para la que no se ofrecen.
+- Pruebas del filtro real de la generación con el catálogo real del seed para los casos C1 a C7 y las dos cuentas, y de integración contra Postgres: la generación de una cuenta no recibe las recetas privadas de otra, ni el plan ni la traza las contienen.
+
 ### Changed
 
+- **`GET /recipes?patientId=` excluye las recetas alcanzadas por una regla prohibitiva de las patologías del paciente**, con el mismo criterio que la generación. Las reglas a moderar se siguen ofreciendo y advierten al guardar.
+- **El objetivo del paciente viaja a nutria-ia** en el campo `goal` del contexto, con el filtro de datos identificatorios y el tope de los demás textos libres. Requiere la versión de nutria-ia que declara el campo: se despliega primero nutria-ia.
 - El filtro por grupo de alimentos comparte la resolución de descendientes entre los servicios de nutricionista y administrador. Conserva el resultado vacío para grupos inexistentes y no carga grupos sin filtro. Pruebas de caracterización de filtros y propagación HTTP de errores, sin cambios en contratos ni reglas clínicas.
 
 ### Removed

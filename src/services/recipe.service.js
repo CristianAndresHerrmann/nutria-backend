@@ -1,8 +1,10 @@
+const { RuleSeverity } = require('@prisma/client');
 const recipeRepository = require('../repositories/recipe.repository');
 const foodRepository = require('../repositories/food.repository');
 const foodGroupRepository = require('../repositories/foodGroup.repository');
 const patientRepository = require('../repositories/patient.repository');
 const patientConditionRepository = require('../repositories/patientCondition.repository');
+const clinicalRuleRepository = require('../repositories/clinicalRule.repository');
 const AppError = require('../utils/AppError');
 const { excludeRecipesForConditions } = require('../utils/recipeConditionFilter');
 const { PATIENT_NOT_FOUND_MESSAGE } = require('./patient.service');
@@ -30,6 +32,7 @@ function createRecipeService({
   foodGroupRepository: groups,
   patientRepository: patients,
   patientConditionRepository: patientConditions,
+  clinicalRuleRepository: clinicalRules,
 }) {
   async function findVisible(id, nutritionistId) {
     const recipe = await repository.findVisibleById(id, nutritionistId);
@@ -63,7 +66,9 @@ function createRecipeService({
 
   return {
     // Con patientId, deja afuera las recetas con algún ingrediente comprendido
-    // en una alergia, intolerancia o rechazo del paciente (RF-28). Un paciente
+    // en una alergia, intolerancia o rechazo del paciente (RF-28), o en una regla
+    // prohibitiva de sus patologías, igual que la generación (DA-31). Las reglas a
+    // moderar no excluyen: el motor las advierte al guardar (DA-36). Un paciente
     // de otro nutricionista da 404, igual que uno inexistente.
     async list(nutritionistId, { mealType = null, includeUnavailable = false, patientId = null } = {}) {
       if (!patientId) return repository.findVisible(nutritionistId, { mealType, includeUnavailable });
@@ -76,7 +81,10 @@ function createRecipeService({
         patientConditions.findAllForPatient(patientId, nutritionistId),
         groups.findAll(),
       ]);
-      return excludeRecipesForConditions(recipes, conditions, allGroups);
+      const pathologyIds = conditions.map(({ pathologyId }) => pathologyId).filter(Boolean);
+      const rules = await clinicalRules.findActiveForPathologies(pathologyIds);
+      const prohibitedRules = rules.filter(({ severity }) => severity === RuleSeverity.prohibited);
+      return excludeRecipesForConditions(recipes, conditions, allGroups, prohibitedRules);
     },
 
     get(id, nutritionistId) {
@@ -126,6 +134,7 @@ module.exports = createRecipeService({
   foodGroupRepository,
   patientRepository,
   patientConditionRepository,
+  clinicalRuleRepository,
 });
 module.exports.createRecipeService = createRecipeService;
 module.exports.RECIPE_NOT_FOUND_MESSAGE = RECIPE_NOT_FOUND_MESSAGE;

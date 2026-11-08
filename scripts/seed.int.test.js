@@ -2,6 +2,9 @@ const { execFileSync } = require('node:child_process');
 const { prisma } = require('../src/test/integration');
 const { CLINICAL_CASES } = require('./seed-data/clinical-cases');
 const { CLINICAL_RULES } = require('./seed-data/clinical-rules');
+const { COMMON_RECIPES } = require('./seed-data/recipes');
+const { PRIVATE_RECIPES, CONTROL_RECIPES } = require('./seed-data/private-recipes');
+const recipes = require('../src/repositories/recipe.repository');
 
 it('el seed corre sin JWT_SECRET, revoca las sesiones de sus cuentas al volver a ejecutarlo y conserva los casos clínicos y las reglas', async () => {
   expect(await prisma.nutritionist.count()).toBe(0);
@@ -49,4 +52,15 @@ it('el seed corre sin JWT_SECRET, revoca las sesiones de sus cuentas al volver a
       patient.conditions.map(({ type }) => type).sort(),
     );
   }
+
+  // Las comunes no se duplican al repetir el seed, y las propias de la primera
+  // cuenta no llegan a la segunda (RNF-05).
+  expect(await prisma.recipe.count({ where: { nutritionistId: null } })).toBe(COMMON_RECIPES.length);
+  const first = await prisma.nutritionist.findUniqueOrThrow({ where: { email: 'nutricionista@nutria.com' } });
+  const second = await prisma.nutritionist.findUniqueOrThrow({ where: { email: 'nutricionista2@nutria.com' } });
+  const ownNames = [...PRIVATE_RECIPES, ...CONTROL_RECIPES].map(({ name }) => name);
+  const visibleNames = async ({ id }) => (await recipes.findVisible(id, { includeUnavailable: true })).map(({ name }) => name);
+
+  expect(await visibleNames(first)).toEqual(expect.arrayContaining(ownNames));
+  expect((await visibleNames(second)).filter((name) => ownNames.includes(name))).toEqual([]);
 });

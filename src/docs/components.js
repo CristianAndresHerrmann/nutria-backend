@@ -644,7 +644,7 @@ const schemas = {
         properties: {
           provider: { type: 'string', example: 'fake' },
           model: { type: 'string', example: 'fake-deterministic' },
-          templateVersion: { type: 'string', example: 'plan_proposal_v1' },
+          templateVersion: { type: 'string', example: 'plan_proposal_v3' },
           validationResult: {
             type: 'string',
             enum: ['no_findings', 'warnings', 'blocking'],

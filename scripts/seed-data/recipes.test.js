@@ -1,6 +1,8 @@
 const { CookingMethod, MealType } = require('@prisma/client');
 const { FOODS } = require('./catalogs');
+const { CLINICAL_RULES } = require('./clinical-rules');
 const { COMMON_RECIPES } = require('./recipes');
+const { PRIVATE_RECIPES, CONTROL_RECIPES, CONTROL_RECIPE_NAMES } = require('./private-recipes');
 const { missingCategories } = require('../../src/domain/reglas/mealComposition');
 
 // Los criterios de docs/recetas-basicas.md (repo raíz) que la base no controla.
@@ -67,6 +69,60 @@ describe('datos del seed — recetas básicas comunes (T30)', () => {
       for (const mealType of mealTypes) {
         expect(missingCategories(mealType, items), `"${name}" en ${mealType}`).toEqual([]);
       }
+    }
+  });
+});
+
+describe('datos del seed — recetas propias de nutricionista@ y de control', () => {
+  const ALL_PRIVATE = [...PRIVATE_RECIPES, ...CONTROL_RECIPES];
+
+  it('no repite nombres entre ellas ni con las comunes, sin distinguir mayúsculas', () => {
+    const names = [...COMMON_RECIPES, ...ALL_PRIVATE].map(({ name }) => name.toLocaleLowerCase('es'));
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('usan alimentos del catálogo común, por su nombre exacto y sin repetir', () => {
+    for (const { name, ingredients } of ALL_PRIVATE) {
+      const foods = ingredients.map(({ food }) => food);
+      expect(foods.filter((food) => !foodsByName.has(food)), name).toEqual([]);
+      expect(new Set(foods).size, `"${name}" repite un ingrediente`).toBe(foods.length);
+    }
+  });
+
+  it('usan valores válidos de cocción y tipo de comida, con tiempo y preparación', () => {
+    for (const { name, cookingMethod, mealTypes, timeMinutes, preparation } of ALL_PRIVATE) {
+      expect(Object.values(CookingMethod), name).toContain(cookingMethod);
+      expect(mealTypes.length, name).toBeGreaterThan(0);
+      for (const mealType of mealTypes) expect(Object.values(MealType), name).toContain(mealType);
+      expect(timeMinutes, name).toBeGreaterThan(0);
+      expect(preparation, name).toBeTruthy();
+    }
+  });
+
+  it('cubren la composición esperada de cada tipo de comida en que se ofrecen (DA-29)', () => {
+    for (const { name, ingredients, mealTypes } of ALL_PRIVATE) {
+      const items = ingredients.map(({ food }) => ({ categories: foodsByName.get(food).categories }));
+      for (const mealType of mealTypes) {
+        expect(missingCategories(mealType, items), `"${name}" en ${mealType}`).toEqual([]);
+      }
+    }
+  });
+
+  it('las propias no llevan sal, azúcar, dulces, caldo, salsa de soja ni fiambres', () => {
+    for (const { name, ingredients } of PRIVATE_RECIPES) {
+      const avoided = ingredients.map(({ food }) => foodsByName.get(food)).filter(isAvoided).map((food) => food.name);
+      expect(avoided, `"${name}" lleva alimentos evitados`).toEqual([]);
+    }
+  });
+
+  it('cada receta de control lleva un alimento alcanzado por una regla de la matriz', () => {
+    const ruleFoods = new Set(CLINICAL_RULES.map(({ food }) => food).filter(Boolean));
+    const ruleGroups = new Set(CLINICAL_RULES.map(({ foodGroup }) => foodGroup).filter(Boolean));
+
+    expect(CONTROL_RECIPE_NAMES).toEqual(CONTROL_RECIPES.map(({ name }) => name));
+    for (const { name, ingredients } of CONTROL_RECIPES) {
+      const reached = ingredients.filter(({ food }) => ruleFoods.has(food) || ruleGroups.has(foodsByName.get(food).group));
+      expect(reached.length, name).toBeGreaterThan(0);
     }
   });
 });

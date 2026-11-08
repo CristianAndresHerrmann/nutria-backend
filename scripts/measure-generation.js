@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { parseArgs } = require('node:util');
 const { CLINICAL_CASES } = require('./seed-data/clinical-cases');
+const { CONTROL_RECIPE_NAMES } = require('./seed-data/private-recipes');
 
 // Medición de la generación del plan (T41; Tabla 7 del IA2, riesgos 4, 10 y 17).
 // Corre N generaciones por caso clínico del seed contra el stack levantado, en
@@ -17,6 +18,9 @@ const { CLINICAL_CASES } = require('./seed-data/clinical-cases');
 //   llegaron al proveedor.
 // - Si la salida cumplió el contrato y si la propuesta tiene hallazgos
 //   bloqueantes (meta del 95 %).
+// - Qué recetas propuso frente a las candidatas que se le ofrecieron: propias o
+//   comunes, de control, y si alguna cayó en una comida para la que no se ofrece,
+//   algo que ni el motor ni la edición controlan.
 // Escribe el resultado en JSON (repo raíz, docs/mediciones-de-generacion/) e
 // imprime el resumen en Markdown.
 
@@ -108,6 +112,8 @@ function summarize(generations) {
   const traced = generations.filter(({ inputTokens }) => inputTokens != null);
   const costs = generations.map(({ cost }) => cost).filter((cost) => cost != null);
   const totalMs = stats(valid.map(({ totalMs: ms }) => ms));
+  const audits = valid.map(({ recipeAudit }) => recipeAudit).filter(Boolean);
+  const proposed = audits.flatMap((audit) => audit.proposed);
 
   return {
     attempts: generations.length,
@@ -128,6 +134,14 @@ function summarize(generations) {
     // salida más corta.
     options: stats(valid.map(({ options }) => options)),
     textChars: stats(valid.map(({ textChars }) => textChars)),
+    recipes: {
+      candidates: stats(audits.map(({ candidates }) => candidates)),
+      proposed: proposed.length,
+      own: proposed.filter(({ own }) => own).length,
+      control: proposed.filter(({ control }) => control).length,
+      notOffered: proposed.filter(({ offered }) => !offered).length,
+      wrongMeal: proposed.filter(({ offered, mealMatches }) => offered && !mealMatches).length,
+    },
     cost: { total: costs.length > 0 ? sum(costs) : null, perAttempt: costs.length > 0 ? sum(costs) / costs.length : null },
     goals: {
       p95UnderTimeGoal: totalMs.p95 == null ? null : totalMs.p95 <= TIME_GOAL_MS,
@@ -177,6 +191,28 @@ function compactProposal(plan) {
   }));
 }
 
+// Las recetas de la propuesta frente a las candidatas que recibió la IA, tal como
+// se guardaron en la traza. ownNames son los nombres de las recetas propias de la
+// cuenta: la propuesta no lo informa.
+function auditRecipes(plan, contextSent, { ownNames = new Set(), controlNames = CONTROL_RECIPE_NAMES } = {}) {
+  const candidates = new Map((contextSent?.candidate_recipes ?? []).map((recipe) => [recipe.name, recipe]));
+  const proposed = plan.meals.flatMap(({ mealType, options }) =>
+    options.flatMap(({ items }) =>
+      items
+        .filter(({ type }) => type === 'recipe')
+        .map(({ recipe: { name } }) => ({
+          mealType,
+          name,
+          own: ownNames.has(name),
+          control: controlNames.includes(name),
+          offered: candidates.has(name),
+          mealMatches: candidates.get(name)?.meal_types.includes(mealType) ?? false,
+        })),
+    ),
+  );
+  return { candidates: candidates.size, proposed };
+}
+
 // Como en los README de docs/: miles separados por espacio y coma decimal.
 const formatMs = (ms) => (ms == null ? '—' : String(ms).replace(/\B(?=(\d{3})+(?!\d))/g, ' '));
 const formatRate = (value) => (value == null ? '—' : `${String(Math.round(value * 1000) / 10).replace('.', ',')} %`);
@@ -207,6 +243,16 @@ function markdownReport({ summary }) {
   if (Object.keys(overall.failures).length > 0) {
     lines.push('', `Fallas: ${Object.entries(overall.failures).map(([reason, count]) => `${reason} ${count}`).join(', ')}.`);
   }
+  lines.push(
+    '',
+    '| Caso | Candidatas (media) | Recetas propuestas | Propias | De control | Fuera de las candidatas | En otra comida |',
+    '|---|---|---|---|---|---|---|',
+  );
+  const recipeRow = (label, { recipes }) =>
+    `| ${label} | ${formatMs(recipes.candidates.mean)} | ${recipes.proposed} | ${recipes.own} | ${recipes.control} | ` +
+    `${recipes.notOffered} | ${recipes.wrongMeal} |`;
+  for (const [code, s] of Object.entries(summary.byCase)) lines.push(recipeRow(code, s));
+  lines.push(recipeRow('**Global**', overall));
   return lines.join('\n');
 }
 
@@ -249,7 +295,7 @@ async function login(apiUrl, password) {
   return json.token;
 }
 
-async function generateOnce(apiUrl, token, prisma, { code, patientId }, iteration) {
+async function generateOnce(apiUrl, token, prisma, ownNames, { code, patientId }, iteration) {
   const startedAt = new Date();
   const t0 = performance.now();
   const { status, json } = await request(apiUrl, 'POST', `/patients/${patientId}/plans/generate`, { token, body: {} });
@@ -293,6 +339,7 @@ async function generateOnce(apiUrl, token, prisma, { code, patientId }, iteratio
   if (status === 201) {
     row.findings = json.findings.map(({ severity, type, message }) => ({ severity, type, message }));
     row.proposal = compactProposal(json);
+    row.recipeAudit = auditRecipes(json, trace?.contextSent, { ownNames });
   }
   return row;
 }
@@ -334,6 +381,8 @@ async function main() {
       CLINICAL_CASES.filter(({ code }) => !codes || codes.includes(code)),
       patients,
     );
+    const { json: recipes } = await request(apiUrl, 'GET', '/recipes', { token });
+    const ownNames = new Set(recipes.filter(({ own }) => own).map(({ name }) => name));
 
     const startedAt = new Date();
     console.log(`Medición: ${cases.length} casos × ${iterations} generaciones contra ${apiUrl}`);
@@ -342,7 +391,7 @@ async function main() {
     // una variación del proveedor en el tiempo no caiga sobre un solo caso.
     for (let iteration = 1; iteration <= iterations; iteration += 1) {
       for (const clinicalCase of cases) {
-        const row = await generateOnce(apiUrl, token, prisma, clinicalCase, iteration);
+        const row = await generateOnce(apiUrl, token, prisma, ownNames, clinicalCase, iteration);
         generations.push(row);
         console.log(
           `${row.caseCode} #${iteration}: ${row.status}${row.reason ? ` ${row.reason}` : ''}, ` +
@@ -405,6 +454,7 @@ module.exports = {
   summarize,
   summarizeRun,
   compactProposal,
+  auditRecipes,
   markdownReport,
   parseOptions,
 };
