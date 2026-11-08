@@ -5,10 +5,10 @@ const { categoriesOf } = require('../reglas/catalogIndex');
 //
 // Se arma por lista blanca: cada campo del contrato se copia de un campo puntual
 // del paciente. Lo que no está acá no viaja: nombre, apellido, fecha de
-// nacimiento, contacto, convivencia, responsable, objetivo, peso, antecedentes,
-// medicación, tratamientos, patrones de ingesta, mediciones, observaciones de las
-// condiciones (texto libre) ni ningún id interno. El servicio es la segunda
-// barrera: rechaza con 422 cualquier campo no declarado.
+// nacimiento, contacto, convivencia, responsable, peso, antecedentes, medicación,
+// tratamientos, patrones de ingesta, mediciones, observaciones de las condiciones
+// (texto libre) ni ningún id interno. El servicio es la segunda barrera: rechaza
+// con 422 cualquier campo no declarado.
 //
 // Los elementos del catálogo viajan con códigos cortos (G1, A1, R1) en vez de
 // UUID. `codes` traduce cada código a su entidad al resolver la propuesta, y
@@ -111,6 +111,7 @@ function buildGenerationContext({ patient, conditions, catalog, mealTypes }) {
 
   const context = {
     meal_types: [...mealTypes],
+    ...compact({ goal: text(patient.goal) }),
     conditions: conditions.map((condition) => ({ type: condition.type, name: conditionName(condition) })),
     cooking: compact({
       cooks: patient.cooks,

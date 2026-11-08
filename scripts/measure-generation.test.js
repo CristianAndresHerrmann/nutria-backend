@@ -6,6 +6,7 @@ const {
   summarize,
   summarizeRun,
   compactProposal,
+  auditRecipes,
   markdownReport,
   parseOptions,
 } = require('./measure-generation');
@@ -118,6 +119,56 @@ describe('measure-generation — medición de la generación (T41)', () => {
     expect(compactProposal(plan)).toEqual([
       { mealType: 'breakfast', options: [['Manzana', 'Frutas (grupo)', 'Receta: Tarta', 'No reconocido: Agua']] },
     ]);
+  });
+
+  describe('auditoría de las recetas propuestas', () => {
+    const recipeItem = (name) => ({ type: 'recipe', recipe: { name } });
+    const plan = {
+      meals: [
+        { mealType: 'breakfast', options: [{ items: [recipeItem('Propia'), { type: 'food', foodName: 'Manzana' }] }] },
+        { mealType: 'lunch', options: [{ items: [recipeItem('Común de desayuno')] }, { items: [recipeItem('De control')] }] },
+        { mealType: 'dinner', options: [{ items: [recipeItem('Sin ofrecer')] }] },
+      ],
+    };
+    const contextSent = {
+      candidate_recipes: [
+        { name: 'Propia', meal_types: ['breakfast'] },
+        { name: 'Común de desayuno', meal_types: ['breakfast'] },
+        { name: 'De control', meal_types: ['lunch'] },
+      ],
+    };
+    const options = { ownNames: new Set(['Propia', 'De control']), controlNames: ['De control'] };
+
+    it('clasifica cada receta frente a las candidatas de la traza', () => {
+      expect(auditRecipes(plan, contextSent, options)).toEqual({
+        candidates: 3,
+        proposed: [
+          { mealType: 'breakfast', name: 'Propia', own: true, control: false, offered: true, mealMatches: true },
+          { mealType: 'lunch', name: 'Común de desayuno', own: false, control: false, offered: true, mealMatches: false },
+          { mealType: 'lunch', name: 'De control', own: true, control: true, offered: true, mealMatches: true },
+          { mealType: 'dinner', name: 'Sin ofrecer', own: false, control: false, offered: false, mealMatches: false },
+        ],
+      });
+    });
+
+    it('sin traza, ninguna receta cuenta como ofrecida', () => {
+      const audit = auditRecipes(plan, undefined, options);
+      expect(audit.candidates).toBe(0);
+      expect(audit.proposed.every(({ offered }) => !offered)).toBe(true);
+    });
+
+    it('resume la auditoría y la imprime por caso', () => {
+      const summary = summarizeRun([valid({ recipeAudit: auditRecipes(plan, contextSent, options) }), valid()]);
+      expect(summary.overall.recipes).toEqual({
+        candidates: { n: 1, mean: 3, p50: 3, p95: 3, max: 3 },
+        proposed: 4,
+        own: 2,
+        control: 1,
+        notOffered: 1,
+        wrongMeal: 1,
+      });
+      expect(markdownReport({ summary })).toContain('| C1 | 3 | 4 | 2 | 1 | 1 | 1 |');
+    });
   });
 
   it('imprime una fila por caso, la global y las metas', () => {

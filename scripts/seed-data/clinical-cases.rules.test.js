@@ -1,8 +1,11 @@
 const { validatePlan } = require('../../src/domain/reglas/validatePlan');
+const { allowedCatalog, CONTRACT_LIMITS } = require('../../src/domain/generacion/allowedCatalog');
+const { excludeRecipesForConditions } = require('../../src/utils/recipeConditionFilter');
 const { FOOD_GROUPS, FOODS } = require('./catalogs');
 const { CLINICAL_CASES } = require('./clinical-cases');
 const { CLINICAL_RULES } = require('./clinical-rules');
 const { COMMON_RECIPES } = require('./recipes');
+const { PRIVATE_RECIPES, CONTROL_RECIPES } = require('./private-recipes');
 
 // Criterio de cierre de T35: los casos clínicos de T41 producen los hallazgos que
 // espera la matriz de reglas (docs/reglas-clinicas.md, R-05). Corre el motor real
@@ -20,11 +23,18 @@ const CATALOG_FOODS = FOODS.map(({ name, group, categories }) => ({
 }));
 const foodByName = new Map(CATALOG_FOODS.map((food) => [food.name, food]));
 
-const RECIPES = COMMON_RECIPES.map(({ name, ingredients }) => ({
+const toRecipe = ({ name, ingredients, cookingMethod, mealTypes }) => ({
   id: name,
   name,
+  cookingMethod,
+  availableInCatalog: true,
   ingredients: ingredients.map(({ food }) => ({ food: foodByName.get(food) })),
-}));
+  mealTypes: mealTypes.map((mealType) => ({ mealType })),
+});
+
+// Lo que ve cada cuenta del seed: las comunes, y la primera además sus propias.
+const SECOND_ACCOUNT_RECIPES = COMMON_RECIPES.map(toRecipe);
+const RECIPES = [...COMMON_RECIPES, ...PRIVATE_RECIPES, ...CONTROL_RECIPES].map(toRecipe);
 
 const CATALOG = { foods: CATALOG_FOODS, groups: GROUPS, recipes: RECIPES };
 
@@ -123,5 +133,124 @@ describe('casos clínicos de T41 contra la matriz de reglas (T35)', () => {
     const findings = validatePlan({ plan: PLAN, conditions: conditionsOf('C1'), rules: RULES, catalog: CATALOG });
 
     expect(findings[0].message).toBe('Pan francés: excluido por Celiaquía (MSAL, GPC enfermedad celíaca (2016), pp. 35 y 43)');
+  });
+});
+
+// El filtro real (RF-37, RF-38) con las recetas reales del seed: lo que se le ofrece
+// a la IA en cada caso. Lo que se espera se expresa con los datos de cada caso, sin
+// pasar por el filtro que se prueba.
+describe('candidatas de la generación con el catálogo real del seed', () => {
+  const ACCOUNTS = [
+    ['nutricionista@', RECIPES],
+    ['nutricionista2@', SECOND_ACCOUNT_RECIPES],
+  ];
+  const ALL_MEALS = ['breakfast', 'lunch', 'afternoon_snack', 'dinner'];
+  const MIN_CANDIDATES_PER_MEAL = 5;
+
+  const prohibitedRulesOf = (code) => {
+    const pathologyIds = conditionsOf(code).map(({ pathologyId }) => pathologyId);
+    return RULES.filter(({ pathologyId, severity }) => severity === 'prohibited' && pathologyIds.includes(pathologyId));
+  };
+  const cooksOf = (code) => CLINICAL_CASES.find((clinicalCase) => clinicalCase.code === code).patient.data.cooks;
+
+  const candidatesOf = (code, recipes = RECIPES, cooks = cooksOf(code)) =>
+    allowedCatalog({
+      foods: CATALOG_FOODS,
+      groups: GROUPS,
+      recipes,
+      conditions: conditionsOf(code),
+      prohibitedRules: prohibitedRulesOf(code),
+      mealTypes: ALL_MEALS,
+      cooks,
+    }).recipes;
+  const namesOf = (recipes) => recipes.map(({ name }) => name);
+  const usesFood = ({ ingredients }, predicate) => ingredients.some(({ food }) => predicate(food));
+
+  // Hallazgos de una receta dentro de un plan, en el caso dado.
+  const recipeFindings = (code, name) =>
+    validatePlan({
+      plan: {
+        id: 'plan-candidatas',
+        meals: [{ mealType: 'lunch', options: [{ id: 'o-1', order: 1, items: [{ ...recipeItem(name), order: 1 }] }] }],
+      },
+      conditions: conditionsOf(code),
+      rules: RULES,
+      catalog: CATALOG,
+    }).filter(({ type }) => type !== 'composition').map(({ type, severity }) => [type, severity]);
+
+  describe.each(ACCOUNTS)('cuenta %s', (_account, recipes) => {
+    it('C1 no recibe ninguna receta con un alimento prohibido por celiaquía', () => {
+      const prohibited = new Set(
+        CLINICAL_RULES.filter(({ pathology, severity }) => pathology === 'Celiaquía' && severity === 'prohibited').map(({ food }) => food),
+      );
+      expect(prohibited.size).toBeGreaterThan(0);
+      const offending = candidatesOf('C1', recipes).filter((recipe) => usesFood(recipe, ({ name }) => prohibited.has(name)));
+      expect(namesOf(offending)).toEqual([]);
+    });
+
+    it('C3, que no cocina, recibe solo recetas sin cocción', () => {
+      const candidates = candidatesOf('C3', recipes);
+      expect(candidates.length).toBeGreaterThan(0);
+      expect(namesOf(candidates.filter(({ cookingMethod }) => cookingMethod !== 'no_cooking'))).toEqual([]);
+    });
+
+    it('C4, C5 y C7 no reciben recetas con lo que alcanza su condición', () => {
+      const legumeGroups = new Set(FOOD_GROUPS.filter(({ parent }) => parent === 'Legumbres').map(({ name }) => name));
+
+      expect(namesOf(candidatesOf('C4', recipes).filter((recipe) => usesFood(recipe, ({ foodGroupId }) => foodGroupId === 'Huevos')))).toEqual([]);
+      expect(namesOf(candidatesOf('C5', recipes).filter((recipe) => usesFood(recipe, ({ name }) => name === 'Leche')))).toEqual([]);
+      expect(namesOf(candidatesOf('C7', recipes).filter((recipe) => usesFood(recipe, ({ foodGroupId }) => legumeGroups.has(foodGroupId))))).toEqual([]);
+    });
+
+    it.each(CLINICAL_CASES.map(({ code }) => code))('%s conserva opciones en cada comida, dentro del tope del contrato', (code) => {
+      const candidates = candidatesOf(code, recipes);
+      expect(candidates.length).toBeLessThanOrEqual(CONTRACT_LIMITS.recipes);
+      for (const mealType of ALL_MEALS) {
+        const forMeal = candidates.filter(({ mealTypes }) => mealTypes.includes(mealType));
+        expect(forMeal.length, mealType).toBeGreaterThanOrEqual(MIN_CANDIDATES_PER_MEAL);
+      }
+    });
+
+    it.each(CLINICAL_CASES.map(({ code }) => code))('%s: el selector manual ofrece lo mismo que la generación si el paciente cocina', (code) => {
+      const fromSelector = excludeRecipesForConditions(recipes, conditionsOf(code), GROUPS, prohibitedRulesOf(code));
+      expect(namesOf(fromSelector)).toEqual(namesOf(candidatesOf(code, recipes, true)));
+    });
+  });
+
+  it('la cuenta 2 no ve ninguna receta propia de la cuenta 1', () => {
+    const second = new Set(namesOf(SECOND_ACCOUNT_RECIPES));
+    expect([...PRIVATE_RECIPES, ...CONTROL_RECIPES].filter(({ name }) => second.has(name))).toEqual([]);
+  });
+
+  describe('recetas de control', () => {
+    it('la prohibitiva se excluye para hipertensión aunque el paciente cocine, y se ofrece sin esa patología', () => {
+      const name = 'Arroz con pollo al caldo';
+      expect(namesOf(candidatesOf('C3', RECIPES, true))).not.toContain(name);
+      expect(namesOf(candidatesOf('C6'))).toContain(name);
+      expect(recipeFindings('C3', name)).toEqual([['pathology_rule', 'blocking']]);
+    });
+
+    it.each([
+      ['C2', 'Tostadas con mermelada y queso untable'],
+      ['C2', 'Merienda casera de pan con leche'],
+      ['C3', 'Sándwich de jamón cocido y tomate'],
+      ['C3', 'Ensalada de lentejas y tomate con pan'],
+    ])('%s: "%s" se sigue ofreciendo y advierte al guardar', (code, name) => {
+      expect(namesOf(candidatesOf(code))).toContain(name);
+      expect(recipeFindings(code, name)).toEqual([['pathology_rule', 'warning']]);
+    });
+
+    it('sin la patología, las de control no generan hallazgos de regla', () => {
+      for (const { name } of CONTROL_RECIPES) expect(recipeFindings('C6', name), name).toEqual([]);
+    });
+  });
+
+  it('una receta con avena sin TACC se ofrece en celiaquía y advierte al guardar (DA-36)', () => {
+    const withOats = RECIPES.filter((recipe) => usesFood(recipe, ({ name }) => name === 'Avena sin TACC'));
+    expect(withOats.length).toBeGreaterThan(0);
+    for (const { name } of withOats) {
+      expect(namesOf(candidatesOf('C1')), name).toContain(name);
+      expect(recipeFindings('C1', name), name).toEqual([['pathology_rule', 'warning']]);
+    }
   });
 });

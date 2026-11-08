@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const { FOOD_GROUPS, FOODS, PATHOLOGIES, RECOMMENDATIONS, RECOMMENDATION_TEXT } = require('./seed-data/catalogs');
 const { COMMON_RECIPES } = require('./seed-data/recipes');
+const { PRIVATE_RECIPES, CONTROL_RECIPES } = require('./seed-data/private-recipes');
 const { CLINICAL_CASES } = require('./seed-data/clinical-cases');
 const { CLINICAL_RULES } = require('./seed-data/clinical-rules');
 // El mismo cliente que usa el servicio de recetas, para no abrir dos conexiones.
@@ -58,6 +59,10 @@ const SEED_DATA = [
         ],
         mealTypes: ['lunch', 'dinner'],
       },
+      // Solo las ve esta cuenta: permiten verificar que nutricionista2@nutria.com no
+      // las recibe, ni en el selector ni en la generación (RNF-05).
+      ...PRIVATE_RECIPES,
+      ...CONTROL_RECIPES,
     ],
     patients: [
       {

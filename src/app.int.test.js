@@ -133,6 +133,51 @@ it('las recetas comunes siguen visibles y las privadas quedan limitadas a su due
   expect(await snapshotDatabase()).toEqual(before);
 });
 
+describe('Selector de recetas de un plan — API real + Postgres', () => {
+  it('con patientId excluye lo alcanzado por una regla prohibitiva y conserva lo que solo se modera', async () => {
+    const prohibited = await prisma.food.create({ data: { name: 'Alimento prohibido ficticio', foodGroupId: catalog.group.id } });
+    const moderated = await prisma.food.create({ data: { name: 'Alimento a moderar ficticio', foodGroupId: catalog.group.id } });
+    await recipes.upsertCommon({ name: 'Común con prohibido' }, [{ foodId: prohibited.id }], ['lunch']);
+    await recipes.upsertCommon({ name: 'Común a moderar' }, [{ foodId: moderated.id }], ['lunch']);
+    await prisma.patientCondition.create({ data: { patientId: other.patient.id, type: 'pathology', pathologyId: catalog.pathology.id } });
+    await prisma.clinicalRule.createMany({
+      data: [
+        { pathologyId: catalog.pathology.id, foodId: prohibited.id, severity: 'prohibited', source: 'Fuente ficticia, p. 1' },
+        { pathologyId: catalog.pathology.id, foodId: moderated.id, severity: 'moderate', source: 'Fuente ficticia, p. 2' },
+      ],
+    });
+    const names = ({ body }) => body.map(({ name }) => name);
+    const before = await snapshotDatabase();
+
+    const selector = await request(`/recipes?patientId=${other.patient.id}`, other.nutritionist);
+    expect(selector.status).toBe(200);
+    expect(names(selector)).toEqual(['Común a moderar']);
+    // Sin paciente, el catálogo no se recorta; y la regla solo vale para quien tiene la patología.
+    expect(names(await request('/recipes', other.nutritionist)).sort()).toEqual(['Común a moderar', 'Común con prohibido']);
+    expect(names(await request(`/recipes?patientId=${owner.patient.id}`))).toContain('Común con prohibido');
+    // Un paciente ajeno da 404, tenga o no reglas que aplicarle.
+    expect((await request(`/recipes?patientId=${other.patient.id}`, owner.nutritionist)).status).toBe(404);
+    expect(await snapshotDatabase()).toEqual(before);
+  });
+
+  it('nunca ofrece la receta privada de otro nutricionista', async () => {
+    const selector = await request(`/recipes?patientId=${other.patient.id}`, other.nutritionist);
+    expect(selector.status).toBe(200);
+    expect(selector.body.map(({ id }) => id)).not.toContain(records.recipe.id);
+  });
+
+  it('un plan no puede guardar la receta privada de otro nutricionista', async () => {
+    const draft = await prisma.plan.create({ data: { patientId: other.patient.id, nutritionistId: other.nutritionist.id, introduction: 'Borrador ficticio' } });
+    const before = await snapshotDatabase();
+    const updated = await request(`/patients/${other.patient.id}/plans/${draft.id}`, other.nutritionist, 'PUT', {
+      introduction: 'Cambio ficticio',
+      meals: [{ mealType: 'lunch', options: [{ items: [{ type: 'recipe', recipeId: records.recipe.id }] }] }],
+    });
+    expect(updated.status).toBe(400);
+    expect(await snapshotDatabase()).toEqual(before);
+  });
+});
+
 describe('PATCH de disponibilidad de recetas — API real + Postgres (AUD-008)', () => {
   it('una baja desde un listado desactualizado preserva la edición y todos los hijos actuales', async () => {
     const path = `/recipes/${records.recipe.id}`;

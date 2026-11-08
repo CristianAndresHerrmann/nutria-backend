@@ -97,7 +97,6 @@ describe('buildGenerationContext — contexto anonimizado (RNF-07)', () => {
       PATIENT.phone,
       PATIENT.email,
       PATIENT.livesWith,
-      PATIENT.goal,
       PATIENT.referenceWeight,
       PATIENT.medicalHistory,
       PATIENT.medication,
@@ -122,7 +121,7 @@ describe('buildGenerationContext — contexto anonimizado (RNF-07)', () => {
     const { context } = build();
 
     expect(Object.keys(context).sort()).toEqual(
-      ['meal_types', 'conditions', 'cooking', 'outside_home', 'work', 'habits', 'catalog', 'candidate_recipes'].sort(),
+      ['meal_types', 'goal', 'conditions', 'cooking', 'outside_home', 'work', 'habits', 'catalog', 'candidate_recipes'].sort(),
     );
     expect(Object.keys(context.cooking).sort()).toEqual(
       ['cooks', 'likes_cooking', 'cooking_time', 'home_equipment', 'usual_shopping_place'].sort(),
@@ -169,6 +168,19 @@ describe('buildGenerationContext — contexto anonimizado (RNF-07)', () => {
 
     expect(context.work.work_context).toBe('Desayuna banana a las 7, almuerza 13 h; turno de 8 a 16');
     expect(context.habits.meal_schedule).toBe('Toma solcito por la mañana');
+  });
+
+  it('el objetivo viaja como texto filtrado, y se omite si está vacío o ausente', () => {
+    const withGoal = (goal) =>
+      buildGenerationContext({ patient: { ...PATIENT, goal }, conditions: [], catalog: CATALOG, mealTypes: MEAL_TYPES }).context;
+
+    expect(build().context.goal).toBe('ObjetivoFicticioPersonal');
+    expect(withGoal('Bajar de peso; avisar a NombreFicticioZeta al +54 342 555-9876').goal).toBe(
+      'Bajar de peso; avisar a [dato omitido] al [dato omitido]',
+    );
+    expect(withGoal('x'.repeat(CONTEXT_TEXT_MAX_LENGTH + 50)).goal).toHaveLength(CONTEXT_TEXT_MAX_LENGTH);
+    expect(withGoal('   ')).not.toHaveProperty('goal');
+    expect(withGoal(null)).not.toHaveProperty('goal');
   });
 
   it('las condiciones viajan con tipo y nombre de lo que referencian, sin observaciones', () => {

@@ -81,7 +81,7 @@ function createFakeRecipeRepository() {
   };
 }
 
-function buildService({ conditions = [] } = {}) {
+function buildService({ conditions = [], rules = [] } = {}) {
   const recipeRepository = createFakeRecipeRepository();
   const foodRepository = {
     async findVisibleById(id, nutritionistId) {
@@ -101,14 +101,19 @@ function buildService({ conditions = [] } = {}) {
     findAllForPatient: vi.fn(async () => conditions),
   };
 
+  const clinicalRuleRepository = {
+    findActiveForPathologies: vi.fn(async () => rules),
+  };
+
   const service = createRecipeService({
     recipeRepository,
     foodRepository,
     foodGroupRepository,
     patientRepository,
     patientConditionRepository,
+    clinicalRuleRepository,
   });
-  return { service, recipeRepository, patientConditionRepository };
+  return { service, recipeRepository, patientConditionRepository, clinicalRuleRepository };
 }
 
 const ensalada = {
@@ -359,6 +364,51 @@ describe('recipe.service — filtro por condiciones del paciente (RF-28)', () =>
     });
     await expect(service.list('nutri-1', { patientId: 'no-existe' })).rejects.toMatchObject({ status: 404 });
     expect(patientConditionRepository.findAllForPatient).not.toHaveBeenCalled();
+  });
+
+  describe('reglas de las patologías del paciente', () => {
+    const CELIAC = [{ type: 'pathology', pathologyId: 'celiaquia', foodId: null, foodGroupId: null }];
+
+    it('una regla prohibitiva excluye las recetas alcanzadas, por alimento o por grupo', async () => {
+      const byFood = buildService({
+        conditions: CELIAC,
+        rules: [{ id: 'r-1', pathologyId: 'celiaquia', foodId: 'atun', foodGroupId: null, severity: 'prohibited' }],
+      });
+      await seed(byFood.service);
+      expect(names(await byFood.service.list('nutri-1', { patientId: 'paciente-1' }))).toEqual(['Arroz con verduras']);
+      expect(byFood.clinicalRuleRepository.findActiveForPathologies).toHaveBeenCalledWith(['celiaquia']);
+
+      const byGroup = buildService({
+        conditions: CELIAC,
+        rules: [{ id: 'r-2', pathologyId: 'celiaquia', foodId: null, foodGroupId: 'carnes', severity: 'prohibited' }],
+      });
+      await seed(byGroup.service);
+      expect(names(await byGroup.service.list('nutri-1', { patientId: 'paciente-1' }))).toEqual(['Arroz con verduras']);
+    });
+
+    it('una regla a moderar no excluye: el motor la advierte al guardar (DA-36)', async () => {
+      const { service } = buildService({
+        conditions: CELIAC,
+        rules: [{ id: 'r-1', pathologyId: 'celiaquia', foodId: 'atun', foodGroupId: null, severity: 'moderate' }],
+      });
+      await seed(service);
+
+      expect(await service.list('nutri-1', { patientId: 'paciente-1' })).toHaveLength(2);
+    });
+
+    it('sin patologías no hay reglas que excluyan, y sin patientId no se consultan', async () => {
+      const withPatient = buildService();
+      await seed(withPatient.service);
+      expect(await withPatient.service.list('nutri-1', { patientId: 'paciente-1' })).toHaveLength(2);
+      expect(withPatient.clinicalRuleRepository.findActiveForPathologies).toHaveBeenCalledWith([]);
+
+      const withoutPatient = buildService({
+        rules: [{ id: 'r-1', pathologyId: 'celiaquia', foodId: 'atun', foodGroupId: null, severity: 'prohibited' }],
+      });
+      await seed(withoutPatient.service);
+      expect(await withoutPatient.service.list('nutri-1')).toHaveLength(2);
+      expect(withoutPatient.clinicalRuleRepository.findActiveForPathologies).not.toHaveBeenCalled();
+    });
   });
 });
 
