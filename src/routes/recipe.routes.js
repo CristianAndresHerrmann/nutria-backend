@@ -27,7 +27,8 @@ const byId = { notFoundOnInvalidParams: RECIPE_NOT_FOUND_MESSAGE };
  *       solo las disponibles en el catálogo. Con `patientId`, deja afuera las recetas con algún
  *       ingrediente comprendido en una alergia, intolerancia o rechazo del paciente, sea por el
  *       alimento o por su grupo, incluidos los subgrupos (RF-28), o en una regla prohibitiva de
- *       sus patologías. Las preferencias y las reglas a moderar no excluyen recetas. Los filtros se
+ *       sus patologías, y las que tienen algún ingrediente dado de baja. Las preferencias y las
+ *       reglas a moderar no excluyen recetas. Los filtros se
  *       aplican igual a las comunes y a las propias.
  *     security:
  *       - bearerAuth: []

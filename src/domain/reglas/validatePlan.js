@@ -5,6 +5,8 @@ const { directConditionFindings } = require('./directCondition');
 const { itemCategories } = require('./itemCategories');
 const { missingCategories } = require('./mealComposition');
 const { pathologyRuleFindings, pathologyRuleScopes } = require('./pathologyRule');
+const { MEAL_LABELS, joinLabels } = require('./mealLabels');
+const { recipeMealTypeFinding } = require('./recipeMealType');
 
 // Motor de reglas determinístico (T34, T35). Función pura: (plan, condiciones
 // del paciente, reglas de sus patologías, catálogo) → hallazgos. Corre igual en cada guardado y los
@@ -20,13 +22,6 @@ const { pathologyRuleFindings, pathologyRuleScopes } = require('./pathologyRule'
 
 const MEAL_ORDER = Object.values(MealType);
 
-const MEAL_LABELS = {
-  breakfast: 'del desayuno',
-  lunch: 'del almuerzo',
-  afternoon_snack: 'de la merienda',
-  dinner: 'de la cena',
-};
-
 const CATEGORY_LABELS = {
   protein: 'proteína',
   carbohydrate: 'hidrato',
@@ -38,11 +33,6 @@ const CATEGORY_LABELS = {
 };
 
 const byOrder = (a, b) => a.order - b.order;
-
-function joinLabels(labels) {
-  if (labels.length <= 1) return labels.join('');
-  return `${labels.slice(0, -1).join(', ')} y ${labels[labels.length - 1]}`;
-}
 
 // DA-30: no se puede validar hasta que se reemplace por un alimento, un grupo o
 // una receta del catálogo (RF-43 opera sobre datos estructurados).
@@ -91,6 +81,8 @@ function validatePlan({ plan, conditions, rules, catalog }) {
         if (item.type === OptionItemType.unrecognized) findings.push(unrecognizedItemFinding(item));
         findings.push(...directConditionFindings(item, scopes, catalogIndex));
         findings.push(...pathologyRuleFindings(item, ruleScopes, catalogIndex));
+        const mealTypeMismatch = recipeMealTypeFinding(item, meal.mealType, catalogIndex);
+        if (mealTypeMismatch) findings.push(mealTypeMismatch);
       }
 
       const composition = compositionFinding(meal.mealType, option, index + 1, items, catalogIndex);
@@ -109,4 +101,4 @@ function validationResult(findings) {
   return AiValidationResult.no_findings;
 }
 
-module.exports = { validatePlan, validationResult, MEAL_LABELS };
+module.exports = { validatePlan, validationResult };

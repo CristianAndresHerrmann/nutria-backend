@@ -137,12 +137,15 @@ function buildGenerationContext({ patient, conditions, catalog, mealTypes }) {
     }),
     catalog: {
       food_groups: groups.map(([code, group]) => ({ code, name: clip(group.name, NAME_MAX_LENGTH) })),
-      foods: foods.map(([code, food]) => ({
-        code,
-        name: clip(food.name, NAME_MAX_LENGTH),
-        group_code: groupCodeById.get(food.foodGroupId),
-        categories: categoriesOf(food),
-      })),
+      // Un alimento cuyo grupo no se ofrece (DA-40) viaja sin group_code.
+      foods: foods.map(([code, food]) =>
+        compact({
+          code,
+          name: clip(food.name, NAME_MAX_LENGTH),
+          group_code: groupCodeById.get(food.foodGroupId),
+          categories: categoriesOf(food),
+        }),
+      ),
     },
     candidate_recipes: recipes.map(([code, recipe]) =>
       compact({

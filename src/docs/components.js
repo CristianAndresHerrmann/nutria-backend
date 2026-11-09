@@ -535,13 +535,14 @@ const schemas = {
     description:
       'Hallazgo del motor de reglas (RF-43, RF-44). Se recalculan en cada guardado y al abrir el ' +
       'borrador (RF-46): no se marcan como resueltos, dejan de existir cuando se corrige lo que los produjo. ' +
-      'Los de ítem traen `optionItemId`; el de composición, `optionId`.',
+      'Los de ítem traen `optionItemId`; el de composición, `optionId`. `meal_type_mismatch` advierte una ' +
+      'receta en una comida que no está entre sus tipos de comida (R-06).',
     properties: {
       id: { type: 'string', format: 'uuid' },
       planId: { type: 'string', format: 'uuid' },
       optionId: { type: 'string', format: 'uuid', nullable: true },
       optionItemId: { type: 'string', format: 'uuid', nullable: true },
-      type: { type: 'string', enum: ['direct_condition', 'pathology_rule', 'composition', 'unrecognized_item'] },
+      type: { type: 'string', enum: ['direct_condition', 'pathology_rule', 'composition', 'unrecognized_item', 'meal_type_mismatch'] },
       severity: { type: 'string', enum: ['blocking', 'warning'] },
       clinicalRuleId: { type: 'string', format: 'uuid', nullable: true },
       patientConditionId: { type: 'string', format: 'uuid', nullable: true },
@@ -1103,6 +1104,24 @@ const responses = {
       'application/json': {
         schema: { $ref: '#/components/schemas/Error' },
         example: errorExample('IA_UNAVAILABLE', 'El servicio de IA no está disponible', { reason: 'provider_timeout' }),
+      },
+    },
+  },
+
+  GenerationCatalogTooLarge: {
+    description:
+      'El catálogo permitido para el paciente supera un tope del contrato del servicio de IA (DA-40): ' +
+      'no se llama a la IA ni se crea ningún plan. `kind`: `recipes` (200 recetas candidatas), `foods` ' +
+      '(2000 alimentos) o `groups` (500 grupos). Se resuelve pidiendo menos comidas o dando de baja ' +
+      'recetas o alimentos propios.',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/Error' },
+        example: errorExample(
+          'GENERATION_CATALOG_TOO_LARGE',
+          'Hay 214 recetas candidatas para este paciente y la generación admite hasta 200. Generá menos comidas a la vez o da de baja recetas propias que no uses.',
+          { kind: 'recipes', count: 214, limit: 200 },
+        ),
       },
     },
   },

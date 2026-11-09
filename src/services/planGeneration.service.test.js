@@ -77,14 +77,14 @@ function controlledError(reason, generation = GENERATION) {
   return error;
 }
 
-function setup({ conditions = [], rules = [], postJson, recordFailedGeneration } = {}) {
+function setup({ conditions = [], rules = [], recipes = [], postJson, recordFailedGeneration } = {}) {
   const clinicalRuleRepository = { findActiveForPathologies: vi.fn(async () => rules) };
   const validation = createPlanValidationService({
     planRepository: {},
     patientConditionRepository: { findAllForPatient: async () => conditions },
     foodRepository: { findAllVisible: async () => FOODS },
     foodGroupRepository: { findAll: async () => GROUPS },
-    recipeRepository: { findVisible: async () => [] },
+    recipeRepository: { findVisible: async () => recipes },
     clinicalRuleRepository,
   });
   const planRepository = {
@@ -200,6 +200,28 @@ describe('planGeneration.service.generate — de punta a punta con el proveedor 
     const { service, planRepository, iaClient } = setup();
 
     await expect(service.generate('p-1', 'nutri-2', LUNCH_ONLY)).rejects.toMatchObject({ status: 404 });
+    expect(iaClient.postJson).not.toHaveBeenCalled();
+    expect(planRepository.createGenerated).not.toHaveBeenCalled();
+    expect(planRepository.recordFailedGeneration).not.toHaveBeenCalled();
+  });
+
+  it('con más recetas candidatas que el tope del contrato responde 422 con código propio, sin llamar a la IA ni dejar traza', async () => {
+    const recipes = Array.from({ length: 201 }, (_, index) => ({
+      id: `r-${index}`,
+      name: `Receta ${index}`,
+      availableInCatalog: true,
+      cookingMethod: 'stovetop',
+      mealTypes: [{ mealType: 'lunch' }],
+      ingredients: [{ food: { id: 'pollo', name: 'Pollo', foodGroupId: 'carnes', active: true } }],
+    }));
+    const { service, planRepository, iaClient } = setup({ recipes });
+
+    await expect(service.generate('p-1', 'nutri-1', LUNCH_ONLY)).rejects.toMatchObject({
+      status: 422,
+      code: 'GENERATION_CATALOG_TOO_LARGE',
+      message: expect.stringContaining('201 recetas candidatas'),
+      details: { kind: 'recipes', count: 201, limit: 200 },
+    });
     expect(iaClient.postJson).not.toHaveBeenCalled();
     expect(planRepository.createGenerated).not.toHaveBeenCalled();
     expect(planRepository.recordFailedGeneration).not.toHaveBeenCalled();
