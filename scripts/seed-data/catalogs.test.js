@@ -98,11 +98,6 @@ describe('datos del seed — catálogo de alimentos', () => {
       ).map(({ name }) => name);
       expect(withoutCarbohydrate).toEqual([]);
     });
-
-    it('ajo y queso rallado no aportan a la composición: se usan como condimento', () => {
-      const seasonings = FOODS.filter(({ name }) => ['Ajo', 'Queso rallado'].includes(name));
-      expect(seasonings.map(({ categories }) => categories)).toEqual([['complementary'], ['complementary']]);
-    });
   });
 
   it('conserva los nombres que el seed referencia por nombre (condiciones y recetas)', () => {

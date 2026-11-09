@@ -138,6 +138,34 @@ describe('casos clínicos de T41 contra la matriz de reglas (T35)', () => {
   });
 });
 
+// Un ítem de grupo aporta solo las categorías que comparten todos sus alimentos
+// (DA-30): un alimento con otra categoría en el grupo se la quita al grupo entero.
+// Por eso se controla con las categorías reales del seed (DA-42).
+describe('composición con las categorías reales del seed (DA-30, DA-42)', () => {
+  const compositionOf = (mealType, items) =>
+    validatePlan({
+      plan: { id: 'plan-composicion', meals: [{ mealType, options: [{ id: 'o-1', order: 1, items: items.map((item, index) => ({ ...item, order: index + 1 })) }] }] },
+      conditions: [],
+      rules: [],
+      catalog: CATALOG,
+    }).map(({ type, message }) => [type, message]);
+
+  it.each([
+    ['un lácteo y pan francés', 'breakfast', [groupItem('Lácteos'), foodItem('Pan francés')]],
+    ['un queso y galletitas', 'breakfast', [groupItem('Quesos'), groupItem('Galletitas y cereales de desayuno')]],
+    ['un bulbo, una carne y arroz', 'lunch', [groupItem('Bulbos, raíces y tallos'), groupItem('Carnes'), foodItem('Arroz blanco')]],
+    ['una verdura de hoja y una legumbre', 'lunch', [groupItem('Verduras de hoja'), groupItem('Legumbres secas y en conserva')]],
+  ])('%s completan la opción', (_label, mealType, items) => {
+    expect(compositionOf(mealType, items)).toEqual([]);
+  });
+
+  it('la fruta no completa el hidrato del desayuno', () => {
+    expect(compositionOf('breakfast', [foodItem('Leche'), foodItem('Banana')])).toEqual([
+      ['composition', 'Opción 1 del desayuno: falta hidrato'],
+    ]);
+  });
+});
+
 // El filtro real (RF-37, RF-38) con las recetas reales del seed: lo que se le ofrece
 // a la IA en cada caso. Lo que se espera se expresa con los datos de cada caso, sin
 // pasar por el filtro que se prueba.
