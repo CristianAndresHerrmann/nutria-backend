@@ -50,4 +50,27 @@ function excludeRecipesForConditions(recipes, conditions, groups, prohibitedRule
   );
 }
 
-module.exports = { excludeRecipesForConditions, conditionScopes, ruleScopes, scopeCoversFood, RESTRICTIVE_CONDITION_TYPES };
+// true si todos los ingredientes de la receta están vigentes. Una receta con un
+// ingrediente dado de baja no se ofrece para un paciente (T54, DA-40): ese
+// alimento ya no viaja a la IA y el profesional tiene que corregir la receta.
+function allIngredientsActive(recipe) {
+  return recipe.ingredients.every(({ food }) => food.active);
+}
+
+// Recetas que se le ofrecen al profesional para un paciente (selector del editor,
+// RF-28): con todos los ingredientes vigentes y sin ninguno comprendido en una
+// condición o en una de las reglas que excluyen. Mismo criterio que la generación
+// (allowedCatalog), salvo el filtro por cocción.
+function recipesForPatient(recipes, conditions, groups, prohibitedRules = []) {
+  return excludeRecipesForConditions(recipes.filter(allIngredientsActive), conditions, groups, prohibitedRules);
+}
+
+module.exports = {
+  excludeRecipesForConditions,
+  recipesForPatient,
+  allIngredientsActive,
+  conditionScopes,
+  ruleScopes,
+  scopeCoversFood,
+  RESTRICTIVE_CONDITION_TYPES,
+};

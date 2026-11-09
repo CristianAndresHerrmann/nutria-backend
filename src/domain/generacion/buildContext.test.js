@@ -223,6 +223,18 @@ describe('buildGenerationContext — contexto anonimizado (RNF-07)', () => {
     expect(context.meal_types).toEqual(MEAL_TYPES);
   });
 
+  it('un alimento cuyo grupo no se ofrece viaja sin group_code (DA-40)', () => {
+    const catalog = { ...CATALOG, groups: CATALOG.groups.filter(({ id }) => id !== 'grp-uuid-carnes') };
+
+    const { context } = buildGenerationContext({ patient: PATIENT, conditions: [], catalog, mealTypes: MEAL_TYPES });
+
+    expect(context.catalog.food_groups).toEqual([{ code: 'G1', name: 'Verduras' }]);
+    expect(context.catalog.foods).toEqual([
+      { code: 'A1', name: 'Pollo', categories: ['protein'] },
+      { code: 'A2', name: 'Zanahoria', group_code: 'G1', categories: ['vegetable', 'fiber'] },
+    ]);
+  });
+
   it('devuelve la traducción de cada código a su entidad, que no viaja', () => {
     const { codes } = build();
 

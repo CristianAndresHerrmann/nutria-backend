@@ -7,13 +7,31 @@ const patientRepository = require('../repositories/patient.repository');
 const planValidationService = require('./planValidation.service');
 const AppError = require('../utils/AppError');
 const { PATIENT_NOT_FOUND_MESSAGE } = require('./patient.service');
-const { allowedCatalog } = require('../domain/generacion/allowedCatalog');
+const { allowedCatalog, exceededLimit } = require('../domain/generacion/allowedCatalog');
 const { buildGenerationContext } = require('../domain/generacion/buildContext');
 const { resolveProposal, proposalMatchesMealTypes } = require('../domain/generacion/resolveProposal');
 const { validationResult } = require('../domain/reglas/validatePlan');
 const { planProposalResponseSchema, generationInfoSchema } = require('../schemas/iaProposal.schema');
 
 const PLAN_PROPOSALS_PATH = '/plan-proposals';
+
+const LIMIT_LABELS = { recipes: 'recetas candidatas', foods: 'alimentos permitidos', groups: 'grupos permitidos' };
+const LIMIT_HINTS = {
+  recipes: 'Generá menos comidas a la vez o da de baja recetas propias que no uses.',
+  foods: 'Da de baja alimentos propios que no uses.',
+  groups: 'Revisá el catálogo de grupos.',
+};
+
+// Un catálogo permitido más grande que el contrato de nutria-ia no se envía: el
+// servicio respondería 422 y terminaría en un 500 (DA-40). No hubo llamada al
+// proveedor, así que no queda traza.
+function catalogTooLarge({ kind, count, limit }) {
+  return new AppError(
+    422,
+    `Hay ${count} ${LIMIT_LABELS[kind]} para este paciente y la generación admite hasta ${limit}. ${LIMIT_HINTS[kind]}`,
+    { code: 'GENERATION_CATALOG_TOO_LARGE', details: { kind, count, limit } },
+  );
+}
 
 // Cómo terminó la llamada al proveedor, según el reason del error controlado.
 // Las fallas sin datos del proveedor (servicio caído, timeout del backend) no
@@ -119,6 +137,9 @@ function createPlanGenerationService({
         mealTypes,
         cooks: patient.cooks,
       });
+      const exceeded = exceededLimit(allowed);
+      if (exceeded) throw catalogTooLarge(exceeded);
+
       const { context, codes } = buildGenerationContext({
         patient,
         conditions: inputs.conditions,

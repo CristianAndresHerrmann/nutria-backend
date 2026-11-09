@@ -1,6 +1,8 @@
 const { validatePlan } = require('../../src/domain/reglas/validatePlan');
 const { allowedCatalog, CONTRACT_LIMITS } = require('../../src/domain/generacion/allowedCatalog');
-const { excludeRecipesForConditions } = require('../../src/utils/recipeConditionFilter');
+const { recipesForPatient } = require('../../src/utils/recipeConditionFilter');
+const { descendantIds } = require('../../src/utils/foodGroupTree');
+const { buildGenerationContext } = require('../../src/domain/generacion/buildContext');
 const { FOOD_GROUPS, FOODS } = require('./catalogs');
 const { CLINICAL_CASES } = require('./clinical-cases');
 const { CLINICAL_RULES } = require('./clinical-rules');
@@ -153,7 +155,7 @@ describe('candidatas de la generación con el catálogo real del seed', () => {
   };
   const cooksOf = (code) => CLINICAL_CASES.find((clinicalCase) => clinicalCase.code === code).patient.data.cooks;
 
-  const candidatesOf = (code, recipes = RECIPES, cooks = cooksOf(code)) =>
+  const allowedOf = (code, recipes = RECIPES, cooks = cooksOf(code)) =>
     allowedCatalog({
       foods: CATALOG_FOODS,
       groups: GROUPS,
@@ -162,16 +164,23 @@ describe('candidatas de la generación con el catálogo real del seed', () => {
       prohibitedRules: prohibitedRulesOf(code),
       mealTypes: ALL_MEALS,
       cooks,
-    }).recipes;
+    });
+  const candidatesOf = (code, recipes, cooks) => allowedOf(code, recipes, cooks).recipes;
   const namesOf = (recipes) => recipes.map(({ name }) => name);
   const usesFood = ({ ingredients }, predicate) => ingredients.some(({ food }) => predicate(food));
 
-  // Hallazgos de una receta dentro de un plan, en el caso dado.
+  // Hallazgos de una receta dentro de un plan, en el caso dado, en la primera de
+  // sus comidas (así no aparece R-06).
   const recipeFindings = (code, name) =>
     validatePlan({
       plan: {
         id: 'plan-candidatas',
-        meals: [{ mealType: 'lunch', options: [{ id: 'o-1', order: 1, items: [{ ...recipeItem(name), order: 1 }] }] }],
+        meals: [
+          {
+            mealType: RECIPES.find((recipe) => recipe.name === name).mealTypes[0].mealType,
+            options: [{ id: 'o-1', order: 1, items: [{ ...recipeItem(name), order: 1 }] }],
+          },
+        ],
       },
       conditions: conditionsOf(code),
       rules: RULES,
@@ -212,8 +221,45 @@ describe('candidatas de la generación con el catálogo real del seed', () => {
     });
 
     it.each(CLINICAL_CASES.map(({ code }) => code))('%s: el selector manual ofrece lo mismo que la generación si el paciente cocina', (code) => {
-      const fromSelector = excludeRecipesForConditions(recipes, conditionsOf(code), GROUPS, prohibitedRulesOf(code));
+      const fromSelector = recipesForPatient(recipes, conditionsOf(code), GROUPS, prohibitedRulesOf(code));
       expect(namesOf(fromSelector)).toEqual(namesOf(candidatesOf(code, recipes, true)));
+    });
+  });
+
+  // DA-30: un ítem de grupo amplio ("un cereal") no avisa por celiaquía, porque las
+  // reglas son por alimento. Desde T54 (DA-40) ese grupo no se le ofrece a la IA.
+  describe('C1: grupos amplios en celiaquía (T54)', () => {
+    const prohibitedForCeliac = new Set(prohibitedRulesOf('C1').map(({ foodId }) => foodId));
+    const groupsWithProhibited = new Set(
+      CATALOG_FOODS.filter(({ id }) => prohibitedForCeliac.has(id)).map(({ foodGroupId }) => foodGroupId),
+    );
+
+    it('ningún grupo ofrecido tiene en su subárbol un alimento prohibido por celiaquía', () => {
+      const offered = allowedOf('C1').groups;
+
+      expect(offered.length).toBeGreaterThan(0);
+      const offending = offered.filter(({ id }) => descendantIds(GROUPS, id).some((groupId) => groupsWithProhibited.has(groupId)));
+      expect(offending.map(({ name }) => name)).toEqual([]);
+      expect(offered.map(({ name }) => name)).not.toContain('Cereales y derivados');
+    });
+
+    it('los alimentos aptos de esos grupos se siguen ofreciendo, sin grupo en el contexto', () => {
+      const allowed = allowedOf('C1');
+      const { context } = buildGenerationContext({
+        patient: { cooks: true },
+        conditions: [],
+        catalog: allowed,
+        mealTypes: ALL_MEALS,
+      });
+
+      const arroz = context.catalog.foods.find(({ name }) => name === 'Arroz blanco');
+      expect(arroz).toBeDefined();
+      expect(arroz).not.toHaveProperty('group_code');
+      expect(context.catalog.food_groups.map(({ name }) => name)).not.toContain('Cereales y derivados');
+    });
+
+    it('sin celiaquía, "Cereales y derivados" se ofrece', () => {
+      expect(allowedOf('C6').groups.map(({ name }) => name)).toContain('Cereales y derivados');
     });
   });
 

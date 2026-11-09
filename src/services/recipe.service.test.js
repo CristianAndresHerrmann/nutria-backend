@@ -347,6 +347,16 @@ describe('recipe.service — filtro por condiciones del paciente (RF-28)', () =>
     expect(await service.list('nutri-1', { patientId: 'paciente-1' })).toHaveLength(2);
   });
 
+  it('no ofrece una receta con un ingrediente dado de baja, aunque el paciente no tenga condiciones; sin patientId se sigue listando', async () => {
+    const { service, recipeRepository } = buildService();
+    await seed(service);
+    // Simula que el administrador dio de baja el atún después de cargar la receta.
+    recipeRepository.store[0].ingredients[1].food = { id: 'baja', name: 'Queso de baja', active: false, foodGroupId: 'cereales' };
+
+    expect(names(await service.list('nutri-1', { patientId: 'paciente-1' }))).toEqual(['Arroz con verduras']);
+    expect(names(await service.list('nutri-1'))).toEqual([ensalada.name, 'Arroz con verduras']);
+  });
+
   it('combina el filtro con el tipo de comida', async () => {
     const { service } = buildService();
     await seed(service);
