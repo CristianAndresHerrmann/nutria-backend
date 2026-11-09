@@ -34,7 +34,8 @@ router.get('/health', validate({ query: emptyQuerySchema }), healthController.ge
  *     description: >
  *       Endpoint de diagnóstico de la comunicación entre componentes: el backend le
  *       pide su `/health` al servicio de IA por la red interna y devuelve el resultado
- *       junto con la latencia medida. No genera nada ni envía datos. Si el servicio
+ *       junto con la latencia medida, incluidos el proveedor y el modelo configurados.
+ *       No genera nada ni envía datos. Si el servicio
  *       de IA está caído, tarda más que `IA_TIMEOUT_MS` (3 s por defecto) o responde
  *       con error, se responde `503` con `code: IA_UNAVAILABLE` y el motivo en
  *       `details.reason`.

@@ -6,6 +6,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ### Added
 
+- **El CD a staging detecta el proveedor de IA simulado** (T74). `GET /health/ia` reenvía `ia.provider` e `ia.model` (`null` si la IA desplegada no los informa) y `cd-staging.yml` suma el step "Proveedor de IA real", que falla con `fake` o sin informar. No llama al proveedor. Requiere la versión de nutria-ia que los informa: se despliega primero nutria-ia.
 - **Catálogo de recetas ampliado para probar la generación.** El seed carga 77 recetas comunes (suma 60) y 45 privadas nuevas de `nutricionista@nutria.com`: 40 elaboradas y 5 de control, que llevan a propósito un alimento alcanzado por una regla de diabetes o hipertensión. Son datos ficticios con origen V, sin validación profesional.
 - `measure-generation` audita las recetas de cada generación frente a las candidatas de la traza: propias o comunes, de control, fuera de las candidatas o en una comida para la que no se ofrecen.
 - Pruebas del filtro real de la generación con el catálogo real del seed para los casos C1 a C7 y las dos cuentas, y de integración contra Postgres: la generación de una cuenta no recibe las recetas privadas de otra, ni el plan ni la traza las contienen.

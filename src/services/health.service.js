@@ -11,7 +11,9 @@ function createHealthService({ iaClient: client }) {
     },
 
     // Prueba de comunicación backend -> IA. Si el servicio de IA no responde,
-    // el 503 del cliente se propaga tal cual al errorHandler.
+    // el 503 del cliente se propaga tal cual al errorHandler. Reenvía el proveedor y
+    // el modelo configurados para que el smoke test del CD detecte el simulado (T74);
+    // null si la versión desplegada de la IA todavía no los informa.
     async getIaStatus() {
       const startedAt = Date.now();
       const ia = await client.getJson('/health');
@@ -22,6 +24,8 @@ function createHealthService({ iaClient: client }) {
         ia: {
           status: ia.status,
           service: ia.service,
+          provider: ia.provider ?? null,
+          model: ia.model ?? null,
           latencyMs: Date.now() - startedAt,
         },
         timestamp: new Date().toISOString(),
