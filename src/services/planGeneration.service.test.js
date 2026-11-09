@@ -1,6 +1,7 @@
 const { createPlanGenerationService } = require('./planGeneration.service');
 const { createPlanValidationService } = require('./planValidation.service');
 const { iaUnavailable } = require('../clients/ia.client');
+const { PLAN_USAGE_TEXT } = require('../domain/generacion/planTexts');
 
 // Datos ficticios. El motor de reglas y el armado del contexto son los reales:
 // solo los repositorios y el cliente de IA son fakes.
@@ -77,7 +78,7 @@ function controlledError(reason, generation = GENERATION) {
   return error;
 }
 
-function setup({ conditions = [], rules = [], recipes = [], postJson, recordFailedGeneration } = {}) {
+function setup({ conditions = [], rules = [], recipes = [], recommendations = [], postJson, recordFailedGeneration } = {}) {
   const clinicalRuleRepository = { findActiveForPathologies: vi.fn(async () => rules) };
   const validation = createPlanValidationService({
     planRepository: {},
@@ -92,17 +93,23 @@ function setup({ conditions = [], rules = [], recipes = [], postJson, recordFail
     recordFailedGeneration: recordFailedGeneration ?? vi.fn(async () => ({})),
   };
   const iaClient = { postJson: postJson ?? vi.fn(async (path, context) => proposalFor(context)) };
+  const recommendationRepository = {
+    findActiveForPathologies: vi.fn(async (_nutritionistId, pathologyIds) =>
+      recommendations.filter(({ pathologyId }) => pathologyIds.includes(pathologyId)),
+    ),
+  };
   const service = createPlanGenerationService({
     planRepository,
     patientRepository: {
       findByIdForNutritionist: async (id, nutritionistId) =>
         id === PATIENT.id && nutritionistId === PATIENT.nutritionistId ? PATIENT : null,
     },
+    recommendationRepository,
     planValidationService: validation,
     iaClient,
     generationTimeoutMs: 1234,
   });
-  return { service, planRepository, iaClient, clinicalRuleRepository };
+  return { service, planRepository, iaClient, clinicalRuleRepository, recommendationRepository };
 }
 
 const LUNCH_ONLY = { mealTypes: ['lunch'] };
@@ -194,6 +201,43 @@ describe('planGeneration.service.generate — de punta a punta con el proveedor 
     const [, context] = iaClient.postJson.mock.calls[0];
     expect(context.catalog.foods.map(({ name }) => name)).toEqual(['Pollo', 'Zanahoria']);
     expect(plan.findings).toContainEqual(expect.objectContaining({ type: 'pathology_rule', severity: 'warning', clinicalRuleId: 'r-2' }));
+  });
+
+  it('una regla a moderar no saca su alimento, pero sí el grupo que lo contiene (DA-43)', async () => {
+    const pathology = { id: 'c-2', type: 'pathology', pathologyId: 'hta', pathology: { name: 'Hipertensión' } };
+    const rules = [{ id: 'r-2', pathologyId: 'hta', foodId: 'pollo', foodGroupId: null, severity: 'moderate', source: 'Fuente, p. 2' }];
+    const { service, iaClient } = setup({ conditions: [pathology], rules });
+
+    await service.generate('p-1', 'nutri-1', LUNCH_ONLY);
+
+    const [, context] = iaClient.postJson.mock.calls[0];
+    expect(context.catalog.foods.map(({ name }) => name)).toContain('Pollo');
+    expect(context.catalog.food_groups.map(({ name }) => name)).not.toContain('Carnes');
+    expect(context.catalog.food_groups.map(({ name }) => name)).toContain('Verduras');
+  });
+
+  it('copia al plan las recomendaciones clínicas vigentes de las patologías del paciente (DA-43)', async () => {
+    const pathology = { id: 'c-2', type: 'pathology', pathologyId: 'hta', pathology: { name: 'Hipertensión' } };
+    const recommendations = [
+      { id: 'rec-1', pathologyId: 'hta', title: 'Alimentación reducida en sodio', text: 'Cocinar sin sal.' },
+      { id: 'rec-2', pathologyId: 'dm2', title: 'De otra patología', text: 'No corresponde.' },
+    ];
+    const { service, planRepository, recommendationRepository } = setup({ conditions: [pathology], recommendations });
+
+    await service.generate('p-1', 'nutri-1', LUNCH_ONLY);
+
+    expect(recommendationRepository.findActiveForPathologies).toHaveBeenCalledWith('nutri-1', ['hta']);
+    const [, data] = planRepository.createGenerated.mock.calls[0];
+    expect(data.fields.clinicalRecommendations).toBe('Alimentación reducida en sodio\nCocinar sin sal.');
+  });
+
+  it('las recomendaciones generales empiezan con el texto fijo de uso del plan (DA-43)', async () => {
+    const { service, planRepository } = setup();
+
+    await service.generate('p-1', 'nutri-1', LUNCH_ONLY);
+
+    const [, data] = planRepository.createGenerated.mock.calls[0];
+    expect(data.fields.generalRecommendations).toBe(`${PLAN_USAGE_TEXT}\n\nGenerales de ejemplo`);
   });
 
   it('un paciente de otro nutricionista da 404 sin llamar a la IA ni escribir nada', async () => {

@@ -121,6 +121,25 @@ describe('allowedCatalog — catálogo que se ofrece a la IA (RF-37, RF-38)', ()
     expect(ids(allowed.foods)).toContain('arroz');
   });
 
+  it('una regla a moderar saca los grupos que contienen su alimento, pero no el alimento ni sus recetas (DA-43)', () => {
+    const moderatedRules = [{ id: 'r-1', pathologyId: 'hipertension', foodId: 'merluza', foodGroupId: null }];
+
+    const allowed = run({ moderatedRules });
+
+    expect(ids(allowed.groups)).toEqual(['frutas', 'cereales', 'con-tacc']);
+    expect(ids(allowed.foods)).toEqual(ids(run().foods));
+    expect(ids(allowed.recipes)).toEqual(ids(run().recipes));
+  });
+
+  it('una regla a moderar por grupo saca ese grupo y los que lo contienen, y deja los grupos hermanos (DA-43)', () => {
+    const moderatedRules = [{ id: 'r-1', pathologyId: 'hipertension', foodId: null, foodGroupId: 'con-tacc' }];
+
+    const allowed = run({ moderatedRules });
+
+    expect(ids(allowed.groups)).toEqual(['carnes', 'pescados', 'frutas']);
+    expect(ids(allowed.foods)).toContain('trigo');
+  });
+
   it('un alimento comprendido dado de baja también saca su grupo y los que lo contienen', () => {
     const conditions = [{ id: 'c-1', type: 'allergy', foodId: 'cebada', foodGroupId: null }];
 

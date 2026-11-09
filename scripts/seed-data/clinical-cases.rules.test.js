@@ -177,10 +177,11 @@ describe('candidatas de la generación con el catálogo real del seed', () => {
   const ALL_MEALS = ['breakfast', 'lunch', 'afternoon_snack', 'dinner'];
   const MIN_CANDIDATES_PER_MEAL = 5;
 
-  const prohibitedRulesOf = (code) => {
+  const rulesOf = (code, wanted) => {
     const pathologyIds = conditionsOf(code).map(({ pathologyId }) => pathologyId);
-    return RULES.filter(({ pathologyId, severity }) => severity === 'prohibited' && pathologyIds.includes(pathologyId));
+    return RULES.filter(({ pathologyId, severity }) => severity === wanted && pathologyIds.includes(pathologyId));
   };
+  const prohibitedRulesOf = (code) => rulesOf(code, 'prohibited');
   const cooksOf = (code) => CLINICAL_CASES.find((clinicalCase) => clinicalCase.code === code).patient.data.cooks;
 
   const allowedOf = (code, recipes = RECIPES, cooks = cooksOf(code)) =>
@@ -190,6 +191,7 @@ describe('candidatas de la generación con el catálogo real del seed', () => {
       recipes,
       conditions: conditionsOf(code),
       prohibitedRules: prohibitedRulesOf(code),
+      moderatedRules: rulesOf(code, 'moderate'),
       mealTypes: ALL_MEALS,
       cooks,
     });
@@ -288,6 +290,47 @@ describe('candidatas de la generación con el catálogo real del seed', () => {
 
     it('sin celiaquía, "Cereales y derivados" se ofrece', () => {
       expect(allowedOf('C6').groups.map(({ name }) => name)).toContain('Cereales y derivados');
+    });
+  });
+
+  // DA-43: un ítem de grupo amplio tampoco avisa por una regla a moderar, así que
+  // no se ofrece un grupo que contenga lo moderado. El alimento suelto sí, y advierte.
+  describe('grupos que contienen un alimento a moderar (DA-43)', () => {
+    const groupNamesOf = (code) => allowedOf(code).groups.map(({ name }) => name);
+    const foodNamesOf = (code) => allowedOf(code).foods.map(({ name }) => name);
+
+    it('C3, hipertensión: sin "Carnes, pescados y huevos" ni "Fiambres y embutidos", con sus subgrupos aptos y el fiambre suelto', () => {
+      const groups = groupNamesOf('C3');
+
+      expect(groups).not.toContain('Carnes, pescados y huevos');
+      expect(groups).not.toContain('Fiambres y embutidos');
+      expect(groups).not.toContain('Sal, especias y hierbas');
+      expect(groups).toEqual(expect.arrayContaining(['Carnes', 'Aves', 'Pescados', 'Huevos']));
+      expect(foodNamesOf('C3')).toEqual(expect.arrayContaining(['Jamón cocido', 'Sal fina', 'Orégano']));
+    });
+
+    it('C2, diabetes: sin "Azúcares y dulces" ni "Cereales y derivados", con Panificados y harinas', () => {
+      const groups = groupNamesOf('C2');
+
+      expect(groups).not.toContain('Azúcares y dulces');
+      expect(groups).not.toContain('Cereales y derivados');
+      expect(groups).toContain('Panificados y harinas');
+      expect(foodNamesOf('C2')).toContain('Azúcar');
+    });
+
+    it('las recetas candidatas no cambian por las reglas a moderar', () => {
+      for (const { code } of CLINICAL_CASES) {
+        const withoutModerated = allowedCatalog({
+          foods: CATALOG_FOODS,
+          groups: GROUPS,
+          recipes: RECIPES,
+          conditions: conditionsOf(code),
+          prohibitedRules: prohibitedRulesOf(code),
+          mealTypes: ALL_MEALS,
+          cooks: cooksOf(code),
+        });
+        expect(namesOf(allowedOf(code).recipes), code).toEqual(namesOf(withoutModerated.recipes));
+      }
     });
   });
 

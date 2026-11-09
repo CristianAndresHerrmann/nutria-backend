@@ -1,4 +1,5 @@
 const { resolveProposal, proposalMatchesMealTypes } = require('./resolveProposal');
+const { PLAN_USAGE_TEXT } = require('./planTexts');
 
 const CODES = {
   foods: new Map([['A1', { id: 'pollo', name: 'Pollo', foodGroupId: 'carnes', categories: [{ category: 'protein' }] }]]),
@@ -34,14 +35,14 @@ const PROPOSAL = {
 };
 
 describe('resolveProposal — de códigos a ítems del plan', () => {
-  it('copia los textos y deja las recomendaciones clínicas vacías (DA-28)', () => {
+  it('copia los textos, antepone el texto de uso a las generales y deja las clínicas vacías (DA-28, DA-43)', () => {
     const { fields } = resolveProposal(PROPOSAL, CODES);
 
     expect(fields).toEqual({
       situationalDiagnosis: 'Diagnóstico',
       introduction: 'Introducción',
       objectives: 'Objetivos',
-      generalRecommendations: 'Generales',
+      generalRecommendations: `${PLAN_USAGE_TEXT}\n\nGenerales`,
       contextualRecommendations: 'Contextuales',
       clinicalRecommendations: null,
       thematicRecommendations: 'Temáticas',

@@ -36,6 +36,27 @@ describe('recommendation.repository — aislamiento por nutricionista', () => {
     );
   });
 
+  it('las de las patologías del paciente: comunes y propias, solo vigentes (DA-43)', async () => {
+    const prisma = createFakePrisma();
+    const repository = createRecommendationRepository({ prisma });
+
+    await repository.findActiveForPathologies('nutri-1', ['celiaquia', 'diabetes']);
+
+    expect(prisma.clinicalRecommendation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { ...VISIBLE_TO_NUTRI_1, active: true, pathologyId: { in: ['celiaquia', 'diabetes'] } },
+      }),
+    );
+  });
+
+  it('sin patologías no consulta', async () => {
+    const prisma = createFakePrisma();
+    const repository = createRecommendationRepository({ prisma });
+
+    expect(await repository.findActiveForPathologies('nutri-1', [])).toEqual([]);
+    expect(prisma.clinicalRecommendation.findMany).not.toHaveBeenCalled();
+  });
+
   it('la búsqueda por id se limita a comunes y propias', async () => {
     const prisma = createFakePrisma();
     const repository = createRecommendationRepository({ prisma });
@@ -86,6 +107,9 @@ describe('recommendation.repository — aislamiento por nutricionista', () => {
 
     expect(() => repository.findVisible(nutritionistId)).toThrow('consulta sin nutritionistId');
     expect(() => repository.findVisibleById('r-1', nutritionistId)).toThrow('consulta sin nutritionistId');
+    await expect(repository.findActiveForPathologies(nutritionistId, ['celiaquia'])).rejects.toThrow(
+      'consulta sin nutritionistId',
+    );
     expect(() => repository.createPrivate(nutritionistId, data)).toThrow('consulta sin nutritionistId');
     await expect(repository.updateOwn('r-1', nutritionistId, data)).rejects.toThrow('consulta sin nutritionistId');
     expect(prisma.clinicalRecommendation.findMany).not.toHaveBeenCalled();
