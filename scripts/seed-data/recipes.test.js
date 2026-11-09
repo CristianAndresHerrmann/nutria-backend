@@ -9,13 +9,17 @@ const { missingCategories } = require('../../src/domain/reglas/mealComposition')
 // Que cada ingrediente sea común lo valida además el servicio al cargarlas.
 const foodsByName = new Map(FOODS.map((food) => [food.name, food]));
 
-// Solo hierbas y especias entre los alimentos sin aporte a la composición: ni sal,
-// ni azúcar, dulces, caldo en cubo o salsa de soja (DA-32). Tampoco fiambres. Con
-// alguno, una regla de patología excluiría la receta completa.
+// Solo hierbas, especias, ajo y queso rallado entre los alimentos sin aporte a la
+// composición: ni sal, ni azúcar, dulces, caldo en cubo o salsa de soja (DA-32).
+// Tampoco fiambres. Con alguno, una regla de patología excluiría la receta completa.
+// Ajo y queso rallado son condimentos de otros grupos (DA-42).
 const SEASONINGS_GROUP = 'Sal, especias y hierbas';
+const SEASONINGS_OUTSIDE_GROUP = new Set(['Ajo', 'Queso rallado']);
 const isAvoided = ({ name, group, categories }) =>
   group === 'Fiambres y embutidos' ||
-  (categories.includes('complementary') && (group !== SEASONINGS_GROUP || name.startsWith('Sal')));
+  (categories.includes('complementary') &&
+    !SEASONINGS_OUTSIDE_GROUP.has(name) &&
+    (group !== SEASONINGS_GROUP || name.startsWith('Sal')));
 
 describe('datos del seed — recetas básicas comunes (T30)', () => {
   it('no repite nombres de receta, sin distinguir mayúsculas', () => {

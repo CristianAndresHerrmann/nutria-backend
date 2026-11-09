@@ -16,6 +16,11 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ### Changed
 
+- **Correcciones del catálogo del seed por las pautas de adecuación** (DA-42). Son datos ficticios con origen V o S, sin validación profesional.
+  - **Categorías:** ninguna fruta aporta `carbohydrate` (la banana lo pierde, porque no reemplaza al hidrato del plato), y las legumbres secas y en conserva lo suman. Ajo y queso rallado pasan a `complementary`. Alimento nuevo: Copos de maíz sin TACC.
+  - **Reglas:** Copos de maíz sin azúcar, `prohibited` en celiaquía, porque suelen llevar malta de cebada. Salsa de soja, `moderate` en hipertensión (GPC HTA p. 14; Manual GAPA p. 18).
+  - **Recetas:** 5 recetas comunes ajustan ingredientes sin cambiar de nombre. Los dos licuados con banana suman avena arrollada, el yogur con banana suma copos sin TACC, los fideos con brócoli suman ricota, y el yogur con copos y mango usa los copos sin TACC.
+  - **Cómo se aplica:** sin migración. Hay que volver a correr el seed, también en staging. Los planes guardados conservan su copia de categorías.
 - **La generación ya no ofrece grupos amplios** (T54; DA-40). Un grupo cuyo subárbol contiene un alimento comprendido en una condición o en una regla prohibitiva del paciente (incluidos los dados de baja) no se envía a la IA: "Cereales y derivados" no llega a un paciente celíaco, ni "Carnes, pescados y huevos" con rechazo de "Pescados". Los alimentos aptos de esos grupos se siguen enviando, sin `group_code`. Requiere la versión de nutria-ia que admite `group_code` opcional: se despliega primero nutria-ia.
 - **Las recetas con un ingrediente dado de baja no se ofrecen** ni a la IA ni en el selector del editor (`GET /recipes?patientId=`) (T54; DA-40). Sin `patientId`, la pantalla de Recetas las sigue mostrando para poder corregirlas.
 - **`GET /recipes?patientId=` excluye las recetas alcanzadas por una regla prohibitiva de las patologías del paciente**, con el mismo criterio que la generación. Las reglas a moderar se siguen ofreciendo y advierten al guardar.

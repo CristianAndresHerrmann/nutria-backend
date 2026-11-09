@@ -28,10 +28,14 @@ const SOURCES = {
   hypertensionBroth: 'MSAL, GPC hipertensión arterial, versión breve (2026), p. 14',
   hypertensionSalt: 'MSAL, GPC hipertensión arterial, versión breve (2026), pp. 8 y 14',
   hypertensionColdCuts: 'MSAL, GAPA (2016), p. 26; MSAL, GPC hipertensión arterial, versión breve (2026), p. 14',
+  hypertensionSauces:
+    'MSAL, GPC hipertensión arterial, versión breve (2026), p. 14; MSAL, Manual de aplicación de las GAPA (2018), p. 18',
 };
 
 // Los alimentos del catálogo con trigo, avena, cebada o centeno ("exclusión de
 // cuatro cereales …, sus derivados y productos que los contengan de por vida").
+// Los copos de maíz comunes suelen llevar extracto de malta de cebada; la variante
+// apta es "Copos de maíz sin TACC" (DA-42).
 const CONTAINS_TACC = [
   'Pan francés',
   'Pan integral',
@@ -59,6 +63,7 @@ const CONTAINS_TACC = [
   'Galletitas dulces simples',
   'Bizcochos de grasa',
   'Granola',
+  'Copos de maíz sin azúcar',
   'Malta',
 ];
 
@@ -77,6 +82,9 @@ const CLINICAL_RULES = [
   ...onFoods('Hipertensión', ['Caldo en cubo'], 'prohibited', SOURCES.hypertensionBroth),
   ...onFoods('Hipertensión', ['Sal fina'], 'moderate', SOURCES.hypertensionSalt),
   { pathology: 'Hipertensión', foodGroup: 'Fiambres y embutidos', severity: 'moderate', source: SOURCES.hypertensionColdCuts },
+  // "Reducir el uso de sal y el consumo de alimentos con alto contenido de sodio"; el
+  // Manual nombra la salsa de soja entre los aderezos a "limitar o evitar" (DA-42).
+  ...onFoods('Hipertensión', ['Salsa de soja'], 'moderate', SOURCES.hypertensionSauces),
 ];
 
 module.exports = { CLINICAL_RULES, SOURCES };

@@ -8,6 +8,9 @@
 // la Población Argentina (GAPA). No la revisó una nutricionista, y las categorías de
 // cada alimento quedan para la entrevista de validación. Criterios y pendientes en
 // docs/catalogo-de-alimentos.md (repo raíz). Categoría `complementary`: DA-32.
+// Correcciones de DA-42: ninguna fruta aporta `carbohydrate` (no reemplaza al hidrato
+// del plato), las legumbres secas sí, y ajo y queso rallado son `complementary`
+// porque se usan en cantidad de condimento.
 //
 // El seed hace upsert por nombre y no borra: renombrar un grupo o un alimento deja el
 // anterior en las bases ya cargadas y rompe las referencias por nombre del seed
@@ -107,6 +110,7 @@ const FOODS = [
   { name: 'Tostadas de arroz', group: 'Galletitas y cereales de desayuno', categories: ['carbohydrate'] },
   { name: 'Bizcochos de grasa', group: 'Galletitas y cereales de desayuno', categories: ['carbohydrate'] },
   { name: 'Copos de maíz sin azúcar', group: 'Galletitas y cereales de desayuno', categories: ['carbohydrate'] },
+  { name: 'Copos de maíz sin TACC', group: 'Galletitas y cereales de desayuno', categories: ['carbohydrate'] },
   { name: 'Granola', group: 'Galletitas y cereales de desayuno', categories: ['carbohydrate', 'fiber'] },
   // Lácteos
   { name: 'Leche', group: 'Leches y yogures', categories: ['protein'] },
@@ -126,7 +130,7 @@ const FOODS = [
   { name: 'Queso port salut', group: 'Quesos', categories: ['protein'] },
   { name: 'Mozzarella', group: 'Quesos', categories: ['protein'] },
   { name: 'Queso de máquina', group: 'Quesos', categories: ['protein'] },
-  { name: 'Queso rallado', group: 'Quesos', categories: ['protein'] },
+  { name: 'Queso rallado', group: 'Quesos', categories: ['complementary'] },
   { name: 'Queso de cabra', group: 'Quesos', categories: ['protein'] },
   // Carnes, pescados y huevos
   { name: 'Carne vacuna magra', group: 'Carnes', categories: ['protein'] },
@@ -167,13 +171,13 @@ const FOODS = [
   { name: 'Salchichas', group: 'Fiambres y embutidos', categories: ['protein'] },
   { name: 'Morcilla', group: 'Fiambres y embutidos', categories: ['protein'] },
   // Legumbres
-  { name: 'Lentejas', group: 'Legumbres secas y en conserva', categories: ['protein', 'fiber'] },
-  { name: 'Garbanzos', group: 'Legumbres secas y en conserva', categories: ['protein', 'fiber'] },
-  { name: 'Porotos negros', group: 'Legumbres secas y en conserva', categories: ['protein', 'fiber'] },
-  { name: 'Porotos alubia', group: 'Legumbres secas y en conserva', categories: ['protein', 'fiber'] },
-  { name: 'Porotos colorados', group: 'Legumbres secas y en conserva', categories: ['protein', 'fiber'] },
-  { name: 'Arvejas secas', group: 'Legumbres secas y en conserva', categories: ['protein', 'fiber'] },
-  { name: 'Poroto de soja', group: 'Legumbres secas y en conserva', categories: ['protein', 'fiber'] },
+  { name: 'Lentejas', group: 'Legumbres secas y en conserva', categories: ['protein', 'carbohydrate', 'fiber'] },
+  { name: 'Garbanzos', group: 'Legumbres secas y en conserva', categories: ['protein', 'carbohydrate', 'fiber'] },
+  { name: 'Porotos negros', group: 'Legumbres secas y en conserva', categories: ['protein', 'carbohydrate', 'fiber'] },
+  { name: 'Porotos alubia', group: 'Legumbres secas y en conserva', categories: ['protein', 'carbohydrate', 'fiber'] },
+  { name: 'Porotos colorados', group: 'Legumbres secas y en conserva', categories: ['protein', 'carbohydrate', 'fiber'] },
+  { name: 'Arvejas secas', group: 'Legumbres secas y en conserva', categories: ['protein', 'carbohydrate', 'fiber'] },
+  { name: 'Poroto de soja', group: 'Legumbres secas y en conserva', categories: ['protein', 'carbohydrate', 'fiber'] },
   { name: 'Tofu', group: 'Derivados de legumbres', categories: ['protein'] },
   { name: 'Soja texturizada', group: 'Derivados de legumbres', categories: ['protein', 'fiber'] },
   { name: 'Bebida de soja', group: 'Derivados de legumbres', categories: ['protein'] },
@@ -200,7 +204,7 @@ const FOODS = [
   { name: 'Cebolla', group: 'Bulbos, raíces y tallos', categories: ['vegetable'] },
   { name: 'Cebolla de verdeo', group: 'Bulbos, raíces y tallos', categories: ['vegetable'] },
   { name: 'Puerro', group: 'Bulbos, raíces y tallos', categories: ['vegetable'] },
-  { name: 'Ajo', group: 'Bulbos, raíces y tallos', categories: ['vegetable'] },
+  { name: 'Ajo', group: 'Bulbos, raíces y tallos', categories: ['complementary'] },
   { name: 'Remolacha', group: 'Bulbos, raíces y tallos', categories: ['vegetable'] },
   { name: 'Apio', group: 'Bulbos, raíces y tallos', categories: ['vegetable'] },
   { name: 'Rabanito', group: 'Bulbos, raíces y tallos', categories: ['vegetable'] },
@@ -216,7 +220,7 @@ const FOODS = [
   { name: 'Choclo', group: 'Tubérculos y choclo', categories: ['carbohydrate'] },
   // Frutas
   { name: 'Manzana', group: 'Frutas frescas', categories: ['fiber'] },
-  { name: 'Banana', group: 'Frutas frescas', categories: ['carbohydrate', 'fiber'] },
+  { name: 'Banana', group: 'Frutas frescas', categories: ['fiber'] },
   { name: 'Naranja', group: 'Frutas frescas', categories: ['fiber'] },
   { name: 'Mandarina', group: 'Frutas frescas', categories: ['fiber'] },
   { name: 'Pomelo', group: 'Frutas frescas', categories: ['fiber'] },

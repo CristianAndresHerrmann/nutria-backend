@@ -82,6 +82,29 @@ describe('datos del seed — catálogo de alimentos', () => {
     expect(mixed).toEqual([]);
   });
 
+  describe('categorías corregidas por las pautas de adecuación (DA-42)', () => {
+    const fruitGroups = new Set(['Frutas', ...FOOD_GROUPS.filter(({ parent }) => parent === 'Frutas').map(({ name }) => name)]);
+
+    it('ninguna fruta aporta carbohydrate: no reemplaza al hidrato del plato', () => {
+      const withCarbohydrate = FOODS.filter(
+        ({ group, categories }) => fruitGroups.has(group) && categories.includes('carbohydrate'),
+      ).map(({ name }) => name);
+      expect(withCarbohydrate).toEqual([]);
+    });
+
+    it('las legumbres secas y en conserva aportan carbohydrate', () => {
+      const withoutCarbohydrate = FOODS.filter(
+        ({ group, categories }) => group === 'Legumbres secas y en conserva' && !categories.includes('carbohydrate'),
+      ).map(({ name }) => name);
+      expect(withoutCarbohydrate).toEqual([]);
+    });
+
+    it('ajo y queso rallado no aportan a la composición: se usan como condimento', () => {
+      const seasonings = FOODS.filter(({ name }) => ['Ajo', 'Queso rallado'].includes(name));
+      expect(seasonings.map(({ categories }) => categories)).toEqual([['complementary'], ['complementary']]);
+    });
+  });
+
   it('conserva los nombres que el seed referencia por nombre (condiciones y recetas)', () => {
     const foodNames = FOODS.map(({ name }) => name);
     const referenced = [
