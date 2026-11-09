@@ -195,6 +195,18 @@ describe('planes contra Postgres — atomicidad y aislamiento', () => {
     expect(await prisma.finding.findUnique({ where: { id: original.findings[0].id } })).toBeNull();
   });
 
+  it('finding_origin_chk admite el hallazgo de receta fuera de su comida sobre un ítem, y no sobre una opción (R-06)', async () => {
+    const original = await createGenerated();
+    const option = original.meals[0].options[0];
+    const finding = { type: 'meal_type_mismatch', severity: 'warning', message: 'Receta ficticia fuera de su comida' };
+
+    const returned = await plans.replaceFindings(original.id, owner.nutritionist.id, [{ ...finding, optionItemId: option.items[0].id }]);
+    expect(returned).toMatchObject([{ ...finding, optionItemId: option.items[0].id, optionId: null }]);
+
+    await expect(plans.replaceFindings(original.id, owner.nutritionist.id, [{ ...finding, optionId: option.id }]))
+      .rejects.toThrow('finding_origin_chk');
+  });
+
   it('las FK compuestas rechazan planes y trazas sobre un paciente ajeno', async () => {
     const before = await snapshotDatabase();
     await expect(plans.createGenerated(other.nutritionist.id, {

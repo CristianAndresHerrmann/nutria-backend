@@ -27,8 +27,11 @@ const byPlan = { notFoundOnInvalidParams: PLAN_NOT_FOUND_MESSAGE };
  *       internos, RNF-07) y le pide una propuesta al servicio de IA. El catálogo que se ofrece son los
  *       alimentos vigentes, comunes y privados del nutricionista, sin los comprendidos en alergias,
  *       intolerancias y rechazos del paciente ni en reglas que los prohíben para sus patologías
- *       (RF-37), más las recetas candidatas sin esos ingredientes (RF-28); si el paciente no cocina,
- *       solo las que no requieren cocción (RF-38). La propuesta se valida con el motor de reglas
+ *       (RF-37); los grupos que no contienen ninguno de esos alimentos (un grupo amplio, como
+ *       "Cereales y derivados" en celiaquía, no se ofrece); y las recetas candidatas sin esos
+ *       ingredientes ni ingredientes dados de baja (RF-28); si el paciente no cocina, solo las que no
+ *       requieren cocción (RF-38). Si las candidatas superan el tope del contrato de IA (200 recetas),
+ *       responde 422 sin llamar a la IA. La propuesta se valida con el motor de reglas
  *       (RF-43) y el borrador se guarda con sus hallazgos y la traza de la generación (RF-41) en una
  *       sola operación. Un ítem que la IA no encontró en el catálogo queda como `unrecognized`, con un
  *       hallazgo bloqueante. En los textos libres del contexto, los emails, los teléfonos y el
@@ -54,6 +57,7 @@ const byPlan = { notFoundOnInvalidParams: PLAN_NOT_FOUND_MESSAGE };
  *       '401': { $ref: '#/components/responses/UnauthorizedError' }
  *       '403': { $ref: '#/components/responses/ForbiddenRole' }
  *       '404': { $ref: '#/components/responses/PatientNotFound' }
+ *       '422': { $ref: '#/components/responses/GenerationCatalogTooLarge' }
  *       '500': { $ref: '#/components/responses/InternalError' }
  *       '503': { $ref: '#/components/responses/PlanGenerationUnavailable' }
  */

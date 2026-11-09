@@ -7,7 +7,7 @@ const AppError = require('../utils/AppError');
 const { PATIENT_NOT_FOUND_MESSAGE } = require('./patient.service');
 const { PLAN_NOT_FOUND_MESSAGE } = require('./planValidation.service');
 const { categoriesOf } = require('../domain/reglas/catalogIndex');
-const { MEAL_LABELS } = require('../domain/reglas/validatePlan');
+const { MEAL_LABELS } = require('../domain/reglas/mealLabels');
 
 const FOOD_NOT_FOUND_MESSAGE = 'el alimento no existe';
 const FOOD_INACTIVE_MESSAGE = 'el alimento está dado de baja';

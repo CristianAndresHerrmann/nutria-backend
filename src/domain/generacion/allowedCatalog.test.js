@@ -1,4 +1,4 @@
-const { allowedCatalog, CONTRACT_LIMITS } = require('./allowedCatalog');
+const { allowedCatalog, exceededLimit, CONTRACT_LIMITS } = require('./allowedCatalog');
 
 // Jerarquía: Carnes > Pescados; Frutas; Cereales > Con TACC.
 const GROUPS = [
@@ -20,11 +20,12 @@ const FOODS = [
   food('arroz', 'cereales'),
   food('trigo', 'con-tacc'),
   food('pera', 'frutas', { active: false }),
+  food('cebada', 'con-tacc', { active: false }),
 ];
 
 const ingredient = (foodId) => {
-  const { id, name, foodGroupId } = FOODS.find((candidate) => candidate.id === foodId);
-  return { food: { id, name, foodGroupId } };
+  const { id, name, foodGroupId, active } = FOODS.find((candidate) => candidate.id === foodId);
+  return { food: { id, name, foodGroupId, active } };
 };
 
 const recipe = (id, ingredients, extra = {}) => ({
@@ -76,7 +77,7 @@ describe('allowedCatalog — catálogo que se ofrece a la IA (RF-37, RF-38)', ()
     const allowed = run({ conditions });
 
     expect(ids(allowed.foods)).toEqual(['manzana', 'arroz', 'trigo']);
-    expect(ids(allowed.groups)).toEqual(['frutas', 'cereales', 'con-tacc']);
+    expect(ids(allowed.groups)).toEqual(['cereales', 'con-tacc']);
     expect(ids(allowed.recipes)).toEqual([]);
   });
 
@@ -96,17 +97,47 @@ describe('allowedCatalog — catálogo que se ofrece a la IA (RF-37, RF-38)', ()
 
     expect(ids(allowed.foods)).not.toContain('trigo');
     expect(ids(allowed.groups)).not.toContain('con-tacc');
-    expect(ids(allowed.groups)).toContain('cereales');
+    expect(ids(allowed.foods)).toContain('arroz');
   });
 
-  it('un grupo más amplio que la condición se sigue ofreciendo, sin el subgrupo excluido (DA-30)', () => {
+  it('no ofrece un grupo más amplio que una condición: "Carnes" con rechazo de "Pescados" (DA-40)', () => {
     const conditions = [{ id: 'c-1', type: 'rejection', foodId: null, foodGroupId: 'pescados' }];
 
     const allowed = run({ conditions });
 
-    expect(ids(allowed.groups)).toContain('carnes');
+    expect(ids(allowed.groups)).not.toContain('carnes');
     expect(ids(allowed.groups)).not.toContain('pescados');
+    expect(ids(allowed.foods)).toContain('pollo');
     expect(ids(allowed.recipes)).not.toContain('merluza-al-horno');
+  });
+
+  it('no ofrece un grupo que contiene un alimento prohibido por regla, aunque la regla sea por alimento ("un cereal" en celiaquía)', () => {
+    const prohibitedRules = [{ id: 'r-1', pathologyId: 'celiaquia', foodId: 'trigo', foodGroupId: null }];
+
+    const allowed = run({ prohibitedRules });
+
+    expect(ids(allowed.groups)).not.toContain('cereales');
+    expect(ids(allowed.groups)).not.toContain('con-tacc');
+    expect(ids(allowed.foods)).toContain('arroz');
+  });
+
+  it('un alimento comprendido dado de baja también saca su grupo y los que lo contienen', () => {
+    const conditions = [{ id: 'c-1', type: 'allergy', foodId: 'cebada', foodGroupId: null }];
+
+    const allowed = run({ conditions });
+
+    expect(ids(allowed.groups)).not.toContain('con-tacc');
+    expect(ids(allowed.groups)).not.toContain('cereales');
+    expect(ids(allowed.foods)).toEqual(expect.arrayContaining(['arroz', 'trigo']));
+  });
+
+  it('una alergia a un alimento saca su grupo, y los demás grupos se siguen ofreciendo', () => {
+    const conditions = [{ id: 'c-1', type: 'allergy', foodId: 'banana', foodGroupId: null }];
+
+    const allowed = run({ conditions });
+
+    expect(ids(allowed.groups)).toEqual(['carnes', 'pescados', 'cereales', 'con-tacc']);
+    expect(ids(allowed.foods)).toContain('manzana');
   });
 
   it('el grupo de cada alimento ofrecido está siempre entre los grupos ofrecidos', () => {
@@ -135,9 +166,19 @@ describe('allowedCatalog — catálogo que se ofrece a la IA (RF-37, RF-38)', ()
     expect(ids(run({ cooks: null }).recipes)).toEqual(ids(run().recipes));
   });
 
-  it('corta con un error si el catálogo supera un tope del contrato', () => {
+  it('no ofrece una receta con un ingrediente dado de baja', () => {
+    const recipes = [...RECIPES, recipe('compota-de-pera', ['pera', 'manzana'])];
+
+    expect(ids(run({ recipes }).recipes)).not.toContain('compota-de-pera');
+  });
+
+  it('exceededLimit informa el tope pasado sin lanzar, y null si el catálogo entra', () => {
     const many = Array.from({ length: CONTRACT_LIMITS.recipes + 1 }, (_, index) => recipe(`r-${index}`, ['arroz']));
 
-    expect(() => run({ recipes: many })).toThrow(/recipes/);
+    const allowed = run({ recipes: many });
+
+    expect(allowed.recipes).toHaveLength(CONTRACT_LIMITS.recipes + 1);
+    expect(exceededLimit(allowed)).toEqual({ kind: 'recipes', count: CONTRACT_LIMITS.recipes + 1, limit: CONTRACT_LIMITS.recipes });
+    expect(exceededLimit(run())).toBeNull();
   });
 });

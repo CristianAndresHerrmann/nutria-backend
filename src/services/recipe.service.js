@@ -6,7 +6,7 @@ const patientRepository = require('../repositories/patient.repository');
 const patientConditionRepository = require('../repositories/patientCondition.repository');
 const clinicalRuleRepository = require('../repositories/clinicalRule.repository');
 const AppError = require('../utils/AppError');
-const { excludeRecipesForConditions } = require('../utils/recipeConditionFilter');
+const { recipesForPatient } = require('../utils/recipeConditionFilter');
 const { PATIENT_NOT_FOUND_MESSAGE } = require('./patient.service');
 
 const RECIPE_NOT_FOUND_MESSAGE = 'Receta no encontrada';
@@ -67,9 +67,11 @@ function createRecipeService({
   return {
     // Con patientId, deja afuera las recetas con algún ingrediente comprendido
     // en una alergia, intolerancia o rechazo del paciente (RF-28), o en una regla
-    // prohibitiva de sus patologías, igual que la generación (DA-31). Las reglas a
-    // moderar no excluyen: el motor las advierte al guardar (DA-36). Un paciente
-    // de otro nutricionista da 404, igual que uno inexistente.
+    // prohibitiva de sus patologías, igual que la generación (DA-31), y las que
+    // tienen un ingrediente dado de baja (DA-40). Las reglas a moderar no
+    // excluyen: el motor las advierte al guardar (DA-36). Sin patientId (pantalla
+    // de Recetas) no se recorta nada. Un paciente de otro nutricionista da 404,
+    // igual que uno inexistente.
     async list(nutritionistId, { mealType = null, includeUnavailable = false, patientId = null } = {}) {
       if (!patientId) return repository.findVisible(nutritionistId, { mealType, includeUnavailable });
 
@@ -84,7 +86,7 @@ function createRecipeService({
       const pathologyIds = conditions.map(({ pathologyId }) => pathologyId).filter(Boolean);
       const rules = await clinicalRules.findActiveForPathologies(pathologyIds);
       const prohibitedRules = rules.filter(({ severity }) => severity === RuleSeverity.prohibited);
-      return excludeRecipesForConditions(recipes, conditions, allGroups, prohibitedRules);
+      return recipesForPatient(recipes, conditions, allGroups, prohibitedRules);
     },
 
     get(id, nutritionistId) {

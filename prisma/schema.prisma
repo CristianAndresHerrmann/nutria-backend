@@ -650,6 +650,8 @@ enum FindingType {
   pathology_rule
   composition
   unrecognized_item
+  // Receta en una comida que no está entre sus tipos de comida (R-06, T54).
+  meal_type_mismatch
 
   @@map("finding_type")
 }
@@ -664,10 +666,11 @@ enum FindingSeverity {
 // Hallazgo de la validación determinística de un plan (RF-43, RF-44). Se
 // recalculan en cada revalidación (RF-46). CHECK finding_origin_chk en la
 // migración:
-//   direct_condition:  optionItemId + patientConditionId
-//   pathology_rule:    optionItemId + clinicalRuleId
-//   composition:       optionId, sin ítem
-//   unrecognized_item: optionItemId
+//   direct_condition:   optionItemId + patientConditionId
+//   pathology_rule:     optionItemId + clinicalRuleId
+//   composition:        optionId, sin ítem
+//   unrecognized_item:  optionItemId
+//   meal_type_mismatch: optionItemId
 // La severidad la decide el motor de reglas, no la base. Que el ítem o la opción
 // sean del mismo plan lo controla el servicio.
 model Finding {

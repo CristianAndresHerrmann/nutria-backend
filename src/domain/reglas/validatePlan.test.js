@@ -31,6 +31,7 @@ const RECIPES = [
   {
     id: 'ensalada',
     name: 'Ensalada de pollo',
+    mealTypes: [{ mealType: 'lunch' }, { mealType: 'dinner' }],
     ingredients: [{ food: { id: 'pollo', name: 'Pollo', foodGroupId: 'carnes' } }, { food: { id: 'tomate', name: 'Tomate', foodGroupId: 'verduras' } }],
   },
 ];
@@ -157,6 +158,57 @@ describe('validatePlan — motor de reglas v1', () => {
     });
   });
 
+  describe('receta fuera de su tipo de comida (R-06)', () => {
+    it('advierte sobre una receta en una comida que no figura entre las suyas', () => {
+      const findings = validatePlan({
+        plan: plan([{ mealType: 'breakfast', options: [option('o-1', [recipeItem('i-ensalada', 'ensalada'), foodItem('i-pan', 'pan')])] }]),
+        conditions: [],
+        rules: [],
+        catalog: CATALOG,
+      });
+
+      expect(findings.filter(({ type }) => type !== 'composition')).toEqual([
+        {
+          type: 'meal_type_mismatch',
+          severity: 'warning',
+          optionId: null,
+          optionItemId: 'i-ensalada',
+          patientConditionId: null,
+          message: 'Receta Ensalada de pollo: no está indicada para el desayuno (se indica para almuerzo y cena)',
+        },
+      ]);
+    });
+
+    it('no advierte sobre una receta en uno de sus tipos de comida, ni sobre alimentos o grupos', () => {
+      const findings = validatePlan({
+        plan: plan([
+          { mealType: 'dinner', options: [option('o-1', [recipeItem('i-ensalada', 'ensalada'), foodItem('i-arroz', 'arroz')])] },
+          { mealType: 'breakfast', options: [option('o-2', [foodItem('i-pollo', 'pollo'), groupItem('i-lacteo', 'lacteos', 'Lácteos')])] },
+        ]),
+        conditions: [],
+        rules: [],
+        catalog: CATALOG,
+      });
+
+      expect(findings.filter(({ type }) => type === 'meal_type_mismatch')).toEqual([]);
+    });
+
+    it('una receta alcanzada por una condición y fuera de su comida da los dos hallazgos, la condición primero', () => {
+      const conditions = [{ id: 'c-1', type: 'allergy', foodId: 'tomate', foodGroupId: null, food: { name: 'Tomate' }, foodGroup: null }];
+      const findings = validatePlan({
+        plan: plan([{ mealType: 'afternoon_snack', options: [option('o-1', [recipeItem('i-ensalada', 'ensalada')])] }]),
+        conditions,
+        rules: [],
+        catalog: CATALOG,
+      });
+
+      expect(findings.filter(({ optionItemId }) => optionItemId === 'i-ensalada').map(({ type, severity }) => [type, severity])).toEqual([
+        ['direct_condition', 'blocking'],
+        ['meal_type_mismatch', 'warning'],
+      ]);
+    });
+  });
+
   describe('condición directa dentro del plan', () => {
     const allergyToRicota = { id: 'c-1', type: 'allergy', foodId: 'ricota', foodGroupId: null, food: { name: 'Ricota casera' }, foodGroup: null };
     const preferenceForMilk = { id: 'c-2', type: 'preference', foodId: 'leche', foodGroupId: null, food: { name: 'Leche' }, foodGroup: null };
@@ -261,7 +313,10 @@ describe('validatePlan — motor de reglas v1', () => {
       { id: 'c-2', type: 'pathology', pathologyId: 'diabetes', foodId: null, foodGroupId: null, pathology: { name: 'Diabetes' } },
     ];
     const findings = validatePlan({
-      plan: plan([{ mealType: 'lunch', options: [option('o-1', [foodItem('i-pollo', 'pollo'), unrecognizedItem('i-x', 'fideos')])] }]),
+      plan: plan([
+        { mealType: 'lunch', options: [option('o-1', [foodItem('i-pollo', 'pollo'), unrecognizedItem('i-x', 'fideos')])] },
+        { mealType: 'breakfast', options: [option('o-2', [recipeItem('i-ensalada', 'ensalada'), foodItem('i-pan', 'pan')])] },
+      ]),
       conditions,
       rules: [{ id: 'r-1', pathologyId: 'diabetes', foodId: null, foodGroupId: 'carnes', severity: 'prohibited', source: 'Fuente, p. 1' }],
       catalog: CATALOG,
@@ -272,9 +327,16 @@ describe('validatePlan — motor de reglas v1', () => {
       direct_condition: { optionId: null, optionItemId: expect.any(String), patientConditionId: expect.any(String) },
       pathology_rule: { optionId: null, optionItemId: expect.any(String), patientConditionId: null, clinicalRuleId: expect.any(String) },
       unrecognized_item: { optionId: null, optionItemId: expect.any(String), patientConditionId: null },
+      meal_type_mismatch: { optionId: null, optionItemId: expect.any(String), patientConditionId: null },
       composition: { optionId: expect.any(String), optionItemId: null, patientConditionId: null },
     };
-    expect(findings.map(({ type }) => type).sort()).toEqual(['composition', 'direct_condition', 'pathology_rule', 'unrecognized_item']);
+    expect([...new Set(findings.map(({ type }) => type))].sort()).toEqual([
+      'composition',
+      'direct_condition',
+      'meal_type_mismatch',
+      'pathology_rule',
+      'unrecognized_item',
+    ]);
     for (const finding of findings) {
       expect(finding).toMatchObject(SHAPES[finding.type]);
       if (finding.type !== 'pathology_rule') expect(finding).not.toHaveProperty('clinicalRuleId');
