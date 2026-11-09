@@ -668,6 +668,15 @@ const schemas = {
         properties: {
           status: { type: 'string', example: 'ok' },
           service: { type: 'string', example: 'nutria-ia' },
+          provider: {
+            type: 'string',
+            nullable: true,
+            example: 'openai',
+            description:
+              'Proveedor configurado en el servicio de IA (`AI_PROVIDER`). `fake` es el simulado: el smoke ' +
+              'test del CD falla con ese valor o con `null` (versión de la IA que no lo informa).',
+          },
+          model: { type: 'string', nullable: true, example: 'gpt-6-luna', description: 'Modelo configurado (`AI_MODEL`).' },
           latencyMs: { type: 'integer', example: 12 },
         },
       },

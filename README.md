@@ -294,7 +294,7 @@ Configuración en GitHub (Environment `staging` de cada repo, restringido a la r
      `AI_PROVIDER=openai`, `AI_MODEL=gpt-6-luna`, `AI_REASONING_LEVEL=low`,
      `AI_PROVIDER_TIMEOUT_SECONDS=25` y `OPENAI_API_KEY`. Si falta el modelo o la clave,
      el servicio no arranca y el smoke test falla. Si falta `AI_PROVIDER`, arranca con el
-     proveedor simulado y el smoke test **no** lo detecta (ver "Operación").
+     proveedor simulado y el CD queda en rojo en el step "Proveedor de IA real".
    - `nutria-frontend/.env` copiado de su `.env.example`: en staging no se usa, pero el
      compose lo exige.
 3. Primer arranque, seed y cuenta de administrador:
@@ -321,6 +321,7 @@ Configuración en GitHub (Environment `staging` de cada repo, restringido a la r
 | Ver el estado | `dcs ps` |
 | Ver logs | `dcs logs -f backend` (o `frontend`, `ia`, `proxy`) |
 | Recargar el seed | `dcs run --rm backend npm run seed`. También después de desplegar un cambio en catálogos, reglas, recetas comunes o casos clínicos: el despliegue migra, pero no corre el seed |
+| Ver qué proveedor de IA está configurado | `curl -s https://api.<dominio>/health/ia`: `ia.provider` y `ia.model`. No llama al proveedor. `fake` significa que falta `AI_PROVIDER` en `nutria-ia/.env` |
 | Confirmar qué proveedor de IA generó | `dcs exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select provider, model, result, duration_ms from ai_generation order by generated_at desc limit 3"'`. `fake` significa que falta `AI_PROVIDER` en `nutria-ia/.env` |
 | Respaldar la base antes de un despliegue con migraciones | `dcs exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > ~/backups/nutria-$(date +%F).dump` |
 | Crear el administrador o cambiar su contraseña | Actualizar `ADMIN_EMAIL`/`ADMIN_PASSWORD` en el `.env` y correr `dcs run --rm backend npm run create-admin` |

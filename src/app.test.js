@@ -683,13 +683,22 @@ describe('GET /health/ia', () => {
   it('responde 200 con el estado del servicio de IA', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({ ok: true, json: async () => ({ status: 'ok', service: 'nutria-ia' }) })),
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ status: 'ok', service: 'nutria-ia', provider: 'fake', model: 'fake-deterministic' }),
+      })),
     );
 
     const response = await request('/health/ia');
 
     expect(response.status).toBe(200);
-    expect(response.json.ia).toMatchObject({ status: 'ok', service: 'nutria-ia', latencyMs: expect.any(Number) });
+    expect(response.json.ia).toMatchObject({
+      status: 'ok',
+      service: 'nutria-ia',
+      provider: 'fake',
+      model: 'fake-deterministic',
+      latencyMs: expect.any(Number),
+    });
   });
 
   it('con el servicio de IA caído responde 503 controlado y el backend sigue atendiendo', async () => {
