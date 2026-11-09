@@ -324,16 +324,40 @@ const PATHOLOGIES = [
   { name: 'Hipertensión', description: PATHOLOGY_DESCRIPTION },
 ];
 
-// Recomendaciones clínicas comunes (T22): solo textos de ejemplo, identificados
-// como ficticios en el título y en el texto. El contenido clínico real lo carga
-// la nutricionista; el sistema no lo redacta.
+// Recomendaciones clínicas comunes (T22). La generación las copia al plan de un
+// paciente con esa patología (DA-43). Celiaquía y Diabetes tienen textos de
+// ejemplo, identificados como ficticios en el título y en el texto: el contenido
+// real lo carga la nutricionista. Hipertensión tiene las indicaciones de la GPC,
+// citadas textualmente y con su fuente: origen S, pendiente de T65.
 const RECOMMENDATION_TEXT =
   'Texto de ejemplo ficticio (RNF-08): no es una recomendación clínica. El contenido real lo carga la nutricionista.';
 
-const RECOMMENDATIONS = PATHOLOGIES.map(({ name }) => ({
-  pathology: name,
-  title: `Ejemplo ficticio: recomendación común para ${name}`,
-  text: RECOMMENDATION_TEXT,
-}));
+// GPC HTA, versión breve (2026), p. 14: "Reducir el uso de sal y el consumo de
+// alimentos con alto contenido de sodio" y los puntos 1 a 6 de "Para reducir el
+// consumo de sal se aconseja" (el 7 es para niños y adolescentes).
+const HYPERTENSION_SODIUM_TEXT = [
+  'Reducir el uso de sal y el consumo de alimentos con alto contenido de sodio. Para reducir el consumo de sal se aconseja:',
+  '1. Preferir alimentos naturales frescos o mínimamente procesados.',
+  '2. Cocinar sin sal. Si fuera necesario agregarle un poco al finalizar la preparación.',
+  '3. Evitar el salero en la mesa. En su reemplazo se puede utilizar pimentero para dar sabor y aroma a los platos. ' +
+    'Luego de algunas semanas sin consumir sal, la preferencia por el sabor salado se reduce y se comienza a disfrutar ' +
+    'el sabor natural de los alimentos.',
+  '4. Utilizar en su reemplazo: jugo de limón, vinagre, cebolla, ajo, hierbas aromáticas y especias: Orégano, ' +
+    'Perejil (fresco o seco), Laurel, Pimentón (dulce o ahumado), Ají molido, Pimienta (negra o blanca), Ajo (fresco ' +
+    'o deshidratado), Cebolla deshidratada, Comino, Romero, Tomillo, Nuez moscada, Albahaca, Coriandro (semilla ' +
+    'molida), Hinojo, Cúrcuma, Jengibre (fresco o seco), Curry, Salvia, Estragón, entre otros.',
+  '5. No usar saborizantes en polvo o caldos deshidratados como condimentos.',
+  '6. Deshabituar el paladar al sabor salado.',
+  'Fuente: MSAL, GPC hipertensión arterial, versión breve (2026), p. 14.',
+].join('\n');
+
+const RECOMMENDATIONS = [
+  ...['Celiaquía', 'Diabetes'].map((name) => ({
+    pathology: name,
+    title: `Ejemplo ficticio: recomendación común para ${name}`,
+    text: RECOMMENDATION_TEXT,
+  })),
+  { pathology: 'Hipertensión', title: 'Alimentación reducida en sodio', text: HYPERTENSION_SODIUM_TEXT },
+];
 
 module.exports = { FOOD_GROUPS, FOODS, PATHOLOGIES, RECOMMENDATIONS, RECOMMENDATION_TEXT };

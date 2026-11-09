@@ -4,12 +4,15 @@ const iaClient = require('../clients/ia.client');
 const { iaUnavailable } = require('../clients/ia.client');
 const planRepository = require('../repositories/plan.repository');
 const patientRepository = require('../repositories/patient.repository');
+const recommendationRepository = require('../repositories/recommendation.repository');
 const planValidationService = require('./planValidation.service');
 const AppError = require('../utils/AppError');
 const { PATIENT_NOT_FOUND_MESSAGE } = require('./patient.service');
 const { allowedCatalog, exceededLimit } = require('../domain/generacion/allowedCatalog');
 const { buildGenerationContext } = require('../domain/generacion/buildContext');
 const { resolveProposal, proposalMatchesMealTypes } = require('../domain/generacion/resolveProposal');
+const { clinicalRecommendationsText } = require('../domain/generacion/planTexts');
+const { PLAN_TEXT_MAX_LENGTH } = require('../schemas/plan.schema');
 const { validationResult } = require('../domain/reglas/validatePlan');
 const { planProposalResponseSchema, generationInfoSchema } = require('../schemas/iaProposal.schema');
 
@@ -61,7 +64,8 @@ function generationRow(info, contextSent) {
 //   1. Arma el contexto mínimo y anonimizado (RNF-07) con el catálogo permitido.
 //   2. Llama a nutria-ia, fuera de toda transacción.
 //   3. Valida la respuesta contra el contrato, la resuelve a ítems y la pasa por
-//      el motor de reglas.
+//      el motor de reglas. Copia al plan las recomendaciones clínicas vigentes de
+//      las patologías del paciente, que no redacta la IA (DA-28, DA-43).
 //   4. Guarda el borrador, sus ítems, sus hallazgos y la traza en una sola
 //      transacción (RNF-02: nunca queda un plan a medias).
 // Si la IA falla, responde 503 IA_UNAVAILABLE con reason y no crea ningún plan;
@@ -71,6 +75,7 @@ function generationRow(info, contextSent) {
 function createPlanGenerationService({
   planRepository: plans,
   patientRepository: patients,
+  recommendationRepository: recommendations,
   planValidationService: validation,
   iaClient: ia,
   generationTimeoutMs,
@@ -125,15 +130,18 @@ function createPlanGenerationService({
       const patient = await patients.findByIdForNutritionist(patientId, nutritionistId);
       if (!patient) throw new AppError(404, PATIENT_NOT_FOUND_MESSAGE);
 
-      // Solo las reglas prohibitivas sacan alimentos del catálogo enviado (DA-31);
-      // las que moderan llegan a la IA y el motor las advierte (DA-36).
+      // Solo las reglas prohibitivas sacan alimentos y recetas del catálogo enviado
+      // (DA-31); las que moderan llegan a la IA y el motor las advierte (DA-36),
+      // pero sacan los grupos que las contienen (DA-43).
       const inputs = await validation.loadInputs(patientId, nutritionistId);
       const prohibitedRules = inputs.rules.filter(({ severity }) => severity === RuleSeverity.prohibited);
+      const moderatedRules = inputs.rules.filter(({ severity }) => severity === RuleSeverity.moderate);
 
       const allowed = allowedCatalog({
         ...inputs.catalog,
         conditions: inputs.conditions,
         prohibitedRules,
+        moderatedRules,
         mealTypes,
         cooks: patient.cooks,
       });
@@ -158,9 +166,12 @@ function createPlanGenerationService({
       const { fields, meals } = resolveProposal(parsed.data.proposal, codes);
       const findings = validation.computeFindings({ meals }, inputs);
 
+      const pathologyIds = inputs.conditions.map(({ pathologyId }) => pathologyId).filter(Boolean);
+      const clinical = await recommendations.findActiveForPathologies(nutritionistId, pathologyIds);
+
       return plans.createGenerated(nutritionistId, {
         patientId,
-        fields,
+        fields: { ...fields, clinicalRecommendations: clinicalRecommendationsText(clinical, PLAN_TEXT_MAX_LENGTH) },
         meals,
         findings,
         generation: {
@@ -176,6 +187,7 @@ function createPlanGenerationService({
 module.exports = createPlanGenerationService({
   planRepository,
   patientRepository,
+  recommendationRepository,
   planValidationService,
   iaClient,
   generationTimeoutMs: config.iaGenerationTimeoutMs,

@@ -148,7 +148,7 @@ const recommendationInputProperties = {
 // guardar tal cual.
 const MEAL_TYPE_ENUM = ['breakfast', 'lunch', 'afternoon_snack', 'dinner'];
 
-const planText = (description, example) => ({ type: 'string', nullable: true, maxLength: 4000, description, example });
+const planText = (description, example) => ({ type: 'string', nullable: true, maxLength: 10000, description, example });
 
 const planTextProperties = {
   situationalDiagnosis: planText('Diagnóstico situacional.', 'Texto de ejemplo ficticio.'),
@@ -645,7 +645,7 @@ const schemas = {
         properties: {
           provider: { type: 'string', example: 'fake' },
           model: { type: 'string', example: 'fake-deterministic' },
-          templateVersion: { type: 'string', example: 'plan_proposal_v3' },
+          templateVersion: { type: 'string', example: 'plan_proposal_v4' },
           validationResult: {
             type: 'string',
             enum: ['no_findings', 'warnings', 'blocking'],

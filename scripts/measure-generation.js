@@ -3,6 +3,7 @@ const path = require('node:path');
 const { parseArgs } = require('node:util');
 const { CLINICAL_CASES } = require('./seed-data/clinical-cases');
 const { CONTROL_RECIPE_NAMES } = require('./seed-data/private-recipes');
+const { PLAN_USAGE_TEXT } = require('../src/domain/generacion/planTexts');
 
 // Medición de la generación del plan (T41; Tabla 7 del IA2, riesgos 4, 10 y 17).
 // Corre N generaciones por caso clínico del seed contra el stack levantado, en
@@ -40,6 +41,18 @@ const AI_TEXT_FIELDS = [
   'contextualRecommendations',
   'thematicRecommendations',
 ];
+
+// Caracteres que escribió la IA. Las generales empiezan con el texto fijo de uso
+// del plan (DA-43), que no cuenta: así el número se compara con las corridas
+// anteriores.
+function aiTextChars(plan) {
+  return AI_TEXT_FIELDS.reduce((total, field) => {
+    const text = plan[field] ?? '';
+    const fromIa =
+      field === 'generalRecommendations' && text.startsWith(PLAN_USAGE_TEXT) ? text.slice(PLAN_USAGE_TEXT.length).trim() : text;
+    return total + fromIa.length;
+  }, 0);
+}
 
 // USD por millón de tokens, tarifa estándar del tier pago, consultada el
 // 01/11/2026 en las páginas oficiales. Los tokens de salida incluyen el
@@ -309,7 +322,7 @@ async function generateOnce(apiUrl, token, prisma, ownNames, { code, patientId }
     Object.assign(row, {
       planId: json.id,
       options: json.meals.reduce((total, { options }) => total + options.length, 0),
-      textChars: AI_TEXT_FIELDS.reduce((total, field) => total + (json[field]?.length ?? 0), 0),
+      textChars: aiTextChars(json),
       validationResult: json.generation?.validationResult ?? null,
       blocking: findings.filter(({ severity }) => severity === 'blocking').length,
       warnings: findings.filter(({ severity }) => severity === 'warning').length,
@@ -457,4 +470,5 @@ module.exports = {
   auditRecipes,
   markdownReport,
   parseOptions,
+  aiTextChars,
 };

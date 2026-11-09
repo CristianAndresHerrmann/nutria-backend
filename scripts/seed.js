@@ -371,17 +371,27 @@ async function seedCatalogs() {
   }
 
   // Las recomendaciones del seed son comunes (nutritionistId null). Sin único
-  // en la base: se busca por título, como los alimentos comunes por nombre.
+  // en la base: se busca por título, como los alimentos comunes por nombre. Las
+  // comunes que salen de la lista se dan de baja, como las reglas: la generación
+  // copia al plan las vigentes (DA-43), y un título viejo saldría junto al nuevo.
+  const keptRecommendationIds = [];
   for (const { pathology, title, text } of RECOMMENDATIONS) {
     const existing = await prisma.clinicalRecommendation.findFirst({ where: { title, nutritionistId: null } });
     const data = { pathologyId: requireId(pathologyIds, pathology, 'patología'), text, active: true };
-    if (existing) await prisma.clinicalRecommendation.update({ where: { id: existing.id }, data });
-    else await prisma.clinicalRecommendation.create({ data: { ...data, title } });
+    const recommendation = existing
+      ? await prisma.clinicalRecommendation.update({ where: { id: existing.id }, data })
+      : await prisma.clinicalRecommendation.create({ data: { ...data, title } });
+    keptRecommendationIds.push(recommendation.id);
   }
+  const { count: retiredRecommendations } = await prisma.clinicalRecommendation.updateMany({
+    where: { nutritionistId: null, id: { notIn: keptRecommendationIds }, active: true },
+    data: { active: false },
+  });
 
   console.log(
     `Seed: catálogo con ${FOOD_GROUPS.length} grupos, ${FOODS.length} alimentos, ${PATHOLOGIES.length} patologías ` +
-      `y ${RECOMMENDATIONS.length} recomendaciones comunes.`,
+      `y ${RECOMMENDATIONS.length} recomendaciones comunes` +
+      `${retiredRecommendations ? `, ${retiredRecommendations} dada(s) de baja` : ''}.`,
   );
   return { groupIds, foodIds, pathologyIds };
 }

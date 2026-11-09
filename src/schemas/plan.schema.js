@@ -42,9 +42,11 @@ const optionItemSchema = z.discriminatedUnion(
 const MEAL_TYPES = Object.values(MealType);
 const mealTypeField = z.enum(MEAL_TYPES, { error: 'El tipo de comida no es válido' });
 
-// Mismos topes que la propuesta de la IA (contrato de T33): un borrador generado
-// siempre se puede volver a guardar tal cual.
-const PLAN_TEXT_MAX_LENGTH = 4000;
+// Un borrador generado siempre se puede volver a guardar tal cual. Los textos
+// admiten más que la propuesta de la IA (4000, contrato de T33): las
+// recomendaciones generales suman el texto de uso del plan, y las clínicas se
+// copian del catálogo (DA-43).
+const PLAN_TEXT_MAX_LENGTH = 10000;
 const SHORT_TEXT_MAX_LENGTH = 500;
 const MAX_OPTIONS_PER_MEAL = 10;
 const MAX_ITEMS_PER_OPTION = 15;
@@ -103,4 +105,4 @@ const updatePlanSchema = z.strictObject({
 // /patients/:id/plans/:planId. z.guid() por lo mismo que patientIdParamsSchema.
 const planParamsSchema = z.strictObject({ id: z.guid(), planId: z.guid() });
 
-module.exports = { optionItemSchema, generatePlanSchema, updatePlanSchema, planParamsSchema };
+module.exports = { optionItemSchema, generatePlanSchema, updatePlanSchema, planParamsSchema, PLAN_TEXT_MAX_LENGTH };

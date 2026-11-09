@@ -6,6 +6,11 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ### Added
 
+- **El plan generado trae textos que no redacta la IA** (DA-43):
+  - **Recomendaciones clínicas:** se copian las vigentes de las patologías del paciente, comunes y propias del nutricionista, desde el catálogo de Recomendaciones. Antes quedaban vacías. Si no entran todas en el tope del texto, se copian enteras las que caben y el texto avisa cuántas quedaron afuera.
+  - **Texto de uso del plan,** al principio de las recomendaciones generales: las opciones de cada comida son alternativas (elegir una sola), y almuerzo y cena se arman con el método del plato (GPC DM2, p. 248).
+  - El profesional puede editar los dos.
+- **Recomendación común "Alimentación reducida en sodio" para Hipertensión** en el seed, con las indicaciones de la GPC HTA (p. 14) citadas textualmente. Origen S, pendiente de T65. Reemplaza el ejemplo ficticio de esa patología. El seed da de baja las recomendaciones comunes que salen de su lista, como ya hacía con las reglas.
 - **El CD a staging detecta el proveedor de IA simulado** (T74). `GET /health/ia` reenvía `ia.provider` e `ia.model` (`null` si la IA desplegada no los informa) y `cd-staging.yml` suma el step "Proveedor de IA real", que falla con `fake` o sin informar. No llama al proveedor. Requiere la versión de nutria-ia que los informa: se despliega primero nutria-ia.
 - **Catálogo de recetas ampliado para probar la generación.** El seed carga 77 recetas comunes (suma 60) y 45 privadas nuevas de `nutricionista@nutria.com`: 40 elaboradas y 5 de control, que llevan a propósito un alimento alcanzado por una regla de diabetes o hipertensión. Son datos ficticios con origen V, sin validación profesional.
 - `measure-generation` audita las recetas de cada generación frente a las candidatas de la traza: propias o comunes, de control, fuera de las candidatas o en una comida para la que no se ofrecen.
@@ -16,6 +21,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ### Changed
 
+- **La generación tampoco ofrece los grupos que contienen un alimento a moderar** (DA-43). Por ejemplo, "Carnes, pescados y huevos" no llega a un paciente hipertenso, porque incluye los fiambres, y el motor no advierte un ítem de grupo más amplio que la regla (DA-30).
+  - El alimento moderado, sus recetas y los subgrupos aptos (Carnes, Aves, Pescados) se siguen enviando, y el motor advierte el alimento moderado.
+  - Extiende DA-40, que solo cubría las reglas prohibitivas.
+- **Los textos del plan admiten hasta 10000 caracteres** (antes 4000), en `PUT /plans/:id` y en el editor. Las recomendaciones generales suman el texto de uso, y las clínicas se copian del catálogo: así un borrador generado se sigue pudiendo guardar tal cual.
 - **Correcciones del catálogo del seed por las pautas de adecuación** (DA-42). Son datos ficticios con origen V o S, sin validación profesional.
   - **Categorías:** ninguna fruta aporta `carbohydrate` (la banana lo pierde, porque no reemplaza al hidrato del plato), y las legumbres secas y en conserva lo suman. Alimento nuevo: Copos de maíz sin TACC. Ajo y queso rallado vuelven a `vegetable` y `protein`: como `complementary`, dejaban sin categoría a los ítems de grupo Lácteos, Quesos y "Bulbos, raíces y tallos", y "un lácteo y pan" advertía en el desayuno.
   - **Reglas:** Copos de maíz sin azúcar, `prohibited` en celiaquía, porque suelen llevar malta de cebada. Salsa de soja, `moderate` en hipertensión (GPC HTA p. 14; Manual GAPA p. 18).

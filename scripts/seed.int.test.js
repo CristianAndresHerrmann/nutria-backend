@@ -2,6 +2,7 @@ const { execFileSync } = require('node:child_process');
 const { prisma } = require('../src/test/integration');
 const { CLINICAL_CASES } = require('./seed-data/clinical-cases');
 const { CLINICAL_RULES } = require('./seed-data/clinical-rules');
+const { RECOMMENDATIONS } = require('./seed-data/catalogs');
 const { COMMON_RECIPES } = require('./seed-data/recipes');
 const { PRIVATE_RECIPES, CONTROL_RECIPES } = require('./seed-data/private-recipes');
 const recipes = require('../src/repositories/recipe.repository');
@@ -29,6 +30,10 @@ it('el seed corre sin JWT_SECRET, revoca las sesiones de sus cuentas al volver a
   const outside = await prisma.clinicalRule.create({
     data: { pathologyId: diabetes.id, foodId: chicken.id, severity: 'prohibited', source: 'Regla ficticia de la prueba, p. 1' },
   });
+  // Lo mismo con una recomendación común que no está en la lista (DA-43).
+  const outsideRecommendation = await prisma.clinicalRecommendation.create({
+    data: { pathologyId: diabetes.id, title: 'Recomendación ficticia de la prueba', text: 'Texto ficticio.' },
+  });
 
   execFileSync(process.execPath, ['scripts/seed.js'], { env: seedEnv, stdio: 'pipe', timeout: 15000 });
 
@@ -38,6 +43,12 @@ it('el seed corre sin JWT_SECRET, revoca las sesiones de sus cuentas al volver a
   expect(await prisma.clinicalRule.count()).toBe(CLINICAL_RULES.length + 1);
   expect(await prisma.clinicalRule.count({ where: { active: true } })).toBe(CLINICAL_RULES.length);
   expect(await prisma.clinicalRule.findUnique({ where: { id: outside.id } })).toMatchObject({ active: false });
+  expect(await prisma.clinicalRecommendation.findUnique({ where: { id: outsideRecommendation.id } })).toMatchObject({
+    active: false,
+  });
+  expect(await prisma.clinicalRecommendation.count({ where: { nutritionistId: null, active: true } })).toBe(
+    RECOMMENDATIONS.length,
+  );
 
   // Criterio de cierre de T41: después de volver a correr el seed, cada caso
   // clínico está una sola vez en nutricionista@nutria.com, con sus condiciones.

@@ -9,7 +9,9 @@ const {
   auditRecipes,
   markdownReport,
   parseOptions,
+  aiTextChars,
 } = require('./measure-generation');
+const { PLAN_USAGE_TEXT } = require('../src/domain/generacion/planTexts');
 const { CLINICAL_CASES } = require('./seed-data/clinical-cases');
 
 const valid = (overrides = {}) => ({
@@ -195,5 +197,15 @@ describe('measure-generation — medición de la generación (T41)', () => {
     expect(() => parseOptions(['--cases', 'C9'])).toThrow('C9');
     expect(parseOptions(['--label', 'razonamiento-minimal']).label).toBe('razonamiento-minimal');
     expect(() => parseOptions(['--label', 'Con espacios'])).toThrow('--label');
+  });
+
+  it('cuenta solo el texto de la IA: sin el texto fijo de uso ni las recomendaciones clínicas (DA-43)', () => {
+    const plan = {
+      introduction: 'abcde',
+      generalRecommendations: `${PLAN_USAGE_TEXT}\n\nfghij`,
+      clinicalRecommendations: 'No es de la IA.',
+    };
+
+    expect(aiTextChars(plan)).toBe(10);
   });
 });

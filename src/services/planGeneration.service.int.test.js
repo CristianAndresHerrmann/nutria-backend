@@ -1,6 +1,7 @@
 const recipes = require('../repositories/recipe.repository');
 const planRepository = require('../repositories/plan.repository');
 const patientRepository = require('../repositories/patient.repository');
+const recommendationRepository = require('../repositories/recommendation.repository');
 const planValidationService = require('./planValidation.service');
 const { createPlanGenerationService } = require('./planGeneration.service');
 const { prisma, createCatalog, createTenant } = require('../test/integration');
@@ -11,7 +12,7 @@ const { prisma, createCatalog, createTenant } = require('../test/integration');
 const GENERATION = {
   provider: 'fake',
   model: 'fake-test',
-  template_version: 'plan_proposal_v3',
+  template_version: 'plan_proposal_v4',
   duration_ms: 1,
   input_tokens: 1,
   output_tokens: 1,
@@ -48,6 +49,7 @@ function setup() {
   const service = createPlanGenerationService({
     planRepository,
     patientRepository,
+    recommendationRepository,
     planValidationService,
     iaClient,
     generationTimeoutMs: 1000,
@@ -126,5 +128,23 @@ describe('generación del plan — candidatas reales por nutricionista (RNF-05)'
     // Sin la patología, la misma receta sí se ofrece.
     await service.generate(first.patient.id, first.nutritionist.id, LUNCH);
     expect(candidateNames(contexts[1])).toContain('Común con prohibido');
+  });
+
+  it('copia al plan las recomendaciones vigentes de la patología: comunes y propias, nunca las de otra cuenta (DA-43)', async () => {
+    await prisma.patientCondition.create({ data: { patientId: second.patient.id, type: 'pathology', pathologyId: catalog.pathology.id } });
+    await prisma.clinicalRecommendation.createMany({
+      data: [
+        { pathologyId: catalog.pathology.id, title: 'Común ficticia', text: 'Texto común.' },
+        { pathologyId: catalog.pathology.id, title: 'Común dada de baja', text: 'No va.', active: false },
+        { pathologyId: catalog.pathology.id, nutritionistId: second.nutritionist.id, title: 'Propia ficticia', text: 'Texto propio.' },
+        { pathologyId: catalog.pathology.id, nutritionistId: first.nutritionist.id, title: 'De otra cuenta', text: 'No va.' },
+      ],
+    });
+    const { service } = setup();
+
+    const plan = await service.generate(second.patient.id, second.nutritionist.id, LUNCH);
+
+    const saved = await prisma.plan.findUniqueOrThrow({ where: { id: plan.id } });
+    expect(saved.clinicalRecommendations).toBe('Común ficticia\nTexto común.\n\nPropia ficticia\nTexto propio.');
   });
 });

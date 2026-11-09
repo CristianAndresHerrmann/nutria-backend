@@ -33,6 +33,19 @@ function createRecommendationRepository({ prisma: client }) {
     });
   }
 
+  // Las vigentes de las patologías dadas, comunes y privadas del nutricionista.
+  // La generación las copia al plan (DA-43). Sin patologías no consulta.
+  async function findActiveForPathologies(nutritionistId, pathologyIds) {
+    const where = visibleTo(nutritionistId);
+    if (pathologyIds.length === 0) return [];
+
+    return client.clinicalRecommendation.findMany({
+      where: { ...where, active: true, pathologyId: { in: pathologyIds } },
+      include: RECOMMENDATION_INCLUDE,
+      orderBy: [{ pathology: { name: 'asc' } }, { title: 'asc' }, { id: 'asc' }],
+    });
+  }
+
   function findVisibleById(id, nutritionistId) {
     return client.clinicalRecommendation.findFirst({
       where: { id, ...visibleTo(nutritionistId) },
@@ -61,7 +74,7 @@ function createRecommendationRepository({ prisma: client }) {
     });
   }
 
-  return { findVisible, findVisibleById, createPrivate, updateOwn };
+  return { findVisible, findActiveForPathologies, findVisibleById, createPrivate, updateOwn };
 }
 
 module.exports = createRecommendationRepository({ prisma });

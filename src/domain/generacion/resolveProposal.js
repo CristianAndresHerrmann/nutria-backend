@@ -1,6 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const { OptionItemType } = require('@prisma/client');
 const { categoriesOf } = require('../reglas/catalogIndex');
+const { withUsageText } = require('./planTexts');
 
 // Traduce la propuesta de nutria-ia (códigos cortos) al plan del backend
 // (DA-27): comidas → opciones → ítems, con las columnas de PlanMeal, MealOption
@@ -50,15 +51,16 @@ function proposalMatchesMealTypes(proposal, mealTypes) {
 }
 
 // proposal: la propuesta ya validada contra el contrato (iaProposal.schema).
-// Devuelve los textos del plan y sus comidas. Las recomendaciones clínicas no
-// las redacta la IA (DA-28): quedan vacías para que el profesional las elija del
-// catálogo.
+// Devuelve los textos del plan y sus comidas. Las recomendaciones generales
+// empiezan con el texto fijo de uso del plan (DA-43). Las clínicas no las
+// redacta la IA (DA-28): quedan vacías acá, y el servicio de generación las
+// copia del catálogo de recomendaciones de las patologías del paciente (DA-43).
 function resolveProposal(proposal, codes) {
   const fields = {
     situationalDiagnosis: proposal.situational_diagnosis,
     introduction: proposal.introduction,
     objectives: proposal.objectives,
-    generalRecommendations: proposal.general_recommendations,
+    generalRecommendations: withUsageText(proposal.general_recommendations),
     contextualRecommendations: proposal.contextual_recommendations,
     clinicalRecommendations: null,
     thematicRecommendations: proposal.thematic_recommendations,

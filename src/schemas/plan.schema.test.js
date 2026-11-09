@@ -151,7 +151,7 @@ describe('plan.schema — updatePlanSchema', () => {
   });
 
   it('rechaza un texto que supera el tope', () => {
-    const result = updatePlanSchema.safeParse({ introduction: 'x'.repeat(4001), meals: [] });
+    const result = updatePlanSchema.safeParse({ introduction: 'x'.repeat(10001), meals: [] });
 
     expect(result.success).toBe(false);
   });
