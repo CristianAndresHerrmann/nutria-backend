@@ -333,10 +333,14 @@ const RECOMMENDATION_TEXT =
   'Texto de ejemplo ficticio (RNF-08): no es una recomendación clínica. El contenido real lo carga la nutricionista.';
 
 // GPC HTA, versión breve (2026), p. 14: "Reducir el uso de sal y el consumo de
-// alimentos con alto contenido de sodio" y los puntos 1 a 6 de "Para reducir el
-// consumo de sal se aconseja" (el 7 es para niños y adolescentes).
+// alimentos con alto contenido de sodio", la indicación sobre los envasados y los
+// puntos 1 a 6 de "Para reducir el consumo de sal se aconseja" (el 7 es para niños y
+// adolescentes). Los envasados del catálogo se consideran sin el sello "exceso en
+// sodio" (premisa del proyecto, DA-43): este texto le pide al paciente elegirlos así.
 const HYPERTENSION_SODIUM_TEXT = [
-  'Reducir el uso de sal y el consumo de alimentos con alto contenido de sodio. Para reducir el consumo de sal se aconseja:',
+  'Reducir el uso de sal y el consumo de alimentos con alto contenido de sodio. Observar la cantidad de sodio ' +
+    'que aportan los alimentos envasados y preferir los que no estén rotulados como "exceso en sodio". ' +
+    'Para reducir el consumo de sal se aconseja:',
   '1. Preferir alimentos naturales frescos o mínimamente procesados.',
   '2. Cocinar sin sal. Si fuera necesario agregarle un poco al finalizar la preparación.',
   '3. Evitar el salero en la mesa. En su reemplazo se puede utilizar pimentero para dar sabor y aroma a los platos. ' +
