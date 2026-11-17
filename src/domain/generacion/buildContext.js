@@ -1,4 +1,6 @@
 const { categoriesOf } = require('../reglas/catalogIndex');
+const { MEAL_COMPOSITION } = require('../reglas/mealComposition');
+const { groupCategories } = require('../reglas/itemCategories');
 
 // Contexto mínimo y anonimizado que el backend envía a nutria-ia para generar el
 // plan (IA2, RNF-07; contrato de T33, DA-28). Función pura.
@@ -106,12 +108,19 @@ function buildGenerationContext({ patient, conditions, catalog, mealTypes }) {
   const foods = withCodes('A', catalog.foods);
   const recipes = withCodes('R', catalog.recipes);
   const groupCodeById = new Map(groups.map(([code, group]) => [group.id, code]));
+  const foodCodeById = new Map(foods.map(([code, food]) => [food.id, code]));
   const patterns = namePatterns(patient);
   const text = (value) => contextText(value, patterns);
 
   const context = {
     meal_types: [...mealTypes],
-    ...compact({ goal: text(patient.goal) }),
+    // La composición que el motor de reglas espera en cada opción (DA-29), de la
+    // misma configuración con la que la valida: orienta a la IA, no la reemplaza
+    // (T60).
+    expected_composition: Object.fromEntries(
+      mealTypes.filter((mealType) => MEAL_COMPOSITION[mealType]).map((mealType) => [mealType, [...MEAL_COMPOSITION[mealType]]]),
+    ),
+    ...compact({ goal: text(patient.goal), goal_category: patient.goalCategory }),
     conditions: conditions.map((condition) => ({ type: condition.type, name: conditionName(condition) })),
     cooking: compact({
       cooks: patient.cooks,
@@ -119,6 +128,13 @@ function buildGenerationContext({ patient, conditions, catalog, mealTypes }) {
       cooking_time: text(patient.cookingTime),
       home_equipment: text(patient.homeEquipment),
       usual_shopping_place: text(patient.usualShoppingPlace),
+      // Estructurados (T62): el equipamiento ya filtró las recetas en
+      // allowedCatalog. Los minutos viajan como dato y no filtran: la plantilla
+      // vigente le pide a la IA no descartar una receta por superarlos (DA-50).
+      has_oven: patient.hasOven,
+      has_stovetop: patient.hasStovetop,
+      has_microwave: patient.hasMicrowave,
+      minutes_per_day: patient.cookingMinutesPerDay,
     }),
     outside_home: compact({
       meals_outside_home: text(patient.mealsOutsideHome),
@@ -136,7 +152,15 @@ function buildGenerationContext({ patient, conditions, catalog, mealTypes }) {
       sleep_schedule: text(patient.sleepSchedule),
     }),
     catalog: {
-      food_groups: groups.map(([code, group]) => ({ code, name: clip(group.name, NAME_MAX_LENGTH) })),
+      // Lo que garantiza un ítem de ese grupo: las categorías que comparten todos
+      // sus alimentos, como en el motor (DA-30). "Verduras" no garantiza verdura,
+      // porque incluye Tubérculos y choclo (T60). Un grupo ofrecido no tiene nada
+      // excluido en su subárbol (DA-40), así que sus alimentos son los permitidos.
+      food_groups: groups.map(([code, group]) => ({
+        code,
+        name: clip(group.name, NAME_MAX_LENGTH),
+        categories: groupCategories(group.id, catalog),
+      })),
       // Un alimento cuyo grupo no se ofrece (DA-40) viaja sin group_code.
       foods: foods.map(([code, food]) =>
         compact({
@@ -154,6 +178,10 @@ function buildGenerationContext({ patient, conditions, catalog, mealTypes }) {
         meal_types: recipe.mealTypes,
         cooking_method: recipe.cookingMethod,
         time_minutes: recipe.timeMinutes,
+        // Los ingredientes como códigos de alimentos que ya viajan (T60), para que
+        // la IA no elija solo por el nombre. allowedCatalog solo deja recetas con
+        // todos sus ingredientes permitidos, así que todos tienen código.
+        ingredients: [...new Set(recipe.ingredients.map(({ food }) => foodCodeById.get(food.id)).filter(Boolean))],
       }),
     ),
   };

@@ -40,4 +40,6 @@ function groupCategories(foodGroupId, catalog) {
   return first.filter((category) => rest.every((categories) => categories.includes(category)));
 }
 
-module.exports = { itemCategories };
+// groupCategories lo usa también la generación (T60): la IA recibe lo que cada
+// grupo garantiza, con el mismo criterio con el que el motor valida la opción.
+module.exports = { itemCategories, groupCategories };

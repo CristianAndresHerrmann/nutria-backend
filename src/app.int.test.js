@@ -405,3 +405,70 @@ describe('Curación del catálogo por el administrador — API real + Postgres (
     expect(after.Food).toHaveLength(before.Food.length + 1);
   });
 });
+
+describe('Categoría de objetivo, equipamiento y minutos por día — API real + Postgres (T61, T62)', () => {
+  const structured = { goalCategory: 'lose_weight', hasOven: false, hasStovetop: true, hasMicrowave: null, cookingMinutesPerDay: 20 };
+
+  it('se guardan y se leen por la API, y null queda como sin dato', async () => {
+    const path = `/patients/${owner.patient.id}`;
+
+    const updated = await request(path, owner.nutritionist, 'PUT', { firstName: 'Paciente ficticio', lastName: 'Prueba', ...structured });
+    expect(updated.status).toBe(200);
+    expect(updated.body).toMatchObject(structured);
+    expect((await request(path)).body).toMatchObject(structured);
+    expect(await prisma.patient.findUnique({ where: { id: owner.patient.id } })).toMatchObject(structured);
+
+    // El PUT reemplaza el objeto completo: sin los campos, vuelven a sin dato.
+    const cleared = await request(path, owner.nutritionist, 'PUT', { firstName: 'Paciente ficticio', lastName: 'Prueba' });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body).toMatchObject({ goalCategory: null, hasOven: null, hasStovetop: null, hasMicrowave: null, cookingMinutesPerDay: null });
+  });
+
+  it('un valor fuera de rango o de la lista da 400 por campo y no escribe', async () => {
+    const before = await snapshotDatabase();
+
+    const response = await request(`/patients/${owner.patient.id}`, owner.nutritionist, 'PUT', {
+      firstName: 'Paciente ficticio',
+      lastName: 'Prueba',
+      goalCategory: 'gain_muscle',
+      cookingMinutesPerDay: 1441,
+    });
+
+    expect(response.status).toBe(400);
+    expect(Object.keys(response.body.error.details.fields).sort()).toEqual(['cookingMinutesPerDay', 'goalCategory']);
+    expect(await snapshotDatabase()).toEqual(before);
+  });
+
+  it('la base rechaza minutos fuera de 1 a 1440 y una categoría fuera del enum aunque no pasen por la API', async () => {
+    const id = owner.patient.id;
+    const before = await snapshotDatabase();
+
+    for (const minutes of [0, 1441]) {
+      await expect(
+        prisma.$executeRaw`UPDATE patient SET cooking_minutes_per_day = ${minutes} WHERE id = ${id}::uuid`,
+      ).rejects.toThrow(/patient_cooking_minutes_per_day_chk/);
+    }
+    await expect(
+      prisma.$executeRaw`UPDATE patient SET goal_category = ${'gain_muscle'}::goal_category WHERE id = ${id}::uuid`,
+    ).rejects.toThrow();
+    expect(await snapshotDatabase()).toEqual(before);
+
+    await prisma.$executeRaw`UPDATE patient SET cooking_minutes_per_day = ${1440} WHERE id = ${id}::uuid`;
+    expect((await prisma.patient.findUnique({ where: { id } })).cookingMinutesPerDay).toBe(1440);
+  });
+
+  it('el selector no ofrece recetas de un equipo que el paciente marcó que no tiene; sin dato no filtra', async () => {
+    await recipes.upsertCommon({ name: 'Común de horno', cookingMethod: 'oven' }, [{ foodId: catalog.food.id }], ['lunch']);
+    await recipes.upsertCommon({ name: 'Común de anafe', cookingMethod: 'stovetop' }, [{ foodId: catalog.food.id }], ['lunch']);
+    const names = ({ body }) => body.map(({ name }) => name).sort();
+
+    expect(names(await request(`/recipes?patientId=${other.patient.id}`, other.nutritionist))).toEqual(['Común de anafe', 'Común de horno']);
+
+    await prisma.patient.update({ where: { id: other.patient.id }, data: { hasOven: false } });
+    const selector = await request(`/recipes?patientId=${other.patient.id}`, other.nutritionist);
+    expect(selector.status).toBe(200);
+    expect(names(selector)).toEqual(['Común de anafe']);
+    // Sin paciente, el catálogo no se recorta.
+    expect(names(await request('/recipes', other.nutritionist))).toEqual(['Común de anafe', 'Común de horno']);
+  });
+});

@@ -1,6 +1,8 @@
 // Casos clínico-nutricionales ficticios del Plan 5.6 (T41): celiaquía, diabetes,
 // hipertensión, alergia alimentaria e intolerancia, más un paciente sin
-// condiciones y uno con rechazo de un grupo. Todo es ficticio (RNF-08).
+// condiciones y uno con rechazo de un grupo. C8 suma el objetivo "Bajar de
+// peso", el único con pautas de adecuación propias (OBE, T57), para que la
+// medición las ejercite siempre. Todo es ficticio (RNF-08).
 //
 // Los carga el seed como pacientes de nutricionista@nutria.com, y los usa
 // scripts/measure-generation.js, que los busca por nombre y apellido. Por eso
@@ -9,11 +11,16 @@
 // El resultado esperado de cada caso contra la matriz de reglas por patología
 // (T35, clinical-rules.js) está en clinical-cases.rules.test.js y en la ficha
 // R-05 de docs/reglas-clinicas.md: C1–C3 dan hallazgos pathology_rule; C4, C5 y
-// C7, de condición directa (DA-30).
+// C7, de condición directa (DA-30); C6 y C8, ninguno.
 //
 // Las fichas están completas porque el contexto de cocina, trabajo, comidas
 // fuera de casa y hábitos es lo que viaja a la IA. Los contextos varían para
 // ejercitar RF-38 (C3 no cocina: solo recetas sin cocción).
+//
+// El equipamiento (hasOven, hasStovetop, hasMicrowave) y los minutos por día
+// (cookingMinutesPerDay) son la versión estructurada del texto de la ficha
+// (T62): un false saca las recetas de ese método de la generación y del
+// selector. measure-generation arma con ellos el perfil de factibilidad.
 const CLINICAL_CASES = [
   {
     code: 'C1',
@@ -27,6 +34,7 @@ const CLINICAL_CASES = [
         email: 'sofia.medina@example.com',
         livesWith: 'Sola',
         goal: 'Ordenar las comidas de la semana',
+        goalCategory: 'other',
         referenceWeight: 58.0,
         medicalHistory: 'Celiaquía diagnosticada en 2021.',
         physicalActivity: 'Yoga dos veces por semana',
@@ -38,6 +46,10 @@ const CLINICAL_CASES = [
         likesCooking: false,
         cookingTime: '20 minutos por día',
         homeEquipment: 'Anafe y microondas',
+        hasOven: false,
+        hasStovetop: true,
+        hasMicrowave: true,
+        cookingMinutesPerDay: 20,
         usualShoppingPlace: 'Supermercado',
         mealsOutsideHome: 'Almuerzo de lunes a viernes',
         outsideEquipment: 'Microondas en la oficina, sin heladera',
@@ -74,6 +86,7 @@ const CLINICAL_CASES = [
         phone: '+54 342 555-0512',
         livesWith: 'Esposa e hijo',
         goal: 'Controlar glucemia',
+        goalCategory: 'other',
         referenceWeight: 88.0,
         medicalHistory: 'Diabetes tipo 2 diagnosticada en 2024.',
         medication: 'Metformina',
@@ -86,6 +99,10 @@ const CLINICAL_CASES = [
         likesCooking: true,
         cookingTime: 'Una hora por día',
         homeEquipment: 'Horno, anafe, parrilla y microondas',
+        hasOven: true,
+        hasStovetop: true,
+        hasMicrowave: true,
+        cookingMinutesPerDay: 60,
         usualShoppingPlace: 'Carnicería, verdulería y supermercado',
         mealsOutsideHome: 'Ninguna',
         occupation: 'Comerciante',
@@ -123,6 +140,7 @@ const CLINICAL_CASES = [
         phone: '+54 342 555-0513',
         livesWith: 'Sola',
         goal: 'Mejorar la alimentación',
+        goalCategory: 'other',
         referenceWeight: 70.0,
         medicalHistory: 'Hipertensión arterial en tratamiento desde 2015.',
         medication: 'Enalapril',
@@ -134,6 +152,9 @@ const CLINICAL_CASES = [
         cooks: false,
         likesCooking: false,
         homeEquipment: 'Heladera y microondas',
+        hasOven: false,
+        hasStovetop: false,
+        hasMicrowave: true,
         usualShoppingPlace: 'Almacén del barrio y rotisería',
         mealsOutsideHome: 'Compra comida hecha para almuerzo y cena',
         occupation: 'Jubilada',
@@ -170,6 +191,7 @@ const CLINICAL_CASES = [
         email: 'pablo.herrera@example.com',
         livesWith: 'Con amigos',
         goal: 'Aumentar masa muscular',
+        goalCategory: 'other',
         referenceWeight: 72.0,
         medicalHistory: 'Alergia al huevo desde la infancia.',
         physicalActivity: 'Gimnasio cuatro veces por semana',
@@ -181,6 +203,10 @@ const CLINICAL_CASES = [
         likesCooking: true,
         cookingTime: '40 minutos por día',
         homeEquipment: 'Horno, anafe y microondas',
+        hasOven: true,
+        hasStovetop: true,
+        hasMicrowave: true,
+        cookingMinutesPerDay: 40,
         usualShoppingPlace: 'Supermercado mayorista',
         mealsOutsideHome: 'Almuerzo de lunes a viernes',
         outsideEquipment: 'Heladera y microondas en el trabajo',
@@ -217,6 +243,7 @@ const CLINICAL_CASES = [
         phone: '+54 342 555-0515',
         livesWith: 'Pareja e hija',
         goal: 'Mejorar la digestión',
+        goalCategory: 'other',
         referenceWeight: 64.0,
         physicalActivity: 'Bicicleta los fines de semana',
         smoking: 'No fuma',
@@ -227,6 +254,10 @@ const CLINICAL_CASES = [
         likesCooking: true,
         cookingTime: '45 minutos por día',
         homeEquipment: 'Horno, anafe, procesadora y microondas',
+        hasOven: true,
+        hasStovetop: true,
+        hasMicrowave: true,
+        cookingMinutesPerDay: 45,
         usualShoppingPlace: 'Verdulería y supermercado',
         mealsOutsideHome: 'Ninguna',
         occupation: 'Diseñadora gráfica',
@@ -262,6 +293,7 @@ const CLINICAL_CASES = [
         phone: '+54 342 555-0516',
         livesWith: 'Esposa e hijos',
         goal: 'Comer más ordenado',
+        goalCategory: 'other',
         referenceWeight: 80.0,
         physicalActivity: 'Fútbol una vez por semana',
         smoking: 'No fuma',
@@ -272,6 +304,10 @@ const CLINICAL_CASES = [
         likesCooking: false,
         cookingTime: '30 minutos por día, más los domingos',
         homeEquipment: 'Horno, anafe y microondas',
+        hasOven: true,
+        hasStovetop: true,
+        hasMicrowave: true,
+        cookingMinutesPerDay: 30,
         usualShoppingPlace: 'Supermercado',
         mealsOutsideHome: 'Almuerzo dos veces por semana',
         outsideEquipment: 'Heladera y microondas',
@@ -307,6 +343,7 @@ const CLINICAL_CASES = [
         birthDate: new Date('2014-06-11'), // menor de edad
         livesWith: 'Madre y hermana',
         goal: 'Mejorar hábitos alimentarios',
+        goalCategory: 'other',
         referenceWeight: 38.0,
         physicalActivity: 'Natación dos veces por semana',
         mealSchedule: 'Desayuno 7, almuerzo 12:30 en la escuela, merienda 17, cena 21',
@@ -315,6 +352,10 @@ const CLINICAL_CASES = [
         likesCooking: false,
         cookingTime: 'Cocina la madre, 30 minutos por día',
         homeEquipment: 'Horno, anafe y microondas',
+        hasOven: true,
+        hasStovetop: true,
+        hasMicrowave: true,
+        cookingMinutesPerDay: 30,
         usualShoppingPlace: 'Supermercado',
         mealsOutsideHome: 'Almuerzo en el comedor escolar',
         occupation: 'Estudiante',
@@ -336,6 +377,56 @@ const CLINICAL_CASES = [
           measurements: [
             { type: 'weight', value: 38.0, unit: 'kg' },
             { type: 'height', value: 145, unit: 'cm' },
+          ],
+          habits: [],
+        },
+      ],
+    },
+  },
+  {
+    code: 'C8',
+    title: 'Bajar de peso',
+    patient: {
+      data: {
+        firstName: 'Mariana',
+        lastName: 'Paredes',
+        birthDate: new Date('1985-03-14'),
+        phone: '+54 342 555-0518',
+        livesWith: 'Pareja',
+        goal: 'Bajar de peso',
+        goalCategory: 'lose_weight',
+        referenceWeight: 86.0,
+        physicalActivity: 'Camina 30 minutos tres veces por semana',
+        smoking: 'No fuma',
+        alcohol: 'Ocasional',
+        mealSchedule: 'Desayuno 7:30, almuerzo 13, merienda 17:30, cena 21',
+        sleepSchedule: 'De 23 a 7',
+        cooks: true,
+        likesCooking: true,
+        cookingTime: '30 minutos por día',
+        homeEquipment: 'Horno, anafe y microondas',
+        hasOven: true,
+        hasStovetop: true,
+        hasMicrowave: true,
+        cookingMinutesPerDay: 30,
+        usualShoppingPlace: 'Verdulería y supermercado',
+        mealsOutsideHome: 'Ninguna',
+        occupation: 'Administrativa',
+        workContext: 'Trabaja desde la casa, de 8 a 16 h',
+        attendsAccompanied: false,
+        registrationComplete: true,
+        dataCompletedAt: new Date(),
+      },
+      conditions: [],
+      consultations: [
+        {
+          date: '2026-10-21',
+          type: 'first',
+          motivation: 'Quiere bajar de peso',
+          decisionOrigin: 'Propia',
+          measurements: [
+            { type: 'weight', value: 86.0, unit: 'kg' },
+            { type: 'height', value: 165, unit: 'cm' },
           ],
           habits: [],
         },

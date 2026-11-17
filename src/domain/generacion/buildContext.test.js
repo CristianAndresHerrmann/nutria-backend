@@ -69,12 +69,32 @@ const CATALOG = {
     { id: 'grp-uuid-carnes', name: 'Carnes', parentId: null },
   ],
   foods: [
-    { id: 'food-uuid-zanahoria', name: 'Zanahoria', foodGroupId: 'grp-uuid-verduras', categories: [{ category: 'vegetable' }, { category: 'fiber' }] },
-    { id: 'food-uuid-pollo', name: 'Pollo', foodGroupId: 'grp-uuid-carnes', categories: [{ category: 'protein' }] },
+    {
+      id: 'food-uuid-zanahoria',
+      name: 'Zanahoria',
+      foodGroupId: 'grp-uuid-verduras',
+      active: true,
+      categories: [{ category: 'vegetable' }, { category: 'fiber' }],
+    },
+    { id: 'food-uuid-pollo', name: 'Pollo', foodGroupId: 'grp-uuid-carnes', active: true, categories: [{ category: 'protein' }] },
   ],
   recipes: [
-    { id: 'rec-uuid-tarta', name: 'Tarta de verduras', mealTypes: ['lunch', 'dinner'], cookingMethod: 'oven', timeMinutes: 40 },
-    { id: 'rec-uuid-ensalada', name: 'Ensalada', mealTypes: ['lunch'], cookingMethod: null, timeMinutes: null },
+    {
+      id: 'rec-uuid-tarta',
+      name: 'Tarta de verduras',
+      mealTypes: ['lunch', 'dinner'],
+      cookingMethod: 'oven',
+      timeMinutes: 40,
+      ingredients: [{ food: { id: 'food-uuid-zanahoria' } }, { food: { id: 'food-uuid-pollo' } }, { food: { id: 'food-uuid-zanahoria' } }],
+    },
+    {
+      id: 'rec-uuid-ensalada',
+      name: 'Ensalada',
+      mealTypes: ['lunch'],
+      cookingMethod: null,
+      timeMinutes: null,
+      ingredients: [{ food: { id: 'food-uuid-zanahoria' } }],
+    },
   ],
 };
 
@@ -121,7 +141,18 @@ describe('buildGenerationContext — contexto anonimizado (RNF-07)', () => {
     const { context } = build();
 
     expect(Object.keys(context).sort()).toEqual(
-      ['meal_types', 'goal', 'conditions', 'cooking', 'outside_home', 'work', 'habits', 'catalog', 'candidate_recipes'].sort(),
+      [
+        'meal_types',
+        'expected_composition',
+        'goal',
+        'conditions',
+        'cooking',
+        'outside_home',
+        'work',
+        'habits',
+        'catalog',
+        'candidate_recipes',
+      ].sort(),
     );
     expect(Object.keys(context.cooking).sort()).toEqual(
       ['cooks', 'likes_cooking', 'cooking_time', 'home_equipment', 'usual_shopping_place'].sort(),
@@ -209,18 +240,70 @@ describe('buildGenerationContext — contexto anonimizado (RNF-07)', () => {
     const { context } = build();
 
     expect(context.catalog.food_groups).toEqual([
-      { code: 'G1', name: 'Carnes' },
-      { code: 'G2', name: 'Verduras' },
+      { code: 'G1', name: 'Carnes', categories: ['protein'] },
+      { code: 'G2', name: 'Verduras', categories: ['vegetable', 'fiber'] },
     ]);
     expect(context.catalog.foods).toEqual([
       { code: 'A1', name: 'Pollo', group_code: 'G1', categories: ['protein'] },
       { code: 'A2', name: 'Zanahoria', group_code: 'G2', categories: ['vegetable', 'fiber'] },
     ]);
     expect(context.candidate_recipes).toEqual([
-      { code: 'R1', name: 'Ensalada', meal_types: ['lunch'] },
-      { code: 'R2', name: 'Tarta de verduras', meal_types: ['lunch', 'dinner'], cooking_method: 'oven', time_minutes: 40 },
+      { code: 'R1', name: 'Ensalada', meal_types: ['lunch'], ingredients: ['A2'] },
+      {
+        code: 'R2',
+        name: 'Tarta de verduras',
+        meal_types: ['lunch', 'dinner'],
+        cooking_method: 'oven',
+        time_minutes: 40,
+        ingredients: ['A2', 'A1'],
+      },
     ]);
     expect(context.meal_types).toEqual(MEAL_TYPES);
+  });
+
+  it('envía la composición esperada de las comidas pedidas, la misma que valida el motor (T60)', () => {
+    const { context } = build();
+
+    expect(context.expected_composition).toEqual({
+      lunch: ['vegetable', 'protein', 'carbohydrate'],
+      dinner: ['vegetable', 'protein', 'carbohydrate'],
+    });
+    const breakfast = buildGenerationContext({ patient: PATIENT, conditions: [], catalog: CATALOG, mealTypes: ['breakfast'] });
+    expect(breakfast.context.expected_composition).toEqual({ breakfast: ['protein', 'carbohydrate'] });
+  });
+
+  it('envía la categoría del objetivo si está, y no si falta (T61)', () => {
+    const withCategory = buildGenerationContext({ patient: { ...PATIENT, goalCategory: 'lose_weight' }, conditions: [], catalog: CATALOG, mealTypes: MEAL_TYPES });
+    expect(withCategory.context.goal_category).toBe('lose_weight');
+    expect(build().context).not.toHaveProperty('goal_category');
+  });
+
+  it('envía el equipamiento y los minutos por día estructurados, sin los que no tienen dato (T62)', () => {
+    const patient = { ...PATIENT, hasOven: false, hasStovetop: true, hasMicrowave: null, cookingMinutesPerDay: 20 };
+
+    const { context } = buildGenerationContext({ patient, conditions: [], catalog: CATALOG, mealTypes: MEAL_TYPES });
+
+    expect(context.cooking).toMatchObject({ has_oven: false, has_stovetop: true, minutes_per_day: 20 });
+    expect(context.cooking).not.toHaveProperty('has_microwave');
+  });
+
+  it('cada grupo lleva solo las categorías que garantizan todos sus alimentos, como en el motor (DA-30, T60)', () => {
+    const catalog = {
+      ...CATALOG,
+      groups: [...CATALOG.groups, { id: 'grp-uuid-tuberculos', name: 'Tubérculos', parentId: 'grp-uuid-verduras' }],
+      foods: [
+        ...CATALOG.foods,
+        { id: 'food-uuid-papa', name: 'Papa', foodGroupId: 'grp-uuid-tuberculos', active: true, categories: [{ category: 'carbohydrate' }] },
+      ],
+    };
+
+    const { context } = buildGenerationContext({ patient: PATIENT, conditions: [], catalog, mealTypes: MEAL_TYPES });
+
+    expect(context.catalog.food_groups).toEqual([
+      { code: 'G1', name: 'Carnes', categories: ['protein'] },
+      { code: 'G2', name: 'Tubérculos', categories: ['carbohydrate'] },
+      { code: 'G3', name: 'Verduras', categories: [] },
+    ]);
   });
 
   it('un alimento cuyo grupo no se ofrece viaja sin group_code (DA-40)', () => {
@@ -228,7 +311,7 @@ describe('buildGenerationContext — contexto anonimizado (RNF-07)', () => {
 
     const { context } = buildGenerationContext({ patient: PATIENT, conditions: [], catalog, mealTypes: MEAL_TYPES });
 
-    expect(context.catalog.food_groups).toEqual([{ code: 'G1', name: 'Verduras' }]);
+    expect(context.catalog.food_groups).toEqual([{ code: 'G1', name: 'Verduras', categories: ['vegetable', 'fiber'] }]);
     expect(context.catalog.foods).toEqual([
       { code: 'A1', name: 'Pollo', categories: ['protein'] },
       { code: 'A2', name: 'Zanahoria', group_code: 'G1', categories: ['vegetable', 'fiber'] },

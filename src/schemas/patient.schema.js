@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { GoalCategory } = require('@prisma/client');
 const { isMinor } = require('../utils/age');
 const { optionalField, pastOrTodayDate } = require('./common.schema');
 
@@ -30,7 +31,17 @@ const CLINICAL_TEXT_FIELDS = [
   'workContext',
 ];
 
-const CLINICAL_BOOLEAN_FIELDS = ['cooks', 'likesCooking'];
+const CLINICAL_BOOLEAN_FIELDS = ['cooks', 'likesCooking', 'hasOven', 'hasStovetop', 'hasMicrowave'];
+
+// Minutos por día para cocinar (T62). Un día tiene 1440: más es un error de carga.
+const COOKING_MINUTES_MAX = 1440;
+const cookingMinutesField = optionalField(
+  z.coerce
+    .number('Debe ser un número')
+    .int('Debe ser un número entero de minutos')
+    .positive('Debe ser mayor a cero')
+    .max(COOKING_MINUTES_MAX, `No puede superar los ${COOKING_MINUTES_MAX} minutos`),
+);
 
 const clinicalTextField = optionalField(
   z
@@ -42,6 +53,7 @@ const clinicalBooleanField = optionalField(z.boolean('Debe ser sí o no'));
 const clinicalPatientFields = {
   ...Object.fromEntries(CLINICAL_TEXT_FIELDS.map((field) => [field, clinicalTextField])),
   ...Object.fromEntries(CLINICAL_BOOLEAN_FIELDS.map((field) => [field, clinicalBooleanField])),
+  cookingMinutesPerDay: cookingMinutesField,
 };
 
 const basePatientFields = {
@@ -52,6 +64,7 @@ const basePatientFields = {
   email: optionalField(z.string().email('El email no tiene un formato válido')),
   livesWith: optionalField(z.string().max(255)),
   goal: optionalField(z.string().max(255)),
+  goalCategory: optionalField(z.enum(Object.values(GoalCategory), 'Elegí una categoría de la lista')),
   referenceWeight: optionalField(z.coerce.number('El peso de referencia debe ser un número').positive('El peso de referencia debe ser mayor a cero')),
   guardianName: optionalField(z.string().max(255)),
   guardianRelationship: optionalField(z.string().max(255)),
@@ -95,4 +108,5 @@ module.exports = {
   CLINICAL_TEXT_FIELDS,
   CLINICAL_BOOLEAN_FIELDS,
   CLINICAL_TEXT_MAX_LENGTH,
+  COOKING_MINUTES_MAX,
 };

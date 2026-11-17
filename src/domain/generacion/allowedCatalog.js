@@ -1,6 +1,12 @@
 const { CookingMethod } = require('@prisma/client');
 const { descendantIds } = require('../../utils/foodGroupTree');
-const { allIngredientsActive, conditionScopes, ruleScopes, scopeCoversFood } = require('../../utils/recipeConditionFilter');
+const {
+  allIngredientsActive,
+  conditionScopes,
+  fitsEquipment,
+  ruleScopes,
+  scopeCoversFood,
+} = require('../../utils/recipeConditionFilter');
 
 // Catálogo permitido para la generación del plan (RF-37, RF-38; T37). Función
 // pura: recibe el catálogo de entrada del motor de reglas (lo que ve el
@@ -35,10 +41,22 @@ const CONTRACT_LIMITS = { foods: 2000, groups: 500, recipes: 200 };
 //   amplio que la regla (DA-30). El fiambre suelto sí se ofrece, y advierte (DA-43).
 // - recipes: disponibles, con todos los ingredientes vigentes, con alguno de los
 //   tipos de comida pedidos (mealTypes queda en la intersección), sin
-//   ingredientes comprendidos, y, si el paciente no cocina, solo las que no
-//   requieren cocción (RF-38). El tiempo y el gusto por cocinar los evalúa el
-//   modelo con time_minutes y el contexto de cocina.
-function allowedCatalog({ foods, groups, recipes, conditions, prohibitedRules, moderatedRules = [], mealTypes, cooks }) {
+//   ingredientes comprendidos, si el paciente no cocina, solo las que no
+//   requieren cocción (RF-38), y solo las que puede hacer con su equipamiento:
+//   sin horno, ninguna de horno (T62). El tiempo no filtra: el time_minutes de
+//   una receta es una referencia, no un límite del paciente, porque puede
+//   cocinarla otra persona (DA-50). El gusto por cocinar lo evalúa el modelo.
+function allowedCatalog({
+  foods,
+  groups,
+  recipes,
+  conditions,
+  prohibitedRules,
+  moderatedRules = [],
+  mealTypes,
+  cooks,
+  equipment = {},
+}) {
   const scopes = [...conditionScopes(conditions, groups), ...ruleScopes(prohibitedRules, groups)];
   const covered = (food) => scopes.some((scope) => scopeCoversFood(scope, food));
 
@@ -62,6 +80,7 @@ function allowedCatalog({ foods, groups, recipes, conditions, prohibitedRules, m
     .filter((recipe) => recipe.availableInCatalog)
     .filter(allIngredientsActive)
     .filter((recipe) => cooks !== false || recipe.cookingMethod === CookingMethod.no_cooking)
+    .filter((recipe) => fitsEquipment(recipe, equipment))
     .filter((recipe) => recipe.ingredients.every(({ food }) => !covered(food)))
     .map((recipe) => ({
       ...recipe,

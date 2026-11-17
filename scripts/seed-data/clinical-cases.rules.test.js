@@ -120,6 +120,7 @@ const EXPECTED = {
   C5: [['Leche', 'direct_condition', 'blocking']],
   C6: [],
   C7: [['Lentejas', 'direct_condition', 'blocking']],
+  C8: [],
 };
 
 describe('casos clínicos de T41 contra la matriz de reglas (T35)', () => {

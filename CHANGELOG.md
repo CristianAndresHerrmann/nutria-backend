@@ -6,6 +6,20 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ### Added
 
+- **`measure-generation` mide la validez nutricional de cada propuesta** (T58, DA-44). Sobre cada generación válida, con el catálogo del motor:
+  - **Tipo de opción** por comida: con receta (y cuántas suman otros ítems) o armada.
+  - **Recetas repetidas** en la misma propuesta, entre comidas y dentro de una comida.
+  - **Factibilidad:** recetas que el caso no puede hacer con su equipamiento. El perfil sale de la ficha del paciente (T62). Las recetas que superan sus minutos por día se cuentan solo como dato ("Superan los minutos del paciente (dato)"), porque el tiempo es una referencia de la receta y puede cocinarla otra persona (DA-50).
+  - **Cumplimiento de las pautas de adecuación de T57** por caso (`scripts/adequacy-guidelines.js`): PA-GEN, PA-DM2, PA-HTA, PA-CEL y PA-OBE, con los criterios CM-01 a CM-10.
+  - **Categorías por comida y hallazgos por tipo y severidad.**
+  - **Experimento de objetivo:** `--goal`, repetible y con un solo caso, cambia el objetivo del paciente antes de cada generación y restaura el original al terminar.
+  - **N=10 por defecto** (antes 5).
+  - **Caso C8 "Bajar de peso"** en el seed (ficticio, sin condiciones), para que la medición ejercite las pautas OBE. Requiere volver a correr el seed.
+  - **Intervalos de Wilson al 95 %**, **armadas incompletas** (opciones armadas con hallazgo de composición) y **`--compare <JSON>`**, que compara con la corrida anterior sobre los casos en común y marca las diferencias que superan el ruido.
+  - Sin cambios de API, esquema ni editor: las pautas no generan hallazgos (DA-41).
+- **Categoría del objetivo del paciente** (T61, DA-49). Campo opcional `goalCategory` (`lose_weight` u `other`) en `POST/PUT /patients`, además del texto libre del objetivo. Migración `agrega_categoria_de_objetivo_al_paciente` (enum `goal_category`). Viaja a nutria-ia como `goal_category`. Solo hay categorías para los objetivos con pautas de adecuación documentadas (T57). `measure-generation` aplica las pautas OBE según la categoría (CM-08) y, en el experimento de objetivo, cambia también la categoría. C8 tiene `lose_weight` y los demás casos `other`. Requiere la versión de nutria-ia que declara el campo.
+- **Equipamiento y minutos por día estructurados en la ficha del paciente** (T62, DA-48). Campos opcionales `hasOven`, `hasStovetop`, `hasMicrowave` y `cookingMinutesPerDay` (entero de 1 a 1440) en `POST/PUT /patients`. Migración `agrega_equipamiento_y_tiempo_de_cocina_al_paciente`, con el CHECK `patient_cooking_minutes_per_day_chk`. Un `false` saca las recetas de ese método de la generación y de `GET /recipes?patientId=`; `null` no filtra. Los minutos viajan a nutria-ia como `cooking.minutes_per_day` y no filtran. Los casos del seed traen los datos, y `measure-generation` arma con ellos el perfil de factibilidad. Requiere la versión de nutria-ia que declara los campos.
+- **La IA recibe la composición esperada, lo que garantiza cada grupo y los ingredientes de las recetas** (T60, DA-47). El contexto de la generación suma `expected_composition` (desde `MEAL_COMPOSITION`, la configuración del motor), `catalog.food_groups[].categories` (con `groupCategories` del motor) y `candidate_recipes[].ingredients` (códigos de alimentos que ya viajan). Las opciones armadas incompletas bajan de 51 % a 8 %, con 17 % más de tokens de entrada. Requiere la versión de nutria-ia que declara los campos: se despliega primero nutria-ia.
 - **El plan generado trae textos que no redacta la IA** (DA-43):
   - **Recomendaciones clínicas:** se copian las vigentes de las patologías del paciente, comunes y propias del nutricionista, desde el catálogo de Recomendaciones. Antes quedaban vacías. Si no entran todas en el tope del texto, se copian enteras las que caben y el texto avisa cuántas quedaron afuera.
   - **Texto de uso del plan,** al principio de las recomendaciones generales: las opciones de cada comida son alternativas (elegir una sola), y almuerzo y cena se arman con el método del plato (GPC DM2, p. 248).
@@ -21,6 +35,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y 
 
 ### Changed
 
+- **`measure-generation`: el tiempo de la receta deja de contar como infactible** (DA-50). Solo el equipamiento hace infactible una receta; las que superan los minutos por día del paciente se informan como dato, y la columna "Sin dato" pasa a "Sin método de cocción".
 - **La generación tampoco ofrece los grupos que contienen un alimento a moderar** (DA-43). Por ejemplo, "Carnes, pescados y huevos" no llega a un paciente hipertenso, porque incluye los fiambres, y el motor no advierte un ítem de grupo más amplio que la regla (DA-30).
   - El alimento moderado, sus recetas y los subgrupos aptos (Carnes, Aves, Pescados) se siguen enviando, y el motor advierte el alimento moderado.
   - Extiende DA-40, que solo cubría las reglas prohibitivas.
