@@ -68,16 +68,16 @@ function createRecipeService({
     // Con patientId, deja afuera las recetas con algún ingrediente comprendido
     // en una alergia, intolerancia o rechazo del paciente (RF-28), o en una regla
     // prohibitiva de sus patologías, igual que la generación (DA-31), y las que
-    // tienen un ingrediente dado de baja (DA-40). Las reglas a moderar no
+    // tienen un ingrediente dado de baja (DA-40), o que el paciente no puede hacer
+    // con su equipamiento (T62). Las reglas a moderar no
     // excluyen: el motor las advierte al guardar (DA-36). Sin patientId (pantalla
     // de Recetas) no se recorta nada. Un paciente de otro nutricionista da 404,
     // igual que uno inexistente.
     async list(nutritionistId, { mealType = null, includeUnavailable = false, patientId = null } = {}) {
       if (!patientId) return repository.findVisible(nutritionistId, { mealType, includeUnavailable });
 
-      if (!(await patients.findByIdForNutritionist(patientId, nutritionistId))) {
-        throw new AppError(404, PATIENT_NOT_FOUND_MESSAGE);
-      }
+      const patient = await patients.findByIdForNutritionist(patientId, nutritionistId);
+      if (!patient) throw new AppError(404, PATIENT_NOT_FOUND_MESSAGE);
       const [recipes, conditions, allGroups] = await Promise.all([
         repository.findVisible(nutritionistId, { mealType, includeUnavailable }),
         patientConditions.findAllForPatient(patientId, nutritionistId),
@@ -86,7 +86,8 @@ function createRecipeService({
       const pathologyIds = conditions.map(({ pathologyId }) => pathologyId).filter(Boolean);
       const rules = await clinicalRules.findActiveForPathologies(pathologyIds);
       const prohibitedRules = rules.filter(({ severity }) => severity === RuleSeverity.prohibited);
-      return recipesForPatient(recipes, conditions, allGroups, prohibitedRules);
+      const equipment = { hasOven: patient.hasOven, hasStovetop: patient.hasStovetop, hasMicrowave: patient.hasMicrowave };
+      return recipesForPatient(recipes, conditions, allGroups, prohibitedRules, equipment);
     },
 
     get(id, nutritionistId) {

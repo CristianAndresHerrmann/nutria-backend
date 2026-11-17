@@ -57,18 +57,35 @@ function allIngredientsActive(recipe) {
   return recipe.ingredients.every(({ food }) => food.active);
 }
 
+// El equipo que necesita cada método de cocción (T62). Sin cocción, o sin método
+// cargado, no necesita ninguno.
+const EQUIPMENT_BY_COOKING_METHOD = { oven: 'hasOven', stovetop: 'hasStovetop', microwave: 'hasMicrowave' };
+
+// true si el paciente tiene el equipo que la receta necesita. Solo un false
+// excluye: null es "sin dato" y no filtra, como `cooks` (RF-38). equipment trae
+// hasOven, hasStovetop y hasMicrowave del paciente.
+function fitsEquipment(recipe, equipment = {}) {
+  const needed = EQUIPMENT_BY_COOKING_METHOD[recipe.cookingMethod];
+  return !needed || equipment[needed] !== false;
+}
+
 // Recetas que se le ofrecen al profesional para un paciente (selector del editor,
-// RF-28): con todos los ingredientes vigentes y sin ninguno comprendido en una
-// condición o en una de las reglas que excluyen. Mismo criterio que la generación
-// (allowedCatalog), salvo el filtro por cocción.
-function recipesForPatient(recipes, conditions, groups, prohibitedRules = []) {
-  return excludeRecipesForConditions(recipes.filter(allIngredientsActive), conditions, groups, prohibitedRules);
+// RF-28): con todos los ingredientes vigentes, sin ninguno comprendido en una
+// condición o en una de las reglas que excluyen, y que se puedan hacer con su
+// equipamiento (T62). Mismo criterio que la generación (allowedCatalog), salvo el
+// filtro por `cooks`: el profesional puede sumar una receta para quien cocina
+// otra persona.
+function recipesForPatient(recipes, conditions, groups, prohibitedRules = [], equipment = {}) {
+  const usable = recipes.filter((recipe) => allIngredientsActive(recipe) && fitsEquipment(recipe, equipment));
+  return excludeRecipesForConditions(usable, conditions, groups, prohibitedRules);
 }
 
 module.exports = {
   excludeRecipesForConditions,
   recipesForPatient,
   allIngredientsActive,
+  fitsEquipment,
+  EQUIPMENT_BY_COOKING_METHOD,
   conditionScopes,
   ruleScopes,
   scopeCoversFood,

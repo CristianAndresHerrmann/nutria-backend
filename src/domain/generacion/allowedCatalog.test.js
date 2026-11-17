@@ -185,6 +185,13 @@ describe('allowedCatalog — catálogo que se ofrece a la IA (RF-37, RF-38)', ()
     expect(ids(run({ cooks: null }).recipes)).toEqual(ids(run().recipes));
   });
 
+  it('no ofrece las recetas de un equipo que el paciente marcó que no tiene; sin dato no filtra (T62)', () => {
+    expect(ids(run({ equipment: { hasOven: false } }).recipes)).not.toContain('merluza-al-horno');
+    expect(ids(run({ equipment: { hasOven: false } }).recipes)).toContain('arroz-con-pollo');
+    expect(ids(run({ equipment: { hasStovetop: false, hasOven: false } }).recipes)).toEqual(['ensalada-de-frutas']);
+    expect(ids(run({ equipment: { hasOven: null } }).recipes)).toEqual(ids(run().recipes));
+  });
+
   it('no ofrece una receta con un ingrediente dado de baja', () => {
     const recipes = [...RECIPES, recipe('compota-de-pera', ['pera', 'manzana'])];
 

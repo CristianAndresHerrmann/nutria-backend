@@ -36,6 +36,15 @@ describe('datos del seed — casos clínicos del Plan 5.6 (T41)', () => {
     expect(conditionsOf('C7')).toEqual([expect.objectContaining({ type: 'rejection', foodGroup: 'Legumbres' })]);
   });
 
+  it('incluye un caso con el objetivo "Bajar de peso", sin condiciones, para medir las pautas OBE (T57)', () => {
+    const c8 = CLINICAL_CASES.find(({ code }) => code === 'C8');
+    expect(c8.patient.data.goal).toBe('Bajar de peso');
+    expect(c8.patient.data.goalCategory).toBe('lose_weight');
+    const others = CLINICAL_CASES.filter(({ code }) => code !== 'C8').map(({ patient }) => patient.data.goalCategory);
+    expect(new Set(others)).toEqual(new Set(['other']));
+    expect(c8.patient.conditions).toEqual([]);
+  });
+
   it('tiene la ficha completa, con el contexto que viaja a la IA', () => {
     for (const { code, patient } of CLINICAL_CASES) {
       expect(patient.data.registrationComplete, code).toBe(true);
@@ -43,5 +52,18 @@ describe('datos del seed — casos clínicos del Plan 5.6 (T41)', () => {
       expect(patient.data.occupation, code).toBeTruthy();
       expect(patient.data.mealSchedule, code).toBeTruthy();
     }
+  });
+
+  it('tiene el equipamiento y los minutos por día estructurados, coherentes con el texto de la ficha (T62)', () => {
+    for (const { code, patient } of CLINICAL_CASES) {
+      const { homeEquipment, hasOven, hasStovetop, hasMicrowave, cookingMinutesPerDay } = patient.data;
+      expect(hasOven, code).toBe(/horno/i.test(homeEquipment));
+      expect(hasStovetop, code).toBe(/anafe/i.test(homeEquipment));
+      expect(hasMicrowave, code).toBe(/microondas/i.test(homeEquipment));
+      if (patient.data.cooks) expect(cookingMinutesPerDay, code).toBeGreaterThan(0);
+      else expect(cookingMinutesPerDay, code).toBeUndefined();
+    }
+    const c1 = CLINICAL_CASES.find(({ code }) => code === 'C1').patient.data;
+    expect(c1).toMatchObject({ hasOven: false, cookingMinutesPerDay: 20 });
   });
 });

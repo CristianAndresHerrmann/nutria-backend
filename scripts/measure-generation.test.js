@@ -10,6 +10,9 @@ const {
   markdownReport,
   parseOptions,
   aiTextChars,
+  evaluateProposal,
+  wilson,
+  compareRuns,
 } = require('./measure-generation');
 const { PLAN_USAGE_TEXT } = require('../src/domain/generacion/planTexts');
 const { CLINICAL_CASES } = require('./seed-data/clinical-cases');
@@ -187,16 +190,175 @@ describe('measure-generation — medición de la generación (T41)', () => {
     });
     expect(report).toContain('| 13 636 |');
     expect(report).toContain('US$ 0,0645');
-    expect(report).toContain('| 50 % |');
+    expect(report).toContain('| 50 % (IC ');
   });
 
   it('valida las opciones de la línea de comandos', () => {
-    expect(parseOptions([])).toMatchObject({ iterations: 5, codes: null });
+    expect(parseOptions([])).toMatchObject({ iterations: 10, codes: null, goals: [] });
     expect(parseOptions(['--n', '3', '--cases', 'C1,C3'])).toMatchObject({ iterations: 3, codes: ['C1', 'C3'] });
     expect(() => parseOptions(['--n', '0'])).toThrow('--n');
     expect(() => parseOptions(['--cases', 'C9'])).toThrow('C9');
     expect(parseOptions(['--label', 'razonamiento-minimal']).label).toBe('razonamiento-minimal');
     expect(() => parseOptions(['--label', 'Con espacios'])).toThrow('--label');
+  });
+
+  it('acepta el experimento de objetivo solo con un caso y objetivos distintos (T58)', () => {
+    const args = ['--cases', 'C6', '--goal', 'Bajar de peso', '--goal', ' Aumentar masa muscular '];
+    expect(parseOptions(args).goals).toEqual(['Bajar de peso', 'Aumentar masa muscular']);
+    expect(() => parseOptions(['--goal', 'Bajar de peso'])).toThrow('un solo caso');
+    expect(() => parseOptions(['--cases', 'C1,C6', '--goal', 'Bajar de peso'])).toThrow('un solo caso');
+    expect(() => parseOptions(['--cases', 'C6', '--goal', 'A', '--goal', 'A'])).toThrow('repetido');
+    expect(() => parseOptions(['--cases', 'C6', '--goal', ' '])).toThrow('vacío');
+    expect(() => parseOptions(['--cases', 'C6', '--goal', 'x'.repeat(256)])).toThrow('255');
+  });
+
+  describe('validez nutricional de la propuesta (T58)', () => {
+    const { indexCatalog } = require('../src/domain/reglas/catalogIndex');
+    const { createGuidelineEvaluator } = require('./adequacy-guidelines');
+    const { FOOD_GROUPS, FOODS } = require('./seed-data/catalogs');
+
+    const catalog = indexCatalog({
+      foods: FOODS.map(({ name, group, categories }) => ({
+        id: name,
+        name,
+        foodGroupId: group,
+        active: true,
+        categories: categories.map((category) => ({ category })),
+      })),
+      groups: FOOD_GROUPS.map(({ name, parent }) => ({ id: name, name, parentId: parent ?? null })),
+      recipes: [
+        {
+          id: 'Pollo al horno',
+          name: 'Pollo al horno',
+          cookingMethod: 'oven',
+          timeMinutes: 50,
+          ingredients: [{ food: { id: 'Pechuga de pollo' } }, { food: { id: 'Papa' } }],
+        },
+      ],
+    });
+    const inputs = {
+      catalog,
+      evaluator: createGuidelineEvaluator(catalog),
+      pathologies: [],
+      profile: { cookingMethods: ['stovetop'], maxMinutes: 20 },
+    };
+    const food = (name) => ({
+      id: `item ${name}`,
+      type: 'food',
+      foodId: name,
+      foodCategories: catalog.food(name).categories.map(({ category }) => category),
+    });
+    const proposal = {
+      meals: [
+        {
+          mealType: 'lunch',
+          options: [
+            {
+              id: 'o-receta',
+              items: [{ id: 'item receta', type: 'recipe', recipeId: 'Pollo al horno', recipe: { name: 'Pollo al horno' } }, food('Lechuga')],
+            },
+            { id: 'o-armada', items: [food('Pan francés'), food('Lechuga')] },
+          ],
+        },
+      ],
+      findings: [
+        { severity: 'blocking', type: 'pathology_rule', optionItemId: 'item Pan francés' },
+        { severity: 'warning', type: 'composition', optionId: 'o-armada' },
+      ],
+    };
+
+    it('evalúa la propuesta: tipo de opción, factibilidad, categorías y pautas sin los ítems bloqueados', () => {
+      const evaluation = evaluateProposal(proposal, inputs, { goal: 'Bajar de peso' });
+      expect(evaluation.optionKinds.lunch).toEqual({
+        options: 2,
+        recipe: 1,
+        recipeWithExtras: 1,
+        recipeIncomplete: 0,
+        assembled: 1,
+        assembledIncomplete: 1,
+      });
+      expect(evaluation.feasibility).toMatchObject({ recipeItems: 1, equipment: 1, time: 1, infeasible: 1 });
+      expect(evaluation.categoryShares.lunch.options).toBe(2);
+      expect(evaluation.guidelines['PA-GEN-03'].main).toEqual({ num: 2, den: 2 });
+      // El pan está bloqueado: la segunda opción no tiene cereal (CM-03).
+      expect(evaluation.guidelines['PA-GEN-10'].main).toEqual({ num: 0, den: 0 });
+      expect(evaluation.guidelines['PA-OBE-04']).toBeDefined();
+    });
+
+    it('resume la validez por caso y por objetivo, e imprime sus tablas', () => {
+      const withGoal = (patientGoal) =>
+        valid({
+          caseCode: 'C6',
+          patientGoal,
+          findings: [{ severity: 'warning', type: 'meal_composition' }],
+          evaluation: evaluateProposal(proposal, inputs, { goal: patientGoal }),
+        });
+      const summary = summarizeRun([withGoal('Bajar de peso'), withGoal('Bajar de peso'), withGoal('Comer más ordenado')]);
+
+      expect(summary.overall.findings).toEqual({ meal_composition: { blocking: 0, warning: 3 } });
+      expect(summary.overall.evaluation).toMatchObject({
+        proposals: 3,
+        optionKinds: { total: { options: 6, recipe: 3, recipeWithExtras: 3, assembled: 3, assembledIncomplete: 3 } },
+        recipeRepeats: { proposalsWithRepeats: 0, repeated: 0 },
+        feasibility: { recipeItems: 3, equipment: 3, time: 3, infeasible: 3 },
+        categoryShares: { lunch: { options: 6 } },
+      });
+      const gen03 = summary.overall.evaluation.guidelines['PA-GEN-03'].main;
+      expect(gen03).toMatchObject({ num: 6, den: 6 });
+      expect(gen03.interval.high).toBeCloseTo(1);
+      expect(Object.keys(summary.byPatientGoal)).toEqual(['Bajar de peso', 'Comer más ordenado']);
+      expect(summary.byPatientGoal['Bajar de peso'].evaluation.guidelines['PA-OBE-04'].plans).toBe(2);
+      expect(summary.byPatientGoal['Comer más ordenado'].evaluation.guidelines['PA-OBE-04']).toBeUndefined();
+
+      const report = markdownReport({ summary });
+      expect(report).toContain('| C6 | 3 | 6 | 50 % | 50 % | 50 % | 100 % | 0 | 0 | 0 | 3 | 3 | 3 | 0 |');
+      expect(report).toContain('| C6 | 0 / 3 |');
+      expect(report).toMatch(/^\| PA-GEN-03 \| Opción \| 100 % \|$/m);
+      expect(report).toMatch(/^\| PA-OBE-04 \| Opción \| 50 % \| — \|$/m);
+      expect(report).toMatch(/^\| Bajar de peso \| Almuerzo \| 4 \|/m);
+    });
+
+    it('sin evaluaciones, las tablas de validez quedan vacías sin romper el reporte', () => {
+      expect(summarizeRun([valid()]).overall.evaluation).toMatchObject({ proposals: 0, feasibility: null, guidelines: {} });
+      expect(markdownReport({ summary: summarizeRun([valid()]) })).toContain('Sin hallazgos.');
+    });
+  });
+
+  describe('comparación entre corridas (T58: cada cambio contra la anterior)', () => {
+    it('calcula el intervalo de Wilson al 95 %', () => {
+      expect(wilson(10, 10).high).toBeCloseTo(1);
+      expect(wilson(10, 10).low).toBeCloseTo(0.7225, 3);
+      const { low, high } = wilson(66, 70);
+      expect(low).toBeLessThan(66 / 70);
+      expect(high).toBeGreaterThan(66 / 70);
+      expect(wilson(0, 0)).toBeNull();
+    });
+
+    it('informa el intervalo de la meta de bloqueantes', () => {
+      const report = markdownReport({ summary: summarizeRun([valid(), valid({ validationResult: 'blocking' })]) });
+      expect(report).toMatch(/| 50 % (IC d+–d+ %) | No cumple |/);
+    });
+
+    it('compara sobre los casos en común y marca solo lo que supera el ruido', () => {
+      const run = (rows) => ({ meta: { label: 'anterior' }, generations: rows });
+      const previous = run(Array.from({ length: 10 }, () => valid({ validationResult: 'blocking' })));
+      const current = run([
+        ...Array.from({ length: 10 }, () => valid()),
+        ...Array.from({ length: 10 }, () => valid({ caseCode: 'C8', validationResult: 'blocking' })),
+      ]);
+
+      const report = compareRuns(previous, current);
+      expect(report).toContain('casos en común (C1)');
+      expect(report).toContain('| Sin bloqueantes (sobre intentos) | 0 % | 100 % | +100 pp | Sí |');
+      expect(report).toContain('| Válidas | 100 % | 100 % | 0 pp | No |');
+      expect(report).toContain('| Armadas incompletas | — | — | — | — |');
+      expect(report).toContain('- C1 · Sin bloqueantes (sobre intentos): 0 % → 100 %');
+      expect(report).toContain('Total P95 (ms), depende del horario');
+    });
+
+    it('acepta la corrida anterior por la línea de comandos', () => {
+      expect(parseOptions(['--compare', 'anterior.json']).compare).toBe('anterior.json');
+    });
   });
 
   it('cuenta solo el texto de la IA: sin el texto fijo de uso ni las recomendaciones clínicas (DA-43)', () => {

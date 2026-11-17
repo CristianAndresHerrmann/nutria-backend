@@ -81,7 +81,7 @@ function createFakeRecipeRepository() {
   };
 }
 
-function buildService({ conditions = [], rules = [] } = {}) {
+function buildService({ conditions = [], rules = [], patient = {} } = {}) {
   const recipeRepository = createFakeRecipeRepository();
   const foodRepository = {
     async findVisibleById(id, nutritionistId) {
@@ -94,7 +94,7 @@ function buildService({ conditions = [], rules = [] } = {}) {
   const foodGroupRepository = { findAll: async () => GROUPS };
   const patientRepository = {
     async findByIdForNutritionist(id, nutritionistId) {
-      return id === 'paciente-1' && nutritionistId === 'nutri-1' ? { id } : null;
+      return id === 'paciente-1' && nutritionistId === 'nutri-1' ? { id, ...patient } : null;
     },
   };
   const patientConditionRepository = {
@@ -311,6 +311,16 @@ describe('recipe.service — baja lógica y listado', () => {
 });
 
 describe('recipe.service — filtro por condiciones del paciente (RF-28)', () => {
+  it('no ofrece las recetas de un equipo que el paciente no tiene; sin dato no filtra (T62)', async () => {
+    const without = buildService({ patient: { hasStovetop: false, hasOven: true } });
+    await without.service.create('nutri-1', ensalada);
+    expect(await without.service.list('nutri-1', { patientId: 'paciente-1' })).toEqual([]);
+
+    const unknown = buildService({ patient: { hasStovetop: null } });
+    await unknown.service.create('nutri-1', ensalada);
+    expect(names(await unknown.service.list('nutri-1', { patientId: 'paciente-1' }))).toEqual([ensalada.name]);
+  });
+
   async function seed(service) {
     await service.create('nutri-1', ensalada);
     await service.create('nutri-1', {
