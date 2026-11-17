@@ -1,4 +1,4 @@
-const { excludeRecipesForConditions, conditionScopes, scopeCoversFood } = require('./recipeConditionFilter');
+const { excludeRecipesForConditions, conditionScopes, scopeCoversFood, fitsEquipment } = require('./recipeConditionFilter');
 
 const GROUPS = [
   { id: 'carnes', parentId: null },
@@ -73,6 +73,23 @@ describe('excludeRecipesForConditions (RF-28)', () => {
     ];
 
     expect(excludeRecipesForConditions(RECIPES, conditions, GROUPS)).toEqual(RECIPES);
+  });
+});
+
+describe('fitsEquipment (T62)', () => {
+  it('cada método necesita su equipo; sin cocción o sin método no necesitan ninguno', () => {
+    const none = { hasOven: false, hasStovetop: false, hasMicrowave: false };
+    expect(fitsEquipment({ cookingMethod: 'oven' }, none)).toBe(false);
+    expect(fitsEquipment({ cookingMethod: 'stovetop' }, none)).toBe(false);
+    expect(fitsEquipment({ cookingMethod: 'microwave' }, none)).toBe(false);
+    expect(fitsEquipment({ cookingMethod: 'no_cooking' }, none)).toBe(true);
+    expect(fitsEquipment({ cookingMethod: null }, none)).toBe(true);
+  });
+
+  it('solo un false excluye: sin dato no filtra', () => {
+    expect(fitsEquipment({ cookingMethod: 'oven' }, { hasOven: null })).toBe(true);
+    expect(fitsEquipment({ cookingMethod: 'oven' }, {})).toBe(true);
+    expect(fitsEquipment({ cookingMethod: 'oven' }, { hasOven: true })).toBe(true);
   });
 });
 

@@ -86,6 +86,10 @@ model Patient {
 
   // Objetivo y referencia subjetiva (RF-03)
   goal             String?
+  // Categoría del objetivo (T61), además del texto: solo los objetivos con pautas
+  // de adecuación documentadas (T57) y "otro". La usa la recuperación del RAG
+  // (T45, T49), que no puede usar el texto libre (RNF-07), y la medición (CM-08).
+  goalCategory     GoalCategory? @map("goal_category")
   referenceWeight  Decimal? @map("reference_weight") @db.Decimal(5, 2)
 
   // Antecedentes y medicación (RF-04). Las patologías diagnosticadas no van acá:
@@ -109,6 +113,14 @@ model Patient {
   cookingTime        String?  @map("cooking_time")
   homeEquipment      String?  @map("home_equipment")
   usualShoppingPlace String?  @map("usual_shopping_place")
+  // Equipamiento y tiempo estructurados (T62), además del texto: null es "sin
+  // dato". Un false excluye las recetas de ese método en la generación y en el
+  // selector. CHECK en la migración (patient_cooking_minutes_per_day_chk):
+  // cookingMinutesPerDay entre 1 y 1440.
+  hasOven              Boolean? @map("has_oven")
+  hasStovetop          Boolean? @map("has_stovetop")
+  hasMicrowave         Boolean? @map("has_microwave")
+  cookingMinutesPerDay Int?     @map("cooking_minutes_per_day")
 
   // Comidas fuera del hogar (RF-09)
   mealsOutsideHome String? @map("meals_outside_home")
@@ -379,6 +391,15 @@ model FoodCategory {
 
   @@unique([foodId, category])
   @@map("food_category")
+}
+
+// T61. Solo los objetivos con pautas en docs/pautas-de-adecuacion.md (repo raíz);
+// sumar uno requiere sus pautas con fuente (T57).
+enum GoalCategory {
+  lose_weight
+  other
+
+  @@map("goal_category")
 }
 
 enum CookingMethod {

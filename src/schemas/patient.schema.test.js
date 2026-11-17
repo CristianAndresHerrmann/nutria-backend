@@ -75,6 +75,28 @@ describe('patient.schema', () => {
     expect(result.data.referenceWeight).toBeNull();
   });
 
+  it('acepta la categoría del objetivo de la lista, vacía como sin dato, y rechaza otra (T61)', () => {
+    const base = { firstName: 'Ana', lastName: 'Diaz' };
+    expect(createPatientSchema.parse({ ...base, goalCategory: 'lose_weight' }).goalCategory).toBe('lose_weight');
+    expect(createPatientSchema.parse({ ...base, goalCategory: '' }).goalCategory).toBeNull();
+    const result = createPatientSchema.safeParse({ ...base, goalCategory: 'gain_muscle' });
+    expect(result.success).toBe(false);
+    expect(result.error.issues[0].path).toEqual(['goalCategory']);
+  });
+
+  it('acepta el equipamiento y los minutos por día, y rechaza minutos no enteros o fuera de rango (T62)', () => {
+    const base = { firstName: 'Ana', lastName: 'Diaz' };
+    const ok = createPatientSchema.safeParse({ ...base, hasOven: false, cookingMinutesPerDay: '20' });
+    expect(ok.success).toBe(true);
+    expect(ok.data).toMatchObject({ hasOven: false, cookingMinutesPerDay: 20 });
+    expect(createPatientSchema.parse({ ...base, cookingMinutesPerDay: '' }).cookingMinutesPerDay).toBeNull();
+    for (const value of ['0', '15.5', '1441', 'treinta']) {
+      const result = createPatientSchema.safeParse({ ...base, cookingMinutesPerDay: value });
+      expect(result.success, value).toBe(false);
+      expect(result.error.issues[0].path, value).toEqual(['cookingMinutesPerDay']);
+    }
+  });
+
   it('rechaza un email con formato inválido', () => {
     const result = createPatientSchema.safeParse({ firstName: 'Ana', lastName: 'Diaz', email: 'no-es-un-email' });
 

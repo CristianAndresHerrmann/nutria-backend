@@ -1,5 +1,5 @@
 const { z } = require('zod');
-const { MealType, FoodCategoryType, ConditionType, CookingMethod } = require('@prisma/client');
+const { MealType, FoodCategoryType, ConditionType, CookingMethod, GoalCategory } = require('@prisma/client');
 const { planProposalResponseSchema } = require('./iaProposal.schema');
 const spec = require('./fixtures/ia.openapi.json');
 const { CONTRACT_LIMITS } = require('../domain/generacion/allowedCatalog');
@@ -32,7 +32,7 @@ function validationShape(schema, document) {
 }
 
 describe('contrato backend ↔ IA (OpenAPI versionado, AUD-004)', () => {
-  it.each(Object.entries({ MealType, FoodCategoryType, ConditionType, CookingMethod }))('%s coincide con Prisma', (name, values) => {
+  it.each(Object.entries({ MealType, FoodCategoryType, ConditionType, CookingMethod, GoalCategory }))('%s coincide con Prisma', (name, values) => {
     expect([...spec.components.schemas[name].enum].sort()).toEqual(Object.values(values).sort());
   });
 

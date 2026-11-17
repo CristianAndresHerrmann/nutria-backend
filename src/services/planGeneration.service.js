@@ -144,6 +144,7 @@ function createPlanGenerationService({
         moderatedRules,
         mealTypes,
         cooks: patient.cooks,
+        equipment: { hasOven: patient.hasOven, hasStovetop: patient.hasStovetop, hasMicrowave: patient.hasMicrowave },
       });
       const exceeded = exceededLimit(allowed);
       if (exceeded) throw catalogTooLarge(exceeded);
