@@ -129,7 +129,8 @@ function buildGenerationContext({ patient, conditions, catalog, mealTypes }) {
       home_equipment: text(patient.homeEquipment),
       usual_shopping_place: text(patient.usualShoppingPlace),
       // Estructurados (T62): el equipamiento ya filtró las recetas en
-      // allowedCatalog, y los minutos los pondera la IA (no filtran).
+      // allowedCatalog. Los minutos viajan como dato y no filtran: la plantilla
+      // vigente le pide a la IA no descartar una receta por superarlos (DA-50).
       has_oven: patient.hasOven,
       has_stovetop: patient.hasStovetop,
       has_microwave: patient.hasMicrowave,

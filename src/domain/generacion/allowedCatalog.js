@@ -43,9 +43,9 @@ const CONTRACT_LIMITS = { foods: 2000, groups: 500, recipes: 200 };
 //   tipos de comida pedidos (mealTypes queda en la intersección), sin
 //   ingredientes comprendidos, si el paciente no cocina, solo las que no
 //   requieren cocción (RF-38), y solo las que puede hacer con su equipamiento:
-//   sin horno, ninguna de horno (T62). El tiempo no filtra, porque el paciente
-//   puede cocinar el fin de semana: lo evalúa el modelo con time_minutes y los
-//   minutos por día. El gusto por cocinar también lo evalúa el modelo.
+//   sin horno, ninguna de horno (T62). El tiempo no filtra: el time_minutes de
+//   una receta es una referencia, no un límite del paciente, porque puede
+//   cocinarla otra persona (DA-50). El gusto por cocinar lo evalúa el modelo.
 function allowedCatalog({
   foods,
   groups,
